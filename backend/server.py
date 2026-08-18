@@ -4950,6 +4950,145 @@ def _date_range(month: str = None, date_from: str = None, date_to: str = None):
     return start, end
 
 
+@api_router.get("/inventory/structure-stock")
+async def get_structure_stock(current_user: dict = Depends(get_current_user)):
+    if not is_ops_user(current_user):
+        raise HTTPException(status_code=403, detail="Non autorizzato")
+    pipeline = [
+        {"$match": {"structure_id": {"$nin": [None, ""]}}},
+        {"$unwind": "$items"},
+        {"$group": {
+            "_id": {"structure_id": "$structure_id", "article_id": "$items.article_id"},
+            "loaded": {"$sum": {"$cond": [{"$eq": ["$movement_type", "delivered"]}, "$items.quantity", 0]}},
+            "unloaded": {"$sum": {"$cond": [{"$in": ["$movement_type", ["picked_up", "returned", "missing", "damaged"]]}, "$items.quantity", 0]}},
+        }},
+    ]
+    rows = [doc async for doc in db.movements.aggregate(pipeline)]
+    st_ids = list({r["_id"]["structure_id"] for r in rows})
+    art_ids = list({r["_id"]["article_id"] for r in rows})
+    st_map = {s["id"]: s["name"] async for s in db.structures.find({"id": {"$in": st_ids}}, {"_id": 0, "id": 1, "name": 1})}
+    art_map = {a["id"]: a["name"] async for a in db.articles.find({"id": {"$in": art_ids}}, {"_id": 0, "id": 1, "name": 1})}
+    grouped = {}
+    for r in rows:
+        sid = r["_id"]["structure_id"]
+        g = grouped.setdefault(sid, {"structure_id": sid, "structure_name": st_map.get(sid, "Struttura"), "items": [], "has_negative": False})
+        balance = r["loaded"] - r["unloaded"]
+        g["items"].append({
+            "article_id": r["_id"]["article_id"],
+            "article_name": art_map.get(r["_id"]["article_id"], ""),
+            "loaded": r["loaded"],
+            "unloaded": r["unloaded"],
+            "balance": balance,
+        })
+        if balance < 0:
+            g["has_negative"] = True
+    result = sorted(grouped.values(), key=lambda g: g["structure_name"].lower())
+    for g in result:
+        g["items"].sort(key=lambda i: i["article_name"].lower())
+    return result
+
+
+@api_router.get("/dashboard/overview")
+async def dashboard_overview(
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
+    current_user: dict = Depends(get_current_user),
+):
+    if not is_ops_user(current_user):
+        raise HTTPException(status_code=403, detail="Non autorizzato")
+    start, end = _date_range(None, date_from, date_to)
+
+    # Revenue (per-service economics arrive in a later phase; orders = consumables catalog)
+    order_q = {"created_at": {"$gte": start, "$lt": end}, "status": {"$nin": ["cancelled"]}}
+    order_revenue = 0
+    async for doc in db.orders.aggregate([{"$match": order_q}, {"$group": {"_id": None, "total": {"$sum": "$total"}}}]):
+        order_revenue = doc.get("total", 0) or 0
+    revenue = {
+        "total": order_revenue,
+        "cleaning": 0,
+        "laundry": {"total": 0, "private": 0, "rental": 0},
+        "consumables": order_revenue,
+    }
+
+    # Today's operations
+    now_dt = datetime.now(timezone.utc)
+    today = now_dt.strftime("%Y-%m-%d")
+    next_day = (now_dt + timedelta(days=1)).strftime("%Y-%m-%d")
+
+    cl_total = await db.cleaning_tasks.count_documents({"date": today})
+    cl_done = await db.cleaning_tasks.count_documents({"date": today, "status": "completed"})
+
+    log_tasks = await db.logistics_tasks.find({"date": today}, {"_id": 0, "status": 1, "items": 1}).to_list(2000)
+    item_art_ids = list({it.get("article_id") for t in log_tasks for it in (t.get("items") or []) if it.get("article_id")})
+    art_cat = {}
+    if item_art_ids:
+        async for a in db.articles.find({"id": {"$in": item_art_ids}}, {"_id": 0, "id": 1, "category": 1}):
+            art_cat[a["id"]] = a.get("category")
+    linen = {"total": 0, "completed": 0}
+    consum = {"total": 0, "completed": 0}
+    for t in log_tasks:
+        cats = {art_cat.get(it.get("article_id")) for it in (t.get("items") or [])}
+        bucket = consum if ("consumable" in cats and "rental_linen" not in cats) else linen
+        bucket["total"] += 1
+        if t.get("status") == "completed":
+            bucket["completed"] += 1
+
+    maint_q = {"created_at": {"$gte": today, "$lt": next_day}}
+    mt_total = await db.maintenance_issues.count_documents(maint_q)
+    mt_done = await db.maintenance_issues.count_documents({**maint_q, "status": "resolved"})
+
+    today_block = {
+        "date": today,
+        "cleaning": {"total": cl_total, "completed": cl_done, "missing": cl_total - cl_done},
+        "deliveries_linen": {"total": linen["total"], "completed": linen["completed"], "missing": linen["total"] - linen["completed"]},
+        "deliveries_consumables": {"total": consum["total"], "completed": consum["completed"], "missing": consum["total"] - consum["completed"]},
+        "maintenance": {"total": mt_total, "completed": mt_done, "missing": mt_total - mt_done},
+    }
+
+    # Attention list
+    attention = []
+    neg_pipeline = [
+        {"$match": {"structure_id": {"$nin": [None, ""]}}},
+        {"$unwind": "$items"},
+        {"$group": {
+            "_id": {"s": "$structure_id", "a": "$items.article_id"},
+            "bal": {"$sum": {"$cond": [
+                {"$eq": ["$movement_type", "delivered"]}, "$items.quantity",
+                {"$cond": [
+                    {"$in": ["$movement_type", ["picked_up", "returned", "missing", "damaged"]]},
+                    {"$multiply": ["$items.quantity", -1]}, 0
+                ]}
+            ]}},
+        }},
+        {"$match": {"bal": {"$lt": 0}}},
+        {"$group": {"_id": "$_id.s"}},
+    ]
+    neg_ids = [d["_id"] async for d in db.movements.aggregate(neg_pipeline)]
+    if neg_ids:
+        names = [s["name"] async for s in db.structures.find({"id": {"$in": neg_ids}}, {"_id": 0, "name": 1}).limit(3)]
+        attention.append({"type": "negative_stock", "severity": "danger", "count": len(neg_ids), "detail": ", ".join(names), "link": "/structure-inventory"})
+
+    below = await db.articles.count_documents({"is_active": True, "minimum_threshold": {"$gt": 0}, "$expr": {"$lte": ["$quantity_available", "$minimum_threshold"]}})
+    if below:
+        attention.append({"type": "below_threshold", "severity": "warning", "count": below, "detail": None, "link": "/inventory?tab=articles"})
+
+    open_statuses = ["pending", "assigned", "in_progress"]
+    cl_overdue = await db.cleaning_tasks.count_documents({"date": {"$lt": today}, "status": {"$in": open_statuses}})
+    if cl_overdue:
+        attention.append({"type": "overdue_cleaning", "severity": "danger", "count": cl_overdue, "detail": None, "link": "/cleaning"})
+    lg_overdue = await db.logistics_tasks.count_documents({"date": {"$lt": today}, "status": {"$in": open_statuses}})
+    if lg_overdue:
+        attention.append({"type": "overdue_deliveries", "severity": "danger", "count": lg_overdue, "detail": None, "link": "/logistics"})
+    mt_urgent = await db.maintenance_issues.count_documents({"priority": {"$in": ["urgent", "high"]}, "status": {"$in": ["open", "assigned", "in_progress"]}})
+    if mt_urgent:
+        attention.append({"type": "urgent_maintenance", "severity": "warning", "count": mt_urgent, "detail": None, "link": "/maintenance"})
+    new_orders = await db.orders.count_documents({"status": "submitted"})
+    if new_orders:
+        attention.append({"type": "orders_to_verify", "severity": "info", "count": new_orders, "detail": None, "link": "/logistics"})
+
+    return {"period": {"start": start, "end": end}, "revenue": revenue, "today": today_block, "attention": attention}
+
+
 @api_router.get("/reports/dashboard")
 async def report_dashboard(
     month: Optional[str] = None,

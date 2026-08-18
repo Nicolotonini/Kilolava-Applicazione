@@ -1,50 +1,58 @@
-import React, { useState } from 'react';
-import { Outlet, NavLink, useLocation, useNavigate } from 'react-router-dom';
+import React, { useState, useEffect, useRef } from 'react';
+import { Outlet, NavLink, Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
-import { useLanguage } from '../../contexts/LanguageContext';
 import { useTheme } from '../../contexts/ThemeContext';
 import { usePermissions, ROLE_LABELS, ALL_ROLES } from '../../hooks/usePermissions';
 import { NotificationBell } from '../NotificationBell';
 import {
-  LayoutDashboard,
-  Users,
-  CalendarDays,
-  Package,
-  Truck,
-  Settings,
-  LogOut,
-  Menu,
-  X,
-  Sun,
-  Moon,
-  Shield,
-  Sparkles,
-  Wrench,
-  BarChart3,
-  FileText,
-  ChevronDown,
-  Eye,
-  EyeOff,
-  Building2,
-  History
+  LayoutDashboard, Users, CalendarDays, Truck, Settings, LogOut, Menu, X,
+  Sun, Moon, Shield, Sparkles, Wrench, FileText, ChevronDown, ChevronRight,
+  Eye, Building2, Shirt, Layers, Boxes,
 } from 'lucide-react';
 import { Button } from '../ui/button';
 import { cn } from '../../lib/utils';
 
 const LOGO_URL = 'https://customer-assets.emergentagent.com/job_kilolava-core/artifacts/wuuhyigy_images.png';
 
-const ALL_NAV_ITEMS = [
-  { key: 'dashboard', path: '/dashboard', icon: LayoutDashboard, labelKey: 'nav.dashboard' },
-  { key: 'clients', path: '/clients', icon: Users, labelKey: 'nav.clients' },
-  { key: 'structures', path: '/structures', icon: Building2, labelFallback: 'Strutture' },
-  { key: 'calendar', path: '/calendar', icon: CalendarDays, labelKey: 'nav.calendar' },
-  { key: 'inventory', path: '/inventory', icon: Package, labelKey: 'nav.inventory' },
-  { key: 'logistics', path: '/logistics', icon: Truck, labelFallback: 'Logistica' },
-  { key: 'cleaning', path: '/cleaning', icon: Sparkles, labelFallback: 'Pulizie' },
-  { key: 'maintenance', path: '/maintenance', icon: Wrench, labelFallback: 'Manutenzione' },
-  { key: 'documents', path: '/documents', icon: FileText, labelFallback: 'Documenti' },
-  { key: 'users', path: '/users', icon: Shield, labelFallback: 'Utenti' },
-  { key: 'activity', path: '/activity', icon: History, labelFallback: 'Registro Attività' },
+const NAV = [
+  { type: 'item', key: 'dashboard', path: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
+  { type: 'item', key: 'calendar', path: '/calendar', icon: CalendarDays, label: 'Calendario' },
+  {
+    type: 'group', key: 'clients-structures', icon: Users, label: 'Clienti e Strutture', children: [
+      { key: 'clients', path: '/clients', label: 'Clienti' },
+      { key: 'structures', path: '/structures', label: 'Strutture' },
+    ],
+  },
+  { type: 'item', key: 'cleaning', path: '/cleaning', icon: Sparkles, label: 'Pulizie' },
+  { type: 'item', key: 'structure-inventory', path: '/structure-inventory', icon: Boxes, label: 'Magazzino Strutture' },
+  { type: 'item', key: 'deliveries', path: '/logistics', icon: Truck, label: 'Consegne' },
+  {
+    type: 'group', key: 'private-laundry', icon: Shirt, label: 'Lavanderia Privata', children: [
+      { key: 'pl-jobs', path: '/private-laundry/jobs', label: 'Lavorazioni' },
+      { key: 'pl-history', path: '/private-laundry/history', label: 'Storico' },
+    ],
+  },
+  {
+    type: 'group', key: 'rental-laundry', icon: Layers, label: 'Lavanderia a Noleggio', children: [
+      { key: 'rl-warehouse', path: '/inventory?tab=articles', label: 'Magazzino Noleggio' },
+      { key: 'rl-movements', path: '/inventory?tab=movements', label: 'Movimenti / Storico' },
+      { key: 'rl-articles', path: '/inventory?tab=pricing', label: 'Articoli & Kit' },
+    ],
+  },
+  { type: 'item', key: 'maintenance', path: '/maintenance', icon: Wrench, label: 'Manutenzioni' },
+  {
+    type: 'group', key: 'administration', icon: FileText, label: 'Amministrazione', children: [
+      { key: 'documents', path: '/documents', label: 'Documenti / DDT' },
+      { key: 'reports', path: '/reports', label: 'Report' },
+    ],
+  },
+  {
+    type: 'group', key: 'system', icon: Settings, label: 'Sistema', children: [
+      { key: 'users', path: '/users', label: 'Utenti & Ruoli' },
+      { key: 'activity', path: '/activity', label: 'Registro attività' },
+      { key: 'settings', path: '/settings', label: 'Impostazioni' },
+    ],
+  },
 ];
 
 const ROLE_ICONS = {
@@ -56,35 +64,98 @@ const ROLE_ICONS = {
   client: Users,
 };
 
+const INVENTORY_TAB_LABELS = {
+  articles: 'Magazzino Noleggio',
+  movements: 'Movimenti / Storico',
+  register: 'Movimenti / Storico',
+  pricing: 'Articoli & Kit',
+};
+
+function getBreadcrumb(pathname, search) {
+  const tab = new URLSearchParams(search).get('tab') || 'articles';
+  if (pathname === '/dashboard') return { title: 'Dashboard', crumbs: [] };
+  if (pathname === '/calendar') return { title: 'Calendario', crumbs: [] };
+  if (pathname === '/clients') return { title: 'Clienti', crumbs: [] };
+  if (pathname.startsWith('/clients/')) return { title: 'Dettaglio cliente', crumbs: [{ label: 'Clienti', to: '/clients' }] };
+  if (pathname === '/structures') return { title: 'Strutture', crumbs: [] };
+  if (pathname === '/structures/new') return { title: 'Nuova struttura', crumbs: [{ label: 'Strutture', to: '/structures' }] };
+  if (pathname.startsWith('/structures/')) return { title: 'Dettaglio struttura', crumbs: [{ label: 'Strutture', to: '/structures' }] };
+  if (pathname === '/cleaning') return { title: 'Pulizie', crumbs: [] };
+  if (pathname === '/checklist-templates') return { title: 'Checklist', crumbs: [{ label: 'Pulizie', to: '/cleaning' }] };
+  if (pathname === '/structure-inventory') return { title: 'Magazzino Strutture', crumbs: [] };
+  if (pathname === '/logistics') return { title: 'Consegne', crumbs: [] };
+  if (pathname === '/private-laundry/jobs') return { title: 'Lavorazioni', crumbs: [{ label: 'Lavanderia Privata' }] };
+  if (pathname === '/private-laundry/history') return { title: 'Storico', crumbs: [{ label: 'Lavanderia Privata' }] };
+  if (pathname === '/inventory') return { title: INVENTORY_TAB_LABELS[tab] || 'Magazzino Noleggio', crumbs: [{ label: 'Lavanderia a Noleggio' }] };
+  if (pathname === '/maintenance') return { title: 'Manutenzioni', crumbs: [] };
+  if (pathname === '/documents') return { title: 'Documenti / DDT', crumbs: [{ label: 'Amministrazione' }] };
+  if (pathname === '/documents/new') return { title: 'Nuovo documento', crumbs: [{ label: 'Documenti / DDT', to: '/documents' }] };
+  if (pathname.startsWith('/documents/')) return { title: 'Dettaglio documento', crumbs: [{ label: 'Documenti / DDT', to: '/documents' }] };
+  if (pathname === '/reports') return { title: 'Report', crumbs: [{ label: 'Amministrazione' }] };
+  if (pathname === '/users') return { title: 'Utenti & Ruoli', crumbs: [{ label: 'Sistema' }] };
+  if (pathname === '/activity') return { title: 'Registro attività', crumbs: [{ label: 'Sistema' }] };
+  if (pathname === '/settings') return { title: 'Impostazioni', crumbs: [{ label: 'Sistema' }] };
+  if (pathname === '/notifications') return { title: 'Notifiche', crumbs: [] };
+  return { title: 'Kilolava', crumbs: [] };
+}
+
 const AppLayout = ({ children }) => {
   const { user, logout } = useAuth();
-  const { t } = useLanguage();
   const { theme, toggleTheme } = useTheme();
   const { canAccessNav, role, realRole, isRealAdmin, isImpersonating, setImpersonatedRole } = usePermissions();
   const location = useLocation();
   const navigate = useNavigate();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [roleDropdownOpen, setRoleDropdownOpen] = useState(false);
+  const [accountOpen, setAccountOpen] = useState(false);
+  const [openGroups, setOpenGroups] = useState({});
+  const accountRef = useRef(null);
 
-  const navItems = ALL_NAV_ITEMS
-    .filter(item => canAccessNav(item.key))
-    .map(item => ({
-      ...item,
-      label: item.labelKey ? t(item.labelKey) : item.labelFallback,
-    }));
-
-  const isActive = (path) => {
-    if (path === '/clients') return location.pathname.startsWith('/clients');
-    if (path === '/calendar') return location.pathname.startsWith('/calendar');
-    if (path === '/documents') return location.pathname.startsWith('/documents');
-    if (path === '/structures') return location.pathname.startsWith('/structures');
-    return location.pathname === path;
+  const isPathActive = (path) => {
+    const [p, q] = path.split('?');
+    if (p === '/inventory') {
+      if (location.pathname !== '/inventory') return false;
+      const curTab = new URLSearchParams(location.search).get('tab') || 'articles';
+      let navTab = q ? new URLSearchParams(q).get('tab') : 'articles';
+      if (curTab === 'register') return navTab === 'movements';
+      return curTab === navTab;
+    }
+    return location.pathname === p || location.pathname.startsWith(p + '/');
   };
+
+  // Auto-open the group containing the active route
+  useEffect(() => {
+    NAV.forEach((entry) => {
+      if (entry.type === 'group' && entry.children.some((c) => isPathActive(c.path))) {
+        setOpenGroups((prev) => (prev[entry.key] ? prev : { ...prev, [entry.key]: true }));
+      }
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.pathname, location.search]);
+
+  // Close account dropdown on outside click
+  useEffect(() => {
+    const handler = (e) => {
+      if (accountRef.current && !accountRef.current.contains(e.target)) setAccountOpen(false);
+    };
+    if (accountOpen) document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [accountOpen]);
+
+  const visibleNav = NAV
+    .map((entry) => {
+      if (entry.type === 'item') return canAccessNav(entry.key) ? entry : null;
+      const children = entry.children.filter((c) => canAccessNav(c.key));
+      if (children.length === 0) return null;
+      return { ...entry, children };
+    })
+    .filter(Boolean);
+
+  const toggleGroup = (key) => setOpenGroups((prev) => ({ ...prev, [key]: !prev[key] }));
 
   const handleRoleSwitch = (newRole) => {
     setImpersonatedRole(newRole === realRole ? null : newRole);
-    setRoleDropdownOpen(false);
-    // Navigate to appropriate home route
+    setAccountOpen(false);
+    setMobileMenuOpen(false);
     const homeRoutes = {
       admin: '/dashboard', operations_manager: '/dashboard',
       cleaner: '/cleaner', rider: '/rider', maintenance: '/maintenance', client: '/portal',
@@ -92,11 +163,128 @@ const AppLayout = ({ children }) => {
     navigate(homeRoutes[newRole] || '/dashboard');
   };
 
+  const { title, crumbs } = getBreadcrumb(location.pathname, location.search);
+
+  const renderNavEntry = (entry, onNavigate) => {
+    if (entry.type === 'item') {
+      const active = isPathActive(entry.path);
+      return (
+        <NavLink
+          key={entry.key}
+          to={entry.path}
+          onClick={onNavigate}
+          data-testid={`nav-${entry.key}`}
+          className={cn(
+            'flex items-center gap-3 px-3 py-2.5 rounded-md text-[15px] transition-colors',
+            active
+              ? 'bg-primary/10 text-primary font-semibold'
+              : 'text-foreground/70 hover:bg-muted hover:text-foreground'
+          )}
+        >
+          <entry.icon className={cn('h-5 w-5 flex-shrink-0', active ? 'text-primary' : 'text-foreground/50')} />
+          <span className="truncate">{entry.label}</span>
+        </NavLink>
+      );
+    }
+    const open = !!openGroups[entry.key];
+    const childActive = entry.children.some((c) => isPathActive(c.path));
+    return (
+      <div key={entry.key}>
+        <button
+          onClick={() => toggleGroup(entry.key)}
+          data-testid={`nav-group-${entry.key}`}
+          className={cn(
+            'w-full flex items-center gap-3 px-3 py-2.5 rounded-md text-[15px] transition-colors',
+            childActive && !open ? 'text-primary font-medium' : 'text-foreground/70 hover:bg-muted hover:text-foreground'
+          )}
+        >
+          <entry.icon className={cn('h-5 w-5 flex-shrink-0', childActive ? 'text-primary' : 'text-foreground/50')} />
+          <span className="flex-1 text-left truncate">{entry.label}</span>
+          <ChevronRight className={cn('h-4 w-4 text-muted-foreground transition-transform', open && 'rotate-90')} />
+        </button>
+        {open && (
+          <div className="mt-0.5 mb-1 space-y-0.5">
+            {entry.children.map((child) => {
+              const active = isPathActive(child.path);
+              return (
+                <NavLink
+                  key={child.key}
+                  to={child.path}
+                  onClick={onNavigate}
+                  data-testid={`nav-${child.key}`}
+                  className={cn(
+                    'flex items-center gap-2 pl-11 pr-3 py-2 rounded-md text-sm transition-colors',
+                    active
+                      ? 'bg-primary/10 text-primary font-semibold'
+                      : 'text-foreground/60 hover:bg-muted hover:text-foreground'
+                  )}
+                >
+                  <span className="truncate">{child.label}</span>
+                </NavLink>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  const accountDropdown = (
+    <div className="absolute left-0 bottom-full mb-2 w-64 bg-popover border border-border rounded-xl shadow-lg z-[70] py-1.5 animate-in" data-testid="role-dropdown">
+      <div className="px-3.5 py-2 border-b border-border">
+        <p className="text-sm font-semibold truncate">{user?.name}</p>
+        <p className="text-xs text-muted-foreground truncate">{user?.email}</p>
+      </div>
+      {isRealAdmin && (
+        <>
+          <div className="px-3.5 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+            Visualizza come
+          </div>
+          {ALL_ROLES.map((r) => {
+            const RoleIcon = ROLE_ICONS[r];
+            const isCurrent = r === role;
+            return (
+              <button
+                key={r}
+                onClick={() => handleRoleSwitch(r)}
+                className={cn(
+                  'w-full flex items-center gap-2.5 px-3.5 py-1.5 text-left hover:bg-muted transition-colors',
+                  isCurrent && 'text-primary font-medium'
+                )}
+                data-testid={`impersonate-${r}`}
+              >
+                <RoleIcon className="h-3.5 w-3.5" />
+                <span className="text-xs">{ROLE_LABELS[r]}</span>
+                {isCurrent && <span className="ml-auto text-[10px] text-primary font-semibold">Attivo</span>}
+              </button>
+            );
+          })}
+          <div className="my-1.5 border-t border-border" />
+        </>
+      )}
+      <Link
+        to="/settings"
+        onClick={() => setAccountOpen(false)}
+        className="flex items-center gap-2.5 px-3.5 py-2 text-xs hover:bg-muted transition-colors"
+        data-testid="account-settings-link"
+      >
+        <Settings className="h-3.5 w-3.5" />Impostazioni
+      </Link>
+      <button
+        onClick={logout}
+        className="w-full flex items-center gap-2.5 px-3.5 py-2 text-xs text-destructive hover:bg-muted transition-colors"
+        data-testid="logout-btn"
+      >
+        <LogOut className="h-3.5 w-3.5" />Esci
+      </button>
+    </div>
+  );
+
   return (
     <div className="min-h-screen bg-background">
       {/* Impersonation banner */}
       {isImpersonating && (
-        <div className="fixed top-0 left-0 right-0 z-[60] bg-amber-500 text-white text-center py-1 text-xs font-medium flex items-center justify-center gap-2">
+        <div className="fixed top-0 left-0 right-0 z-[80] bg-amber-500 text-white text-center py-1 text-xs font-medium flex items-center justify-center gap-2">
           <Eye className="h-3.5 w-3.5" />
           Stai visualizzando come: <strong>{ROLE_LABELS[role]}</strong>
           <button
@@ -111,177 +299,107 @@ const AppLayout = ({ children }) => {
 
       {/* Desktop Sidebar */}
       <aside className={cn(
-        "hidden lg:flex lg:flex-col lg:w-52 lg:fixed lg:inset-y-0 bg-card border-r border-border",
-        isImpersonating && "lg:top-7"
+        'hidden lg:flex lg:flex-col lg:w-72 lg:fixed lg:inset-y-0 bg-card border-r border-border',
+        isImpersonating && 'lg:top-7'
       )}>
-        {/* Logo */}
-        <div className="flex items-center h-14 px-5">
-          <img src={LOGO_URL} alt="Kilolava" className="h-7 object-contain" data-testid="logo" />
+        <div className="flex items-center gap-2.5 h-16 px-5 flex-shrink-0">
+          <img src={LOGO_URL} alt="Kilolava" className="h-9 object-contain" data-testid="logo" />
+          <span className="text-xl font-heading font-bold text-primary tracking-tight">kilolava</span>
         </div>
-
-        {/* Navigation */}
-        <nav className="flex-1 px-3 py-2 space-y-0.5 overflow-y-auto">
-          {navItems.map((item) => (
-            <NavLink
-              key={item.path}
-              to={item.path}
-              data-testid={`nav-${item.path.slice(1)}`}
-              className={cn(
-                'sidebar-item',
-                isActive(item.path) && 'active'
-              )}
-            >
-              <item.icon className="h-[18px] w-[18px]" />
-              <span className="text-[13px]">{item.label}</span>
-            </NavLink>
-          ))}
+        <nav className="flex-1 px-3 py-3 space-y-0.5 overflow-y-auto scrollbar-hide" data-testid="sidebar-nav">
+          {visibleNav.map((entry) => renderNavEntry(entry))}
         </nav>
 
-        {/* User box + bottom actions */}
-        <div className="px-3 pb-4 pt-3 space-y-2 border-t border-border">
-          <div className="relative">
-            {isRealAdmin && roleDropdownOpen && (
-              <>
-                <div className="fixed inset-0 z-40" onClick={() => setRoleDropdownOpen(false)} />
-                <div className="absolute bottom-full left-0 mb-1 w-full bg-card border border-border rounded-lg shadow-lg z-50 py-1" data-testid="role-dropdown">
-                  <div className="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-                    Visualizza come
-                  </div>
-                  {ALL_ROLES.map((r) => {
-                    const RoleIcon = ROLE_ICONS[r];
-                    const isCurrent = r === role;
-                    return (
-                      <button
-                        key={r}
-                        onClick={() => handleRoleSwitch(r)}
-                        className={cn(
-                          "w-full flex items-center gap-2.5 px-3 py-2 text-left text-sm hover:bg-accent transition-colors",
-                          isCurrent && "bg-primary/5 text-primary font-medium"
-                        )}
-                        data-testid={`impersonate-${r}`}
-                      >
-                        <RoleIcon className="h-4 w-4" />
-                        <span className="text-xs">{ROLE_LABELS[r]}</span>
-                        {isCurrent && <span className="ml-auto text-[10px] text-primary font-semibold">Attivo</span>}
-                      </button>
-                    );
-                  })}
-                </div>
-              </>
-            )}
+        {/* Bottom: notifications, theme, account */}
+        <div className="px-3 py-3 border-t border-border space-y-1.5">
+          <div className="flex items-center gap-1 px-1">
+            <NotificationBell dropUp align="left" />
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={toggleTheme}
+              data-testid="theme-toggle"
+              className="h-9 w-9"
+            >
+              {theme === 'dark' ? <Sun className="h-[18px] w-[18px]" /> : <Moon className="h-[18px] w-[18px]" />}
+            </Button>
+          </div>
+          <div className="relative" ref={accountRef}>
+            {accountOpen && accountDropdown}
             <button
-              onClick={() => isRealAdmin && setRoleDropdownOpen(!roleDropdownOpen)}
+              onClick={() => setAccountOpen(!accountOpen)}
               className={cn(
-                "w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-sm transition-colors border border-border",
-                isRealAdmin && "hover:bg-accent cursor-pointer",
-                isImpersonating && "border-amber-400 bg-amber-50 dark:bg-amber-900/20"
+                'w-full flex items-center gap-2.5 px-2 py-2 rounded-lg hover:bg-muted transition-colors',
+                isImpersonating && 'ring-1 ring-amber-400'
               )}
               data-testid="role-switcher-btn"
             >
-              <div className="w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center text-primary font-semibold text-xs flex-shrink-0">
+              <div className="w-9 h-9 rounded-full bg-primary/10 flex items-center justify-center text-primary font-semibold text-sm flex-shrink-0">
                 {user?.name?.charAt(0).toUpperCase() || 'U'}
               </div>
               <div className="text-left flex-1 min-w-0">
-                <p className="text-xs font-medium leading-tight truncate">{user?.name}</p>
-                <p className="text-[10px] text-muted-foreground leading-tight truncate">{ROLE_LABELS[role]}</p>
+                <p className="text-sm font-medium leading-tight truncate">{user?.name}</p>
+                <p className="text-xs text-muted-foreground leading-tight">{ROLE_LABELS[role]}</p>
               </div>
-              {isRealAdmin && (
-                <ChevronDown className={cn("h-3.5 w-3.5 text-muted-foreground transition-transform flex-shrink-0", roleDropdownOpen ? "rotate-0" : "rotate-180")} />
-              )}
+              <ChevronDown className={cn('h-4 w-4 text-muted-foreground transition-transform flex-shrink-0', accountOpen ? 'rotate-0' : 'rotate-180')} />
             </button>
-          </div>
-          <div className="flex items-center gap-1">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={logout}
-              data-testid="logout-btn"
-              className="flex-1 justify-start text-muted-foreground hover:text-destructive text-xs h-9"
-            >
-              <LogOut className="h-4 w-4 mr-2" />
-              {t('nav.logout')}
-            </Button>
-            <NavLink
-              to="/settings"
-              data-testid="sidebar-settings-btn"
-              title="Impostazioni"
-              className={cn(
-                "p-2 rounded-lg hover:bg-accent transition-colors text-muted-foreground hover:text-foreground",
-                location.pathname === '/settings' && "bg-accent text-foreground"
-              )}
-            >
-              <Settings className="h-4 w-4" />
-            </NavLink>
           </div>
         </div>
       </aside>
 
-      {/* Top Header Bar (desktop) */}
-      <header className={cn(
-        "hidden lg:flex fixed top-0 right-0 h-14 bg-card border-b border-border z-50 items-center justify-between px-5",
-        isImpersonating ? "left-52 top-7" : "left-52"
-      )}>
-        {/* Left: empty (user box moved to sidebar bottom) */}
-        <div />
-
-        {/* Right: Notifications, Settings, Logo */}
-        <div className="flex items-center gap-2">
-          <NotificationBell />
-          <NavLink
-            to="/settings"
-            className="p-2 rounded-lg hover:bg-accent transition-colors text-muted-foreground hover:text-foreground"
-            data-testid="topbar-settings"
-          >
-            <Settings className="h-4 w-4" />
-          </NavLink>
-          <div className="w-px h-6 bg-border mx-1" />
-          <img src={LOGO_URL} alt="Kilolava" className="h-6 object-contain opacity-60" />
-        </div>
-      </header>
-
       {/* Mobile Header */}
       <header className={cn(
-        "lg:hidden fixed top-0 left-0 right-0 h-14 bg-card border-b border-border z-50 flex items-center justify-between px-4",
-        isImpersonating && "top-7"
+        'lg:hidden fixed top-0 left-0 right-0 h-14 bg-card border-b border-border z-50 flex items-center justify-between px-4',
+        isImpersonating && 'top-7'
       )}>
         <img src={LOGO_URL} alt="Kilolava" className="h-7 object-contain" />
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1">
           <NotificationBell />
           <Button
             variant="ghost"
             size="icon"
-            onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-            data-testid="mobile-menu-btn"
+            onClick={toggleTheme}
             className="h-9 w-9"
+            data-testid="mobile-theme-toggle"
           >
-            {mobileMenuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+            {theme === 'dark' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
           </Button>
         </div>
       </header>
 
-      {/* Mobile Menu Overlay */}
+      {/* Mobile "Altro" full menu */}
       {mobileMenuOpen && (
-        <div className="lg:hidden fixed inset-0 bg-black/50 z-40" onClick={() => setMobileMenuOpen(false)} />
+        <div className="lg:hidden fixed inset-0 bg-black/50 z-[60]" onClick={() => setMobileMenuOpen(false)} />
       )}
-
-      {/* Mobile Menu */}
       <div className={cn(
-        'lg:hidden fixed right-0 w-64 h-[calc(100vh-3.5rem)] bg-card border-l border-border z-50 transform transition-transform duration-200',
+        'lg:hidden fixed right-0 w-72 bg-card border-l border-border z-[65] transform transition-transform duration-200 flex flex-col',
         isImpersonating ? 'top-[calc(3.5rem+1.75rem)]' : 'top-14',
+        'bottom-0',
         mobileMenuOpen ? 'translate-x-0' : 'translate-x-full'
-      )}>
-        {/* Mobile role switcher */}
+      )} data-testid="mobile-full-menu">
+        <div className="px-4 py-3 border-b border-border flex items-center gap-3">
+          <div className="w-9 h-9 rounded-full bg-primary/10 flex items-center justify-center text-primary font-semibold text-sm">
+            {user?.name?.charAt(0).toUpperCase() || 'U'}
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-medium truncate">{user?.name}</p>
+            <p className="text-xs text-muted-foreground truncate">{ROLE_LABELS[role]}</p>
+          </div>
+          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setMobileMenuOpen(false)}>
+            <X className="h-4 w-4" />
+          </Button>
+        </div>
         {isRealAdmin && (
-          <div className="p-3 border-b border-border">
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-2">Visualizza come</p>
+          <div className="px-4 py-2.5 border-b border-border">
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1.5">Visualizza come</p>
             <div className="flex flex-wrap gap-1">
               {ALL_ROLES.map((r) => (
                 <button
                   key={r}
-                  onClick={() => { handleRoleSwitch(r); setMobileMenuOpen(false); }}
+                  onClick={() => handleRoleSwitch(r)}
                   className={cn(
-                    "px-2 py-1 rounded text-[10px] font-medium transition-colors",
-                    r === role ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground hover:bg-accent"
+                    'px-2 py-1 rounded-full text-[10px] font-medium transition-colors',
+                    r === role ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'
                   )}
                 >
                   {ROLE_LABELS[r]}
@@ -290,88 +408,68 @@ const AppLayout = ({ children }) => {
             </div>
           </div>
         )}
-
-        <nav className="p-3 space-y-1">
-          {navItems.map((item) => (
-            <NavLink
-              key={item.path}
-              to={item.path}
-              onClick={() => setMobileMenuOpen(false)}
-              data-testid={`mobile-nav-${item.path.slice(1)}`}
-              className={cn('sidebar-item', isActive(item.path) && 'active')}
-            >
-              <item.icon className="h-5 w-5" />
-              <span>{item.label}</span>
-            </NavLink>
-          ))}
+        <nav className="flex-1 overflow-y-auto px-3 py-3 space-y-0.5">
+          {visibleNav.map((entry) => renderNavEntry(entry, () => setMobileMenuOpen(false)))}
         </nav>
-        <div className="absolute bottom-0 left-0 right-0 p-4 border-t border-border">
-          <div className="flex items-center gap-3 mb-3">
-            <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center text-primary font-semibold">
-              {user?.name?.charAt(0).toUpperCase() || 'U'}
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium truncate">{user?.name}</p>
-              <p className="text-xs text-muted-foreground truncate">{user?.email}</p>
-            </div>
-          </div>
-          <div className="flex items-center gap-1">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={logout}
-              data-testid="mobile-logout-btn"
-              className="flex-1 justify-start text-muted-foreground hover:text-destructive"
-            >
-              <LogOut className="h-4 w-4 mr-2" />
-              {t('nav.logout')}
-            </Button>
-            <NavLink
-              to="/settings"
-              onClick={() => setMobileMenuOpen(false)}
-              data-testid="mobile-settings-btn"
-              className="p-2 rounded-lg hover:bg-accent text-muted-foreground"
-            >
-              <Settings className="h-5 w-5" />
-            </NavLink>
-          </div>
+        <div className="px-3 py-3 border-t border-border">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={logout}
+            data-testid="mobile-logout-btn"
+            className="w-full justify-start text-destructive hover:text-destructive"
+          >
+            <LogOut className="h-4 w-4 mr-2" />Esci
+          </Button>
         </div>
       </div>
 
-      {/* Mobile Bottom Navigation */}
-      <nav className="lg:hidden mobile-nav">
+      {/* Mobile Bottom Navigation: Home / Calendario / Pulizie / Altro */}
+      <nav className="lg:hidden mobile-nav" data-testid="mobile-bottom-nav">
         <div className="flex items-center justify-around">
-          {navItems.map((item) => (
-            <NavLink
-              key={item.path}
-              to={item.path}
-              data-testid={`bottom-nav-${item.path.slice(1)}`}
-              className={cn('mobile-nav-item', isActive(item.path) && 'active')}
-            >
-              <item.icon className="h-5 w-5" />
-              <span className="text-xs mt-1">{item.label}</span>
-            </NavLink>
-          ))}
+          <NavLink to="/dashboard" data-testid="bottom-nav-dashboard" className={cn('mobile-nav-item', location.pathname === '/dashboard' && 'active')}>
+            <LayoutDashboard className="h-5 w-5" />
+            <span className="text-[10px] mt-0.5">Home</span>
+          </NavLink>
+          <NavLink to="/calendar" data-testid="bottom-nav-calendar" className={cn('mobile-nav-item', location.pathname.startsWith('/calendar') && 'active')}>
+            <CalendarDays className="h-5 w-5" />
+            <span className="text-[10px] mt-0.5">Calendario</span>
+          </NavLink>
+          <NavLink to="/cleaning" data-testid="bottom-nav-cleaning" className={cn('mobile-nav-item', location.pathname.startsWith('/cleaning') && 'active')}>
+            <Sparkles className="h-5 w-5" />
+            <span className="text-[10px] mt-0.5">Pulizie</span>
+          </NavLink>
+          <button onClick={() => setMobileMenuOpen(true)} data-testid="bottom-nav-more" className={cn('mobile-nav-item', mobileMenuOpen && 'active')}>
+            <Menu className="h-5 w-5" />
+            <span className="text-[10px] mt-0.5">Altro</span>
+          </button>
         </div>
       </nav>
 
-      {/* Dark/Light toggle fixed bottom-right */}
-      <div className="fixed bottom-4 right-4 z-50">
-        <Button
-          variant="outline"
-          size="icon"
-          onClick={toggleTheme}
-          data-testid="theme-toggle"
-          className="h-9 w-9 rounded-full shadow-lg bg-card border-border"
-        >
-          {theme === 'dark' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
-        </Button>
+      {/* Mobile page title strip */}
+      <div className={cn(
+        'lg:hidden fixed left-0 right-0 h-10 bg-background/90 backdrop-blur-sm border-b border-border z-40 flex items-center px-4 gap-1.5',
+        isImpersonating ? 'top-[calc(3.5rem+1.75rem)]' : 'top-14'
+      )}>
+        {crumbs.map((c, i) => (
+          <React.Fragment key={i}>
+            {c.to ? (
+              <Link to={c.to} className="text-xs text-muted-foreground">{c.label}</Link>
+            ) : (
+              <span className="text-xs text-muted-foreground">{c.label}</span>
+            )}
+            <ChevronRight className="h-3 w-3 text-muted-foreground/50" />
+          </React.Fragment>
+        ))}
+        <span className="text-xs font-semibold truncate">{title}</span>
       </div>
 
       {/* Main Content */}
       <main className={cn(
-        "lg:pl-52 pb-20 lg:pb-0",
-        isImpersonating ? "pt-[calc(3.5rem+1.75rem)] lg:pt-[calc(3.5rem+1.75rem)]" : "pt-14 lg:pt-14"
+        'lg:pl-72 pb-20 lg:pb-0',
+        isImpersonating
+          ? 'pt-[calc(3.5rem+2.5rem+1.75rem)] lg:pt-7'
+          : 'pt-[calc(3.5rem+2.5rem)] lg:pt-0'
       )}>
         <div className="min-h-screen">
           {children || <Outlet />}

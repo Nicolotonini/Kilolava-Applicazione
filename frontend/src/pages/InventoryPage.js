@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useLanguage } from '../contexts/LanguageContext';
 import { inventoryApi, clientsApi, structuresApi } from '../lib/api';
 import { ExportButton } from '../components/ExportButton';
@@ -59,7 +60,12 @@ const SidePanel = ({ open, onClose, title, children }) => {
 
 const InventoryPage = () => {
   const { t } = useLanguage();
-  const [tab, setTab] = useState('articles');
+  const [searchParams] = useSearchParams();
+  const urlTab = searchParams.get('tab');
+  const [tab, setTab] = useState(TABS.includes(urlTab) ? urlTab : 'articles');
+  useEffect(() => {
+    if (urlTab && TABS.includes(urlTab)) setTab(urlTab);
+  }, [urlTab]);
   const [articles, setArticles] = useState([]);
   const [movements, setMovements] = useState([]);
   const [register, setRegister] = useState(null);

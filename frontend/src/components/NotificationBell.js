@@ -79,7 +79,7 @@ function getTimeAgo(dateStr) {
   return `${days}g fa`;
 }
 
-export const NotificationBell = ({ className }) => {
+export const NotificationBell = ({ className, dropUp = false, align = 'right' }) => {
   const navigate = useNavigate();
   const [unread, setUnread] = useState(0);
   const [notifications, setNotifications] = useState([]);
@@ -159,7 +159,11 @@ export const NotificationBell = ({ className }) => {
       </Button>
 
       {open && (
-        <div className="absolute right-0 top-full mt-2 w-80 sm:w-96 bg-card border border-border rounded-xl shadow-xl z-[60] overflow-hidden animate-in fade-in slide-in-from-top-2 duration-150">
+        <div className={cn(
+          "absolute w-80 sm:w-96 bg-card border border-border rounded-xl shadow-xl z-[60] overflow-hidden animate-in fade-in duration-150",
+          dropUp ? "bottom-full mb-2" : "top-full mt-2 slide-in-from-top-2",
+          align === 'left' ? "left-0" : "right-0"
+        )}>
           {/* Header */}
           <div className="flex items-center justify-between px-4 py-2.5 border-b border-border bg-muted/30">
             <h3 className="text-sm font-semibold">Notifiche</h3>

@@ -18,9 +18,17 @@ const ROLE_PERMISSIONS = {
 
 const OPS_ROLES = new Set(['admin', 'operations_manager']);
 
+const NAV_KEYS = [
+  'dashboard', 'calendar', 'clients', 'structures', 'cleaning', 'structure-inventory', 'deliveries',
+  'pl-jobs', 'pl-history', 'rl-warehouse', 'rl-movements', 'rl-articles',
+  'maintenance', 'documents', 'reports', 'users', 'activity', 'settings',
+  // legacy keys kept for compatibility
+  'inventory', 'logistics',
+];
+
 const NAV_VISIBILITY = {
-  admin: ['dashboard', 'clients', 'structures', 'calendar', 'inventory', 'logistics', 'cleaning', 'maintenance', 'users', 'reports', 'documents', 'activity', 'settings'],
-  operations_manager: ['dashboard', 'clients', 'structures', 'calendar', 'inventory', 'logistics', 'cleaning', 'maintenance', 'reports', 'documents', 'activity', 'settings'],
+  admin: NAV_KEYS,
+  operations_manager: NAV_KEYS.filter((k) => k !== 'users'),
   cleaner: [],
   rider: [],
   maintenance: [],

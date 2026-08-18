@@ -32,8 +32,8 @@
         --destructive: 0 84% 60%;
         --destructive-foreground: 0 0% 100%;
         
-        --border: 214 32% 91%;
-        --input: 214 32% 91%;
+        --border: 220 16% 92%;
+        --input: 220 16% 92%;
         --ring: 347 87% 63%;
         
         /* Semantic colors */
@@ -47,7 +47,7 @@
         --booking: 215 100% 25%;
         --ical-other: 220 9% 46%;
         
-        --radius: 0.5rem;
+        --radius: 0.65rem;
     }
 
     .dark {
@@ -122,7 +122,7 @@
     }
     
     .kilolava-card {
-        @apply bg-card rounded-xl border border-border/50 shadow-sm;
+        @apply bg-card rounded-xl border border-border/60;
     }
     
     .kilolava-card-interactive {

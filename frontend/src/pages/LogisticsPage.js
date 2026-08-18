@@ -330,7 +330,7 @@ const LogisticsPage = () => {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
-          <h1 className="text-xl lg:text-2xl font-heading font-semibold">Logistica</h1>
+          <h1 className="text-xl lg:text-2xl font-heading font-semibold">Consegne</h1>
           {summary && (
             <div className="flex items-center gap-3 mt-1 text-sm flex-wrap">
               <span className="text-muted-foreground">{summary.total_tasks} stop</span>

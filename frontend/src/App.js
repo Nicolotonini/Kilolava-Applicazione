@@ -29,6 +29,9 @@ import DocumentDetailPage from './pages/DocumentDetailPage';
 import NewDocumentPage from './pages/NewDocumentPage';
 import StructuresListPage from './pages/StructuresListPage';
 import StructureDetailPage from './pages/StructureDetailPage';
+import StructureInventoryPage from './pages/StructureInventoryPage';
+import PrivateLaundryPage from './pages/PrivateLaundryPage';
+import ReportsPage from './pages/ReportsPage';
 
 // Portal Pages
 import PortalDashboard from './pages/portal/PortalDashboard';
@@ -169,12 +172,16 @@ function AppRoutes() {
         <Route path="calendar" element={<CalendarPage />} />
         <Route path="inventory" element={<InventoryPage />} />
         <Route path="logistics" element={<LogisticsPage />} />
+        <Route path="deliveries" element={<Navigate to="/logistics" replace />} />
+        <Route path="structure-inventory" element={<StructureInventoryPage />} />
+        <Route path="private-laundry/jobs" element={<PrivateLaundryPage view="jobs" />} />
+        <Route path="private-laundry/history" element={<PrivateLaundryPage view="history" />} />
         <Route path="cleaning" element={<CleaningPage />} />
         <Route path="checklist-templates" element={<ChecklistTemplatesPage />} />
         <Route path="users" element={<UsersPage />} />
         <Route path="activity" element={<ActivityLogPage />} />
         <Route path="notifications" element={<NotificationsPage />} />
-        <Route path="reports" element={<Navigate to="/dashboard" replace />} />
+        <Route path="reports" element={<ReportsPage />} />
         <Route path="documents" element={<DocumentsPage />} />
         <Route path="documents/new" element={<NewDocumentPage />} />
         <Route path="documents/:docId" element={<DocumentDetailPage />} />
