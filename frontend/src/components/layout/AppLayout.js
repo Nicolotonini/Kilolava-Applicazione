@@ -302,9 +302,9 @@ const AppLayout = ({ children }) => {
         'hidden lg:flex lg:flex-col lg:w-72 lg:fixed lg:inset-y-0 bg-card border-r border-border',
         isImpersonating && 'lg:top-7'
       )}>
-        <div className="flex items-center gap-2.5 h-16 px-5 flex-shrink-0">
-          <img src={LOGO_URL} alt="Kilolava" className="h-9 object-contain" data-testid="logo" />
-          <span className="text-xl font-heading font-bold text-primary tracking-tight">kilolava</span>
+        <div className="flex items-center gap-3 h-20 px-4 flex-shrink-0">
+          <img src={LOGO_URL} alt="Kilolava" className="h-12 object-contain" data-testid="logo" />
+          <span className="flex-1 text-3xl font-heading font-bold text-primary tracking-tight">kilolava</span>
         </div>
         <nav className="flex-1 px-3 py-3 space-y-0.5 overflow-y-auto scrollbar-hide" data-testid="sidebar-nav">
           {visibleNav.map((entry) => renderNavEntry(entry))}
@@ -312,16 +312,38 @@ const AppLayout = ({ children }) => {
 
         {/* Bottom: notifications, theme, account */}
         <div className="px-3 py-3 border-t border-border space-y-1.5">
-          <div className="flex items-center gap-1 px-1">
+          <div className="flex items-center justify-between px-2">
             <NotificationBell dropUp align="left" />
             <Button
               variant="ghost"
               size="icon"
               onClick={toggleTheme}
               data-testid="theme-toggle"
+              title={theme === 'dark' ? 'Tema chiaro' : 'Tema scuro'}
               className="h-9 w-9"
             >
               {theme === 'dark' ? <Sun className="h-[18px] w-[18px]" /> : <Moon className="h-[18px] w-[18px]" />}
+            </Button>
+            <NavLink
+              to="/settings"
+              data-testid="sidebar-settings-btn"
+              title="Impostazioni"
+              className={cn(
+                'h-9 w-9 flex items-center justify-center rounded-md hover:bg-muted transition-colors',
+                location.pathname === '/settings' ? 'text-primary bg-primary/10' : 'text-foreground/70'
+              )}
+            >
+              <Settings className="h-[18px] w-[18px]" />
+            </NavLink>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={logout}
+              data-testid="sidebar-logout-btn"
+              title="Esci"
+              className="h-9 w-9 text-foreground/70 hover:text-destructive"
+            >
+              <LogOut className="h-[18px] w-[18px]" />
             </Button>
           </div>
           <div className="relative" ref={accountRef}>
