@@ -1,0 +1,132 @@
+[
+ {
+  "id": "098f0533-7591-4096-9bae-937f2516dbd0",
+  "order_number": "ORD-2026-0001",
+  "client_id": "eab85d0f-45c0-458f-ab88-08c442810aff",
+  "structure_id": null,
+  "status": "submitted",
+  "items": [
+   {
+    "article_id": "b52c9aa8-b0c6-42a0-9840-0dba7e224a43",
+    "article_name": "Kit Biancheria Matrimoniale",
+    "quantity": 2,
+    "unit_price": 8.5,
+    "total": 17.0
+   }
+  ],
+  "delivery_date": "2026-03-25",
+  "delivery_slot": "09:00-12:00",
+  "notes": "TEST_ORDER - automated test",
+  "subtotal": 17.0,
+  "total": 17.0,
+  "logistics_task_id": null,
+  "created_at": "2026-03-24T21:50:28.474305+00:00",
+  "updated_at": "2026-03-24T21:50:28.474305+00:00",
+  "confirmed_at": null,
+  "delivered_at": null
+ },
+ {
+  "id": "a2245319-c3e3-45ce-9388-2ea3f2c4c16c",
+  "order_number": "ORD-2026-0002",
+  "client_id": "eab85d0f-45c0-458f-ab88-08c442810aff",
+  "structure_id": null,
+  "status": "cancelled",
+  "items": [
+   {
+    "article_id": "b52c9aa8-b0c6-42a0-9840-0dba7e224a43",
+    "article_name": "Kit Biancheria Matrimoniale",
+    "quantity": 1,
+    "unit_price": 8.5,
+    "total": 8.5
+   }
+  ],
+  "delivery_date": "2026-03-25",
+  "delivery_slot": "09:00-12:00",
+  "notes": "TEST_CANCEL - to be cancelled",
+  "subtotal": 8.5,
+  "total": 8.5,
+  "logistics_task_id": null,
+  "created_at": "2026-03-24T21:50:29.076950+00:00",
+  "updated_at": "2026-03-24T21:50:29.198353+00:00",
+  "confirmed_at": null,
+  "delivered_at": null
+ },
+ {
+  "id": "4c8dd21b-86fb-4af0-b775-b7e49c218e48",
+  "order_number": "ORD-2026-0003",
+  "client_id": "eab85d0f-45c0-458f-ab88-08c442810aff",
+  "structure_id": null,
+  "status": "delivered",
+  "items": [
+   {
+    "article_id": "b52c9aa8-b0c6-42a0-9840-0dba7e224a43",
+    "article_name": "Kit Biancheria Matrimoniale",
+    "quantity": 1,
+    "unit_price": 8.5,
+    "total": 8.5
+   }
+  ],
+  "delivery_date": "2026-03-25",
+  "delivery_slot": "09:00-12:00",
+  "notes": "TEST_STATUS - for status update test",
+  "subtotal": 8.5,
+  "total": 8.5,
+  "logistics_task_id": null,
+  "created_at": "2026-03-24T21:50:30.889530+00:00",
+  "updated_at": "2026-03-24T21:50:31.148846+00:00",
+  "confirmed_at": "2026-03-24T21:50:31.019603+00:00",
+  "delivered_at": "2026-03-24T21:50:31.148855+00:00"
+ },
+ {
+  "id": "9f580557-ec00-48d4-98e5-f6660f58cf1c",
+  "order_number": "ORD-2026-0004",
+  "client_id": "eab85d0f-45c0-458f-ab88-08c442810aff",
+  "structure_id": null,
+  "status": "confirmed",
+  "items": [
+   {
+    "article_id": "b52c9aa8-b0c6-42a0-9840-0dba7e224a43",
+    "article_name": "Kit Biancheria Matrimoniale",
+    "quantity": 1,
+    "unit_price": 8.5,
+    "total": 8.5
+   }
+  ],
+  "delivery_date": "2026-03-25",
+  "delivery_slot": "09:00-12:00",
+  "notes": "TEST_CANCEL_RESTRICT - for cancel restriction test",
+  "subtotal": 8.5,
+  "total": 8.5,
+  "logistics_task_id": null,
+  "created_at": "2026-03-24T21:50:32.895398+00:00",
+  "updated_at": "2026-03-24T21:50:32.994394+00:00",
+  "confirmed_at": "2026-03-24T21:50:32.994402+00:00",
+  "delivered_at": null
+ },
+ {
+  "id": "fae17ce1-5152-4ec6-96a4-6bdb51f61b33",
+  "order_number": "ORD-2026-0005",
+  "client_id": "eab85d0f-45c0-458f-ab88-08c442810aff",
+  "structure_id": null,
+  "status": "submitted",
+  "items": [
+   {
+    "article_id": "b52c9aa8-b0c6-42a0-9840-0dba7e224a43",
+    "article_name": "Kit Biancheria Matrimoniale",
+    "quantity": 2,
+    "unit_price": 8.5,
+    "total": 17.0
+   }
+  ],
+  "delivery_date": "2026-03-25",
+  "delivery_slot": "09:00-12:00",
+  "notes": null,
+  "subtotal": 17.0,
+  "total": 17.0,
+  "logistics_task_id": null,
+  "created_at": "2026-03-24T21:51:44.333444+00:00",
+  "updated_at": "2026-03-24T21:51:44.333444+00:00",
+  "confirmed_at": null,
+  "delivered_at": null
+ }
+]

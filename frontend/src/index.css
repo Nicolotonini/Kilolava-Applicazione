@@ -1,0 +1,235 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Work+Sans:wght@400;500;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+    :root {
+        /* Kilolava Brand Colors - Light Theme */
+        --background: 210 20% 98%;
+        --foreground: 222 47% 11%;
+        
+        --card: 0 0% 100%;
+        --card-foreground: 222 47% 11%;
+        
+        --popover: 0 0% 100%;
+        --popover-foreground: 222 47% 11%;
+        
+        /* Primary - Kilolava Coral #F24E75 */
+        --primary: 347 87% 63%;
+        --primary-foreground: 0 0% 100%;
+        
+        --secondary: 215 16% 47%;
+        --secondary-foreground: 0 0% 100%;
+        
+        --muted: 210 20% 96%;
+        --muted-foreground: 215 16% 47%;
+        
+        --accent: 347 87% 96%;
+        --accent-foreground: 347 87% 50%;
+        
+        --destructive: 0 84% 60%;
+        --destructive-foreground: 0 0% 100%;
+        
+        --border: 214 32% 91%;
+        --input: 214 32% 91%;
+        --ring: 347 87% 63%;
+        
+        /* Semantic colors */
+        --success: 160 84% 39%;
+        --success-foreground: 0 0% 100%;
+        --warning: 38 92% 50%;
+        --warning-foreground: 0 0% 100%;
+        
+        /* iCal source colors */
+        --airbnb: 358 100% 67%;
+        --booking: 215 100% 25%;
+        --ical-other: 220 9% 46%;
+        
+        --radius: 0.5rem;
+    }
+
+    .dark {
+        /* Kilolava Brand Colors - Dark Theme */
+        --background: 222 47% 7%;
+        --foreground: 210 20% 98%;
+        
+        --card: 222 47% 11%;
+        --card-foreground: 210 20% 98%;
+        
+        --popover: 222 47% 11%;
+        --popover-foreground: 210 20% 98%;
+        
+        /* Primary - Kilolava Coral #F24E75 */
+        --primary: 347 87% 63%;
+        --primary-foreground: 0 0% 100%;
+        
+        --secondary: 215 20% 65%;
+        --secondary-foreground: 222 47% 11%;
+        
+        --muted: 217 33% 17%;
+        --muted-foreground: 215 20% 65%;
+        
+        --accent: 347 50% 20%;
+        --accent-foreground: 347 87% 75%;
+        
+        --destructive: 0 62% 30%;
+        --destructive-foreground: 0 0% 98%;
+        
+        --border: 217 33% 17%;
+        --input: 217 33% 17%;
+        --ring: 347 87% 63%;
+        
+        /* Semantic colors */
+        --success: 160 60% 45%;
+        --success-foreground: 0 0% 100%;
+        --warning: 38 80% 50%;
+        --warning-foreground: 0 0% 100%;
+        
+        /* iCal source colors */
+        --airbnb: 358 100% 67%;
+        --booking: 215 100% 45%;
+        --ical-other: 220 9% 60%;
+    }
+}
+
+@layer base {
+    * {
+        @apply border-border;
+    }
+    
+    html {
+        font-family: 'Inter', sans-serif;
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
+    }
+    
+    body {
+        @apply bg-background text-foreground;
+        font-feature-settings: "rlig" 1, "calt" 1;
+    }
+    
+    h1, h2, h3, h4, h5, h6 {
+        font-family: 'Work Sans', sans-serif;
+    }
+}
+
+@layer components {
+    /* Kilolava specific utilities */
+    .kilolava-gradient {
+        background: linear-gradient(135deg, hsl(var(--primary)) 0%, hsl(347 87% 55%) 100%);
+    }
+    
+    .kilolava-card {
+        @apply bg-card rounded-xl border border-border/50 shadow-sm;
+    }
+    
+    .kilolava-card-interactive {
+        @apply kilolava-card hover:border-primary/30 cursor-pointer transition-all duration-200;
+    }
+    
+    /* Status badges */
+    .badge-active {
+        @apply bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 px-2 py-0.5 rounded-full text-xs font-medium;
+    }
+    
+    .badge-inactive {
+        @apply bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400 px-2 py-0.5 rounded-full text-xs font-medium;
+    }
+    
+    .badge-pending {
+        @apply bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400 px-2 py-0.5 rounded-full text-xs font-medium;
+    }
+    
+    /* iCal source badges */
+    .badge-airbnb {
+        @apply bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400 px-2 py-0.5 rounded-full text-xs font-medium;
+    }
+    
+    .badge-booking {
+        @apply bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400 px-2 py-0.5 rounded-full text-xs font-medium;
+    }
+    
+    .badge-other {
+        @apply bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400 px-2 py-0.5 rounded-full text-xs font-medium;
+    }
+    
+    /* Mobile bottom nav */
+    .mobile-nav {
+        @apply fixed bottom-0 left-0 right-0 bg-card border-t border-border z-50 pb-safe;
+    }
+    
+    .mobile-nav-item {
+        @apply flex flex-col items-center justify-center py-2 px-3 text-muted-foreground transition-colors;
+    }
+    
+    .mobile-nav-item.active {
+        @apply text-primary;
+    }
+    
+    /* Desktop sidebar */
+    .sidebar {
+        @apply w-64 h-screen bg-card border-r border-border fixed left-0 top-0 z-40;
+    }
+    
+    .sidebar-item {
+        @apply flex items-center gap-3 px-4 py-3 text-foreground/70 hover:bg-accent hover:text-accent-foreground rounded-lg mx-2 transition-colors;
+    }
+    
+    .sidebar-item.active {
+        @apply bg-primary/10 text-primary font-medium;
+    }
+}
+
+@layer utilities {
+    /* Safe area padding for mobile */
+    .pb-safe {
+        padding-bottom: env(safe-area-inset-bottom, 0px);
+    }
+    
+    .pt-safe {
+        padding-top: env(safe-area-inset-top, 0px);
+    }
+    
+    /* Hide scrollbar but allow scrolling */
+    .scrollbar-hide {
+        -ms-overflow-style: none;
+        scrollbar-width: none;
+    }
+    
+    .scrollbar-hide::-webkit-scrollbar {
+        display: none;
+    }
+    
+    /* Animation utilities */
+    .animate-in {
+        animation: fadeIn 0.2s ease-out;
+    }
+    
+    @keyframes fadeIn {
+        from {
+            opacity: 0;
+            transform: translateY(10px);
+        }
+        to {
+            opacity: 1;
+            transform: translateY(0);
+        }
+    }
+}
+
+/* PWA specific styles */
+@media (display-mode: standalone) {
+    body {
+        -webkit-user-select: none;
+        user-select: none;
+    }
+}
+
+/* Debug wrapper styles */
+@layer base {
+    [data-debug-wrapper="true"] {
+        display: contents !important;
+    }
+}

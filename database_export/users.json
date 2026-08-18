@@ -1,0 +1,100 @@
+[
+ {
+  "id": "7338dc53-7896-457c-97f6-ce5bf8533532",
+  "email": "test_manager_233238@kilolava.com",
+  "password_hash": "$2b$12$VE7hO/yVDHViycUYMRjnkeDMUUkGAV0vZWqFtTPaRm4vLtyiokqTG",
+  "name": "Test Manager 233238",
+  "role": "admin",
+  "language": "it",
+  "created_at": "2026-03-23T23:32:38.450259+00:00",
+  "updated_at": "2026-03-23T23:32:38.450259+00:00"
+ },
+ {
+  "id": "bfe35301-5e9d-4417-809b-ab0dfb8a1d51",
+  "email": "test_manager_22048@kilolava.com",
+  "password_hash": "$2b$12$HEDYh2MPrU7nWM0YfDLHh.eDMRs2VcaeqNeN1XeIWgD/3.Gf3CQ72",
+  "name": "Test Manager 22048",
+  "role": "admin",
+  "language": "it",
+  "created_at": "2026-03-23T23:36:09.445009+00:00",
+  "updated_at": "2026-03-23T23:36:09.445009+00:00"
+ },
+ {
+  "id": "224aa50a-6ab1-4e08-b429-59b8daf7f6f9",
+  "email": "test_manager_234017@kilolava.com",
+  "password_hash": "$2b$12$vtWsCvN2pJ.MA4jYYRsldObySr6HFTvlGsDG8P3hag5K3SA7hxfiq",
+  "name": "Test Manager 234017",
+  "role": "admin",
+  "language": "it",
+  "created_at": "2026-03-23T23:40:17.961259+00:00",
+  "updated_at": "2026-03-23T23:40:17.961259+00:00"
+ },
+ {
+  "id": "b839bbeb-99c4-4388-8046-bd6536cef486",
+  "email": "test_user@kilolava.com",
+  "password_hash": "$2b$12$jdp2YMQcbZXBo.Q8vzG1oeEYMzHOebAa.YCWph1he36vwzxfiUw6.",
+  "name": "Test User",
+  "role": "admin",
+  "language": "it",
+  "created_at": "2026-03-23T23:40:25.003291+00:00",
+  "updated_at": "2026-08-17T17:15:22.413371+00:00"
+ },
+ {
+  "id": "c7ba551c-cf21-462c-9172-e3d2a354d266",
+  "email": "rider1@kilolava.com",
+  "password_hash": "$2b$12$guE9w6V3lynSivSV/4H7HeXEdKDUmb//qcMk6ejS95Fo7yoGoohbC",
+  "name": "Marco Rossi",
+  "role": "rider",
+  "language": "it",
+  "phone": "+39 333 1234567",
+  "vehicle_type": "Furgone",
+  "is_active": true,
+  "created_at": "2026-03-24T20:28:07.188513+00:00",
+  "updated_at": "2026-03-24T20:28:07.188513+00:00"
+ },
+ {
+  "id": "2245179b-5457-43f0-bc43-e19d93d2b935",
+  "email": "mario.rossi@cliente.it",
+  "password_hash": "$2b$12$QXqQprnE/wU25kWEaTTUyuLhPU/81YqluZ4eefZMJdLSQ95LpiDCe",
+  "name": "Mario Rossi",
+  "role": "client",
+  "language": "it",
+  "client_id": "eab85d0f-45c0-458f-ab88-08c442810aff",
+  "created_at": "2026-03-24T21:46:37.902982+00:00",
+  "updated_at": "2026-03-24T21:46:37.902982+00:00"
+ },
+ {
+  "id": "1f4432fa-ca75-400e-becb-58c4605f26c0",
+  "email": "maria.bianchi@kilolava.com",
+  "password_hash": "$2b$12$Zl8d8e/EE7Awtw2ngRNvveDIRbc4eA8pcHj.xVSM4E8KtPGVwGMSm",
+  "first_name": "Maria",
+  "last_name": "Bianchi",
+  "name": "Maria Bianchi",
+  "role": "cleaner",
+  "language": "it",
+  "phone": "+39 333 9876543",
+  "vehicle_type": null,
+  "client_id": null,
+  "is_active": true,
+  "notes": null,
+  "created_at": "2026-03-24T22:43:51.832038+00:00",
+  "updated_at": "2026-03-24T22:43:51.832038+00:00"
+ },
+ {
+  "id": "e27765e3-b2a7-45cc-8e03-77a9d8b0ff12",
+  "email": "luigi.verdi@kilolava.com",
+  "password_hash": "$2b$12$FWgAxQWvDhoSdyPFIqv0degg1bYM4GdAMD/uJFF73dMxnoxPnXxKm",
+  "first_name": "Luigi",
+  "last_name": "Verdi",
+  "name": "Luigi Verdi",
+  "role": "maintenance",
+  "language": "it",
+  "phone": "+39 333 1111111",
+  "vehicle_type": null,
+  "client_id": null,
+  "is_active": true,
+  "notes": null,
+  "created_at": "2026-03-24T23:33:19.586834+00:00",
+  "updated_at": "2026-03-24T23:33:19.586834+00:00"
+ }
+]

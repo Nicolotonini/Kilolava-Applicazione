@@ -1,0 +1,149 @@
+{
+  "brand": {
+    "name": "Kilolava",
+    "identity": "Operational Excellence",
+    "tone": "Efficient, Clear, Trustworthy, Energetic",
+    "archetype": "The Soft Utility",
+    "core_values": [
+      "Speed of use",
+      "Clarity over decoration",
+      "Mobile-first reliability"
+    ]
+  },
+  "colors": {
+    "primary": {
+      "DEFAULT": "#F24E75",
+      "foreground": "#FFFFFF",
+      "hover": "#E03B62",
+      "active": "#C92A4F",
+      "soft": "#FDE8ED"
+    },
+    "secondary": {
+      "DEFAULT": "#64748B",
+      "foreground": "#FFFFFF",
+      "soft": "#F1F5F9"
+    },
+    "background": {
+      "light": "#F8F9FA",
+      "dark": "#0F172A"
+    },
+    "surface": {
+      "light": "#FFFFFF",
+      "dark": "#1E293B"
+    },
+    "semantic": {
+      "airbnb": "#FF5A5F",
+      "booking": "#003580",
+      "other_ical": "#6B7280",
+      "success": "#10B981",
+      "warning": "#F59E0B",
+      "error": "#EF4444"
+    }
+  },
+  "typography": {
+    "font_family": {
+      "headings": "Work Sans, sans-serif",
+      "body": "Inter, sans-serif",
+      "mono": "JetBrains Mono, monospace"
+    },
+    "scale": {
+      "h1": "text-4xl md:text-5xl font-bold tracking-tight",
+      "h2": "text-3xl md:text-4xl font-semibold tracking-tight",
+      "h3": "text-2xl md:text-3xl font-semibold",
+      "body_lg": "text-lg leading-relaxed",
+      "body_base": "text-base leading-relaxed",
+      "caption": "text-sm text-muted-foreground",
+      "label": "text-xs font-medium uppercase tracking-wider text-muted-foreground"
+    }
+  },
+  "layout": {
+    "spacing": {
+      "container_padding_mobile": "p-4",
+      "container_padding_desktop": "p-8",
+      "section_gap": "gap-8",
+      "item_gap": "gap-4"
+    },
+    "radius": {
+      "default": "rounded-lg",
+      "button": "rounded-md",
+      "card": "rounded-xl"
+    },
+    "shadows": {
+      "card": "shadow-sm hover:shadow-md transition-shadow",
+      "dropdown": "shadow-lg",
+      "sticky_nav": "shadow-sm backdrop-blur-md bg-background/80"
+    },
+    "grid": {
+      "dashboard_desktop": "grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-6",
+      "dashboard_mobile": "flex flex-col gap-4",
+      "card_list": "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6"
+    }
+  },
+  "components": {
+    "buttons": {
+      "primary": "bg-[#F24E75] hover:bg-[#E03B62] text-white font-medium shadow-sm active:scale-95 transition-transform",
+      "secondary": "bg-secondary text-secondary-foreground hover:bg-secondary/90 shadow-sm",
+      "ghost": "hover:bg-accent hover:text-accent-foreground",
+      "outline": "border border-input bg-background hover:bg-accent hover:text-accent-foreground"
+    },
+    "cards": {
+      "default": "bg-card text-card-foreground rounded-xl border border-border/50 shadow-sm",
+      "interactive": "bg-card text-card-foreground rounded-xl border border-border/50 shadow-sm hover:border-[#F24E75]/30 cursor-pointer transition-colors"
+    },
+    "inputs": {
+      "default": "flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#F24E75] focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+    },
+    "status_badges": {
+      "active": "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 px-2 py-0.5 rounded-full text-xs font-medium",
+      "pending": "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400 px-2 py-0.5 rounded-full text-xs font-medium",
+      "error": "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400 px-2 py-0.5 rounded-full text-xs font-medium"
+    }
+  },
+  "visual_enhancers": {
+    "glassmorphism": "backdrop-blur-xl bg-white/70 dark:bg-slate-900/70 border border-white/20",
+    "gradients": "None. Use solid colors for operational clarity.",
+    "micro_interactions": {
+      "hover_lift": "hover:-translate-y-0.5 transition-transform duration-200",
+      "button_press": "active:scale-95 transition-transform duration-100"
+    }
+  },
+  "images": {
+    "login_hero": {
+      "url": "https://images.unsplash.com/photo-1758548157747-285c7012db5b?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1NTZ8MHwxfHNlYXJjaHwxfHxtb2Rlcm4lMjBicmlnaHQlMjBhcGFydG1lbnQlMjBpbnRlcmlvciUyMG1pbmltYWxpc3R8ZW58MHx8fHwxNzc0MzA4MjAzfDA&ixlib=rb-4.1.0&q=85",
+      "alt": "Modern bright apartment interior",
+      "usage": "Cover image for login page or landing hero"
+    },
+    "dashboard_empty": {
+      "url": "https://images.unsplash.com/photo-1652664767434-9cf9447d499a?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjAzNDR8MHwxfHNlYXJjaHwzfHxtb2Rlcm4lMjBsYXVuZHJ5JTIwc2VydmljZSUyMGFuZCUyMGNsZWFuaW5nfGVufDB8fHx8MTc3NDMwODIwMHww&ixlib=rb-4.1.0&q=85",
+      "alt": "Clean laundry room",
+      "usage": "Empty state for tasks or dashboard"
+    },
+    "rider_illustration": {
+      "url": "https://images.unsplash.com/photo-1757777440206-00dcce0205e3?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NDk1ODF8MHwxfHNlYXJjaHwyfHx1cmJhbiUyMGRlbGl2ZXJ5JTIwcmlkZXIlMjBjb3VyaWVyfGVufDB8fHx8MTc3NDMwODIwMnww&ixlib=rb-4.1.0&q=85",
+      "alt": "Delivery rider on street",
+      "usage": "Logistics section or rider onboarding"
+    },
+    "logo": {
+      "url": "https://customer-assets.emergentagent.com/job_kilolava-core/artifacts/wuuhyigy_images.png",
+      "alt": "Kilolava Logo"
+    }
+  },
+  "instructions_to_main_agent": [
+    "INSTALL_DEPENDENCIES: yarn add lucide-react sonner clsx tailwind-merge date-fns react-day-picker",
+    "THEME_SETUP: Ensure dark mode toggle works using a ThemeProvider context.",
+    "COMPONENT_OVERRIDE: Do not use default Shadcn 'zinc' colors. Override tailwind.config.js with the provided Brand Colors.",
+    "MOBILE_FIRST: Always test layouts at 'grid-cols-1' first before adding 'md:grid-cols-3'.",
+    "NAVIGATION: Use a sticky bottom nav for mobile (Cleaner/Rider view) and Sidebar for desktop (Manager view).",
+    "FORMS: Use Shadcn Form + React Hook Form + Zod for all inputs.",
+    "ICAL_ICONS: Use specific colors for Airbnb (red) and Booking.com (blue) when displaying calendar sources.",
+    "DATA_TESTID: Add data-testid='...' to all interactive elements for testing."
+  ],
+  "UNIVERSAL_GUIDELINES_FOR_MAIN_AGENT": [
+    "Avoid 'AI Slop': Do not use generic gradients or centered text layouts.",
+    "Create depth: Use z-index and subtle shadows to layer content.",
+    "Micro-animations: Add hover states and transitions to everything interactive.",
+    "Spacing: Use 'p-6' or 'p-8' inside cards to let content breathe.",
+    "No generic AI emojis: Do not use 🚀, 💡, ⚡️ in UI.",
+    "Contrast: Ensure text is readable on the #F24E75 primary color (use white text)."
+  ]
+}

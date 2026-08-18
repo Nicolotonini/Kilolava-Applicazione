@@ -1,0 +1,93 @@
+[
+ {
+  "id": "27f18fed-f892-4bcb-a6e5-33358822da18",
+  "timestamp": "2026-08-17T18:03:54.259257+00:00",
+  "user_id": "b839bbeb-99c4-4388-8046-bd6536cef486",
+  "user_name": "Test User",
+  "user_role": "admin",
+  "method": "PUT",
+  "path": "/api/clients/eab85d0f-45c0-458f-ab88-08c442810aff",
+  "action": "update",
+  "entity_type": "clients",
+  "entity_id": "eab85d0f-45c0-458f-ab88-08c442810aff",
+  "status_code": 200
+ },
+ {
+  "id": "c3d16fb8-c339-4aec-b084-3f3f2771f415",
+  "timestamp": "2026-08-17T18:05:36.565673+00:00",
+  "user_id": "b839bbeb-99c4-4388-8046-bd6536cef486",
+  "user_name": "Test User",
+  "user_role": "admin",
+  "method": "POST",
+  "path": "/api/clients",
+  "action": "create",
+  "entity_type": "clients",
+  "entity_id": null,
+  "status_code": 200
+ },
+ {
+  "id": "25f1bb1c-9d22-4cf0-aa17-370628e8ed78",
+  "timestamp": "2026-08-17T18:05:36.926780+00:00",
+  "user_id": "b839bbeb-99c4-4388-8046-bd6536cef486",
+  "user_name": "Test User",
+  "user_role": "admin",
+  "method": "PUT",
+  "path": "/api/clients/8dce00ef-3aa3-4a22-802c-a10f29b5539a",
+  "action": "update",
+  "entity_type": "clients",
+  "entity_id": "8dce00ef-3aa3-4a22-802c-a10f29b5539a",
+  "status_code": 200
+ },
+ {
+  "id": "26703851-b6f3-43df-a188-e812dd585f0e",
+  "timestamp": "2026-08-17T18:05:37.216874+00:00",
+  "user_id": "b839bbeb-99c4-4388-8046-bd6536cef486",
+  "user_name": "Test User",
+  "user_role": "admin",
+  "method": "DELETE",
+  "path": "/api/clients/8dce00ef-3aa3-4a22-802c-a10f29b5539a",
+  "action": "delete",
+  "entity_type": "clients",
+  "entity_id": "8dce00ef-3aa3-4a22-802c-a10f29b5539a",
+  "status_code": 200
+ },
+ {
+  "id": "7ce9af97-2d57-40e3-9b18-11417767834c",
+  "timestamp": "2026-08-17T18:06:01.021297+00:00",
+  "user_id": "b839bbeb-99c4-4388-8046-bd6536cef486",
+  "user_name": "Test User",
+  "user_role": "admin",
+  "method": "POST",
+  "path": "/api/clients",
+  "action": "create",
+  "entity_type": "clients",
+  "entity_id": null,
+  "status_code": 200
+ },
+ {
+  "id": "f76efefe-0178-44a2-9aea-8aaef5a61eb7",
+  "timestamp": "2026-08-17T18:06:01.210734+00:00",
+  "user_id": "b839bbeb-99c4-4388-8046-bd6536cef486",
+  "user_name": "Test User",
+  "user_role": "admin",
+  "method": "PUT",
+  "path": "/api/clients/3ebb541d-76f3-4b46-a4a8-b46856fce0fa",
+  "action": "update",
+  "entity_type": "clients",
+  "entity_id": "3ebb541d-76f3-4b46-a4a8-b46856fce0fa",
+  "status_code": 200
+ },
+ {
+  "id": "ff9e6d6c-a370-401c-bee5-d67061d967fc",
+  "timestamp": "2026-08-17T18:06:01.398020+00:00",
+  "user_id": "b839bbeb-99c4-4388-8046-bd6536cef486",
+  "user_name": "Test User",
+  "user_role": "admin",
+  "method": "DELETE",
+  "path": "/api/clients/3ebb541d-76f3-4b46-a4a8-b46856fce0fa",
+  "action": "delete",
+  "entity_type": "clients",
+  "entity_id": "3ebb541d-76f3-4b46-a4a8-b46856fce0fa",
+  "status_code": 200
+ }
+]

@@ -1,0 +1,175 @@
+[
+ {
+  "id": "19b0ff79-029c-40a2-ae0f-55e5c9799774",
+  "document_number": "DDT-2026-0001",
+  "document_type": "ddt",
+  "status": "generated",
+  "issue_date": "2026-03-25",
+  "client_id": "eab85d0f-45c0-458f-ab88-08c442810aff",
+  "structure_id": null,
+  "unit_id": null,
+  "destination_address": "Via Roma 1, Milano",
+  "items": [
+   {
+    "article_id": null,
+    "description": "Lenzuola matrimoniali",
+    "quantity": 10,
+    "unit": "pz",
+    "notes": null
+   },
+   {
+    "article_id": null,
+    "description": "Asciugamani grandi",
+    "quantity": 20,
+    "unit": "pz",
+    "notes": null
+   }
+  ],
+  "notes": "Consegna urgente",
+  "delivery_ref": "Consegna #42",
+  "order_id": null,
+  "logistics_task_id": null,
+  "movement_id": null,
+  "external_ref": null,
+  "created_by": "b839bbeb-99c4-4388-8046-bd6536cef486",
+  "created_at": "2026-03-25T13:20:09.567721+00:00",
+  "updated_at": "2026-03-25T13:20:10.173635+00:00"
+ },
+ {
+  "id": "9d4c7edd-8d79-43b5-9a65-5885cc00e584",
+  "document_number": "DDT-2026-0002",
+  "document_type": "ddt",
+  "status": "draft",
+  "issue_date": "2026-03-25",
+  "client_id": "eab85d0f-45c0-458f-ab88-08c442810aff",
+  "structure_id": null,
+  "unit_id": null,
+  "destination_address": null,
+  "items": [
+   {
+    "article_id": "b52c9aa8-b0c6-42a0-9840-0dba7e224a43",
+    "description": "Kit Biancheria Matrimoniale",
+    "quantity": 2,
+    "unit": "pz",
+    "notes": null
+   }
+  ],
+  "notes": "Generato da ordine ORD-2026-0005",
+  "delivery_ref": null,
+  "order_id": "fae17ce1-5152-4ec6-96a4-6bdb51f61b33",
+  "logistics_task_id": null,
+  "movement_id": null,
+  "external_ref": null,
+  "created_by": "b839bbeb-99c4-4388-8046-bd6536cef486",
+  "created_at": "2026-03-25T13:20:20.596576+00:00",
+  "updated_at": "2026-03-25T13:20:20.596576+00:00"
+ },
+ {
+  "id": "d6d0fc89-9071-4789-bda3-70329b52117e",
+  "document_number": "DDT-2026-0003",
+  "document_type": "ddt",
+  "status": "archived",
+  "issue_date": "2026-03-25",
+  "client_id": "eab85d0f-45c0-458f-ab88-08c442810aff",
+  "structure_id": null,
+  "unit_id": null,
+  "destination_address": "Via Aggiornata 456, Milano",
+  "items": [
+   {
+    "article_id": null,
+    "description": "TEST_Kit biancheria doppio",
+    "quantity": 3,
+    "unit": "pz",
+    "notes": null
+   },
+   {
+    "article_id": null,
+    "description": "TEST_Asciugamani set",
+    "quantity": 6,
+    "unit": "pz",
+    "notes": null
+   },
+   {
+    "article_id": null,
+    "description": "TEST_Nuovo articolo",
+    "quantity": 1,
+    "unit": "pz",
+    "notes": null
+   }
+  ],
+  "notes": "TEST_Note aggiornate",
+  "delivery_ref": "TEST_CONSEGNA_001",
+  "order_id": null,
+  "logistics_task_id": null,
+  "movement_id": null,
+  "external_ref": null,
+  "created_by": "b839bbeb-99c4-4388-8046-bd6536cef486",
+  "created_at": "2026-03-25T13:22:42.003447+00:00",
+  "updated_at": "2026-03-25T13:22:42.656478+00:00"
+ },
+ {
+  "id": "204ba910-341b-43d8-aa56-8211d52c388c",
+  "document_number": "DDT-2026-0004",
+  "document_type": "ddt",
+  "status": "draft",
+  "issue_date": "2026-03-25",
+  "client_id": "eab85d0f-45c0-458f-ab88-08c442810aff",
+  "structure_id": null,
+  "unit_id": null,
+  "destination_address": null,
+  "items": [
+   {
+    "article_id": "b52c9aa8-b0c6-42a0-9840-0dba7e224a43",
+    "description": "Kit Biancheria Matrimoniale",
+    "quantity": 2,
+    "unit": "pz",
+    "notes": null
+   }
+  ],
+  "notes": "Generato da ordine ORD-2026-0005",
+  "delivery_ref": null,
+  "order_id": "fae17ce1-5152-4ec6-96a4-6bdb51f61b33",
+  "logistics_task_id": null,
+  "movement_id": null,
+  "external_ref": null,
+  "created_by": "b839bbeb-99c4-4388-8046-bd6536cef486",
+  "created_at": "2026-03-25T13:22:43.245712+00:00",
+  "updated_at": "2026-03-25T13:22:43.245712+00:00"
+ },
+ {
+  "id": "92e7aecb-4b2c-4005-9909-7c4c94435dcb",
+  "document_number": "DDT-2026-0005",
+  "document_type": "ddt",
+  "status": "draft",
+  "issue_date": "2026-03-25",
+  "client_id": null,
+  "structure_id": null,
+  "unit_id": null,
+  "destination_address": "Via Test Playwright 123, Roma",
+  "items": [
+   {
+    "article_id": null,
+    "description": "TEST_Playwright Item 1",
+    "quantity": 1,
+    "unit": "pz",
+    "notes": null
+   },
+   {
+    "article_id": null,
+    "description": "TEST_Playwright Item 2",
+    "quantity": 1,
+    "unit": "pz",
+    "notes": null
+   }
+  ],
+  "notes": "TEST_Documento creato da Playwright",
+  "delivery_ref": "TEST-PW-001",
+  "order_id": null,
+  "logistics_task_id": null,
+  "movement_id": null,
+  "external_ref": null,
+  "created_by": "b839bbeb-99c4-4388-8046-bd6536cef486",
+  "created_at": "2026-03-25T13:23:40.501603+00:00",
+  "updated_at": "2026-03-25T21:15:40.391022+00:00"
+ }
+]
