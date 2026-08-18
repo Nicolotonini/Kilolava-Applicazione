@@ -885,7 +885,7 @@ const ClientDetailPage = () => {
             <h2 className="text-sm font-medium text-foreground">
               {t('structures.title')} <span className="text-muted-foreground">({structures.length})</span>
             </h2>
-            <Button onClick={() => { setSelectedStructure(null); setStructurePanelOpen(true); }} size="sm" className="h-8 bg-[#F24E75] hover:bg-[#E03B62] text-white" data-testid="add-structure-btn">
+            <Button onClick={() => navigate(`/structures/new?client_id=${clientId}`)} size="sm" className="h-8 bg-[#F24E75] hover:bg-[#E03B62] text-white" data-testid="add-structure-btn">
               <Plus className="h-4 w-4 mr-1.5" />{t('structures.addNew')}
             </Button>
           </div>
@@ -896,7 +896,7 @@ const ClientDetailPage = () => {
           <CardContent className="p-8 text-center">
             <Building2 className="h-12 w-12 mx-auto text-muted-foreground/40 mb-3" />
             <p className="text-muted-foreground mb-4">{t('structures.noStructures')}</p>
-            <Button onClick={() => { setSelectedStructure(null); setStructurePanelOpen(true); }} variant="outline">
+            <Button onClick={() => navigate(`/structures/new?client_id=${clientId}`)} variant="outline">
               <Plus className="h-4 w-4 mr-1.5" />
               {t('structures.addNew')}
             </Button>
@@ -928,6 +928,9 @@ const ClientDetailPage = () => {
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">
+                          {structure.klv_code && (
+                            <span className="px-1.5 py-0.5 text-[10px] font-mono font-bold bg-primary/10 text-primary rounded">{structure.klv_code}</span>
+                          )}
                           <span className="font-medium">{structure.name}</span>
                           <span className="px-1.5 py-0.5 text-[10px] bg-muted text-muted-foreground rounded">
                             {t(`structures.structureTypes.${structure.structure_type}`)}
@@ -978,14 +981,13 @@ const ClientDetailPage = () => {
                           variant="outline"
                           onClick={(e) => {
                             e.stopPropagation();
-                            setSelectedStructure(structure);
-                            setStructurePanelOpen(true);
+                            navigate(`/structures/${structure.id}`);
                           }}
                           className="h-8 text-xs"
                           data-testid={`edit-structure-btn-${structure.id}`}
                         >
                           <Pencil className="h-3.5 w-3.5 mr-1" />
-                          {t('common.edit')}
+                          Apri
                         </Button>
                         <Button
                           size="sm"

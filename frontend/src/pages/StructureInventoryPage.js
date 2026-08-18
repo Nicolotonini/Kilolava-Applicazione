@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import api from '../lib/api';
 import { Card, CardContent } from '../components/ui/card';
 import { Input } from '../components/ui/input';
@@ -7,6 +7,8 @@ import { Search, Boxes, AlertTriangle } from 'lucide-react';
 import { cn } from '../lib/utils';
 
 const StructureInventoryPage = () => {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const structureFilter = searchParams.get('structure_id');
   const [stock, setStock] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -18,11 +20,22 @@ const StructureInventoryPage = () => {
       .finally(() => setLoading(false));
   }, []);
 
-  const filtered = stock.filter((s) => s.structure_name.toLowerCase().includes(search.toLowerCase()));
+  const filtered = stock.filter((s) =>
+    (!structureFilter || s.structure_id === structureFilter) &&
+    s.structure_name.toLowerCase().includes(search.toLowerCase())
+  );
 
   return (
     <div className="p-4 lg:p-8 max-w-5xl space-y-5" data-testid="structure-inventory-page">
       <h1 className="text-xl lg:text-2xl font-heading font-semibold">Magazzino Strutture</h1>
+      {structureFilter && (
+        <div className="flex items-center gap-2 text-sm bg-primary/5 border border-primary/20 rounded-lg px-3 py-2">
+          <span className="text-muted-foreground">Filtro attivo: solo la struttura selezionata.</span>
+          <button onClick={() => setSearchParams({})} className="text-primary font-medium hover:underline" data-testid="clear-structure-filter">
+            Mostra tutte
+          </button>
+        </div>
+      )}
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <p className="text-sm text-muted-foreground">
           Dotazione presente in ogni struttura, calcolata da consegne e ritiri.

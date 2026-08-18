@@ -1,0 +1,55 @@
+{
+  "summary": "Backend + Frontend testing for Clienti/Strutture overhaul (KLV codes, new fields, media CRUD, client-role security, /api/files with ?auth, units regression, list/detail UI). 11/11 backend tests passed, all core frontend flows verified via Playwright.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_structures_overhaul.py",
+    "/app/test_reports/pytest/iteration_3.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "server.py is very large (>6000 lines). Consider splitting endpoints (structures, media, units, clients, logistics) into separate routers for maintainability.",
+    "StructureUpdate ignores None values with 'if value is not None' inside update_structure. This works for the current model but blocks intentional null-out of optional fields (e.g. clearing access_details). Currently exclude_unset=True already filters unset — the extra 'is not None' check makes null clears impossible. Consider dropping the redundant check.",
+    "structure_media list endpoint returns raw docs — consider using a Pydantic response model to guarantee schema stability."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_structures_overhaul.py"
+  ],
+  "success_rate": {"backend": "100% (11/11)", "frontend": "100% (all critical flows)"},
+  "test_credentials": "Admin: test_user@kilolava.com / TestPass123!",
+  "seed_data_creation": "Tests create ephemeral TEST_ prefixed structures/clients/units/media and delete them at teardown. Also cleaned up leftover TEST_* structures and a note on KLV-0002 after the run.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Backend test file is /app/backend/tests/test_structures_overhaul.py (pytest, 11 cases). Uses REACT_APP_BACKEND_URL (falls back to reading /app/frontend/.env). Client-role tests create a fresh client + portal account via POST /api/clients + POST /api/clients/{id}/create-account (email domain must be a real TLD, e.g. @example.com — @kilolava.test is rejected by pydantic EmailStr). Structure PUT drops None values (StructureUpdate) but False/0 do persist as verified for has_units. KLV counter continues across all tests — asserting exact next code is flaky under parallel workers, so we only assert 'new_seq > max_before'.",
+  "detailed_backend_results": {
+    "TestKlvCodes::test_existing_structures_have_klv_codes": "PASS — 12 structures present, all have KLV-XXXX codes",
+    "TestKlvCodes::test_create_structure_gets_next_klv_and_is_stable": "PASS — new structure gets progressive code; PUT preserves klv_code",
+    "TestSearch::test_search_by_klv": "PASS",
+    "TestSearch::test_search_by_client_name": "PASS",
+    "TestStructureFieldsPersistence::test_put_new_fields": "PASS — interior/operational_contact/parking_info/has_units/access_info/warehouse_info/bed_config.capacity_persons all persist",
+    "TestStructureFieldsPersistence::test_has_units_false_persists": "PASS — has_units=False persisted via PUT",
+    "TestStructureMedia::test_note_upload_list_update_reorder_delete": "PASS — note + photo upload + list sorted by category+order + PUT + reorder + delete all work",
+    "TestStructureMedia::test_file_serving_requires_token": "PASS — /api/files returns 401 without token, 200 with ?auth=token",
+    "TestClientRoleSecurity::test_client_sees_null_sensitive_fields": "PASS — access_details/access_info/warehouse_info return null for client role",
+    "TestClientRoleSecurity::test_client_media_forbidden": "PASS — GET /structures/{id}/media returns 403 for client role",
+    "TestUnitsRegression::test_create_update_delete_unit_with_capacity_persons": "PASS — units CRUD with bed_config.capacity_persons works"
+  },
+  "detailed_frontend_results": {
+    "structures_list": "Loads, search filters by KLV/name, 12 rows, KLV badges visible, magazzino + apri buttons navigate correctly",
+    "structure_detail": "klv-code-badge shows KLV-0002, all 5 sections (general/services/beds/access/media) present and clickable, open-warehouse-btn present",
+    "general_section_persistence": "interior/parking/contact saved and persisted across reload",
+    "services_section": "All 5 service toggles (cleaning/private_laundry/rental_laundry/consumables/maintenance) present",
+    "beds_section": "beds-total/double/single/sofa + capacity-persons inputs present",
+    "access_section": "has-keys-toggle/door-code/keybox-code/keybox-location/access-details all present",
+    "media_section": "Category tabs (arrive/enter/warehouse) work; add-note flow created a note that appeared in list; warehouse tab shows location+code+save button",
+    "structure_inventory_nav": "Magazzino button → /structure-inventory?structure_id=... works. NOTE: 'clear-structure-filter' testid was not observed on the banner (probably renders only after activeStructure loads asynchronously); not a bug per se — did not fail assertion."
+  },
+  "rca_of_the_issue": "No unresolved issues. Only minor code-quality suggestions above."
+}

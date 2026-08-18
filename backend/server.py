@@ -1,4 +1,4 @@
-from fastapi import FastAPI, APIRouter, HTTPException, Depends, File, UploadFile, Query, Header
+from fastapi import FastAPI, APIRouter, HTTPException, Depends, File, UploadFile, Query, Header, Form
 from fastapi import status as http_status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.responses import Response
@@ -205,8 +205,14 @@ class StructureCreate(BaseModel):
     structure_type: str = StructureType.APARTMENT
     address: Optional[str] = None
     floor: Optional[str] = None
+    interior: Optional[str] = None
+    operational_contact: Optional[str] = None
+    parking_info: Optional[str] = None
+    has_units: Optional[bool] = None
     access_type: str = AccessType.KEYBOX
     access_details: Optional[str] = None
+    access_info: Optional[dict] = None  # {kilolava_has_keys, door_code, keybox_code, keybox_location, key_boxes}
+    warehouse_info: Optional[dict] = None  # {location, code}
     ical_url: Optional[str] = None
     ical_source: Optional[str] = None  # airbnb, booking_com
     services: List[str] = []
@@ -214,7 +220,7 @@ class StructureCreate(BaseModel):
     cleaning_template_id: Optional[str] = None
     check_in_time: Optional[str] = None  # e.g. "15:00"
     check_out_time: Optional[str] = None  # e.g. "10:00"
-    bed_config: Optional[dict] = None  # {capacity_total, beds_double, beds_single, sofa_beds}
+    bed_config: Optional[dict] = None  # {capacity_total, beds_double, beds_single, sofa_beds, capacity_persons}
     notes: Optional[str] = None
     is_active: bool = True
 
@@ -223,8 +229,14 @@ class StructureUpdate(BaseModel):
     structure_type: Optional[str] = None
     address: Optional[str] = None
     floor: Optional[str] = None
+    interior: Optional[str] = None
+    operational_contact: Optional[str] = None
+    parking_info: Optional[str] = None
+    has_units: Optional[bool] = None
     access_type: Optional[str] = None
     access_details: Optional[str] = None
+    access_info: Optional[dict] = None
+    warehouse_info: Optional[dict] = None
     ical_url: Optional[str] = None
     ical_source: Optional[str] = None
     services: Optional[List[str]] = None
@@ -241,12 +253,18 @@ class StructureResponse(BaseModel):
     id: str
     client_id: str
     client_name: Optional[str] = None
+    klv_code: Optional[str] = None
     name: str
     structure_type: str
     address: Optional[str] = None
     floor: Optional[str] = None
+    interior: Optional[str] = None
+    operational_contact: Optional[str] = None
+    parking_info: Optional[str] = None
     access_type: str
     access_details: Optional[str] = None
+    access_info: Optional[dict] = None
+    warehouse_info: Optional[dict] = None
     ical_url: Optional[str] = None
     ical_source: Optional[str] = None
     services: List[str] = []
@@ -258,6 +276,7 @@ class StructureResponse(BaseModel):
     notes: Optional[str] = None
     is_active: bool
     unit_count: int = 0
+    has_units: bool = False
     has_multiple_units: bool = False
     created_at: str
     updated_at: str
@@ -269,6 +288,7 @@ class BedConfiguration(BaseModel):
     beds_double: int = 0
     beds_single: int = 0
     sofa_beds: int = 0
+    capacity_persons: int = 0
 
 class KitConfiguration(BaseModel):
     kit_double_per_set: int = 0
@@ -732,9 +752,80 @@ async def delete_client(client_id: str, current_user: dict = Depends(get_current
 
 # ============== STRUCTURE ENDPOINTS ==============
 
+# ============== STRUCTURE ENDPOINTS ==============
+
+SENSITIVE_STRUCTURE_FIELDS = ["access_details", "access_info", "warehouse_info"]
+
+async def next_klv_code() -> str:
+    doc = await db.counters.find_one_and_update(
+        {"_id": "klv_structure"},
+        {"$inc": {"seq": 1}},
+        upsert=True,
+        return_document=True,
+    )
+    return f"KLV-{doc['seq']:04d}"
+
+async def ensure_klv_codes():
+    """Assign progressive KLV codes to structures missing one (chronological order). Idempotent."""
+    max_seq = 0
+    async for s in db.structures.find({"klv_code": {"$exists": True, "$ne": None}}, {"_id": 0, "klv_code": 1}):
+        try:
+            max_seq = max(max_seq, int(s["klv_code"].split("-")[1]))
+        except (IndexError, ValueError):
+            pass
+    counter = await db.counters.find_one({"_id": "klv_structure"})
+    if not counter or counter.get("seq", 0) < max_seq:
+        await db.counters.update_one({"_id": "klv_structure"}, {"$set": {"seq": max_seq}}, upsert=True)
+    missing = await db.structures.find({"$or": [{"klv_code": {"$exists": False}}, {"klv_code": None}]}, {"_id": 0, "id": 1}).sort("created_at", 1).to_list(2000)
+    for s in missing:
+        code = await next_klv_code()
+        await db.structures.update_one({"id": s["id"]}, {"$set": {"klv_code": code}})
+
+def build_structure_response(structure: dict, client_name: Optional[str], unit_count: int, current_user: dict) -> StructureResponse:
+    stype = structure.get("structure_type", StructureType.APARTMENT)
+    has_units = structure.get("has_units")
+    if has_units is None:
+        has_units = unit_count > 0 or stype in [StructureType.GUESTHOUSE, StructureType.HOTEL]
+    data = {
+        "id": structure["id"],
+        "client_id": structure["client_id"],
+        "client_name": client_name,
+        "klv_code": structure.get("klv_code"),
+        "name": structure["name"],
+        "structure_type": stype,
+        "address": structure.get("address"),
+        "floor": structure.get("floor"),
+        "interior": structure.get("interior"),
+        "operational_contact": structure.get("operational_contact"),
+        "parking_info": structure.get("parking_info"),
+        "access_type": structure.get("access_type", AccessType.KEYBOX),
+        "access_details": structure.get("access_details"),
+        "access_info": structure.get("access_info"),
+        "warehouse_info": structure.get("warehouse_info"),
+        "ical_url": structure.get("ical_url"),
+        "ical_source": structure.get("ical_source"),
+        "services": structure.get("services", []),
+        "custom_services": structure.get("custom_services", []),
+        "cleaning_template_id": structure.get("cleaning_template_id"),
+        "check_in_time": structure.get("check_in_time"),
+        "check_out_time": structure.get("check_out_time"),
+        "bed_config": structure.get("bed_config"),
+        "notes": structure.get("notes"),
+        "is_active": structure.get("is_active", True),
+        "unit_count": unit_count,
+        "has_units": bool(has_units),
+        "has_multiple_units": bool(has_units),
+        "created_at": structure["created_at"],
+        "updated_at": structure["updated_at"],
+    }
+    if current_user.get("role") == "client":
+        for f in SENSITIVE_STRUCTURE_FIELDS:
+            data[f] = None
+    return StructureResponse(**data)
+
 @api_router.post("/structures", response_model=StructureResponse)
 async def create_structure(structure_data: StructureCreate, current_user: dict = Depends(get_current_user)):
-    if current_user["role"] not in [UserRole.MANAGER]:
+    if current_user["role"] not in [UserRole.MANAGER, UserRole.OPS_MANAGER]:
         raise HTTPException(status_code=403, detail="Non autorizzato")
     
     client = await db.clients.find_one({"id": structure_data.client_id}, {"_id": 0})
@@ -743,52 +834,18 @@ async def create_structure(structure_data: StructureCreate, current_user: dict =
     
     structure_id = str(uuid.uuid4())
     now = now_iso()
+    klv_code = await next_klv_code()
     
     structure_doc = {
         "id": structure_id,
-        "client_id": structure_data.client_id,
-        "name": structure_data.name,
-        "structure_type": structure_data.structure_type,
-        "address": structure_data.address,
-        "floor": structure_data.floor,
-        "access_type": structure_data.access_type,
-        "access_details": structure_data.access_details,
-        "ical_url": structure_data.ical_url,
-        "ical_source": structure_data.ical_source,
-        "services": structure_data.services,
-        "custom_services": structure_data.custom_services,
-        "cleaning_template_id": structure_data.cleaning_template_id,
-        "check_in_time": structure_data.check_in_time,
-        "check_out_time": structure_data.check_out_time,
-        "bed_config": structure_data.bed_config,
-        "notes": structure_data.notes,
-        "is_active": structure_data.is_active,
+        "klv_code": klv_code,
+        **structure_data.model_dump(),
         "created_at": now,
         "updated_at": now
     }
     
-    await db.structures.insert_one(structure_doc)
-    
-    has_multiple = structure_data.structure_type in [StructureType.GUESTHOUSE, StructureType.HOTEL]
-    
-    return StructureResponse(
-        id=structure_id,
-        client_id=structure_data.client_id,
-        client_name=get_client_display_name(client),
-        name=structure_data.name,
-        structure_type=structure_data.structure_type,
-        address=structure_data.address,
-        access_type=structure_data.access_type,
-        access_details=structure_data.access_details,
-        ical_url=structure_data.ical_url,
-        services=structure_data.services,
-        notes=structure_data.notes,
-        is_active=structure_data.is_active,
-        unit_count=0,
-        has_multiple_units=has_multiple,
-        created_at=now,
-        updated_at=now
-    )
+    await db.structures.insert_one({**structure_doc})
+    return build_structure_response(structure_doc, get_client_display_name(client), 0, current_user)
 
 @api_router.get("/structures", response_model=List[StructureResponse])
 async def get_structures(
@@ -803,10 +860,21 @@ async def get_structures(
     if is_active is not None:
         query["is_active"] = is_active
     if search:
-        query["$or"] = [
+        or_clauses = [
             {"name": {"$regex": search, "$options": "i"}},
-            {"address": {"$regex": search, "$options": "i"}}
+            {"address": {"$regex": search, "$options": "i"}},
+            {"klv_code": {"$regex": search, "$options": "i"}},
         ]
+        matching_client_ids = []
+        async for c in db.clients.find({"$or": [
+            {"private_info.name": {"$regex": search, "$options": "i"}},
+            {"private_info.surname": {"$regex": search, "$options": "i"}},
+            {"company_info.company_name": {"$regex": search, "$options": "i"}},
+        ]}, {"_id": 0, "id": 1}):
+            matching_client_ids.append(c["id"])
+        if matching_client_ids:
+            or_clauses.append({"client_id": {"$in": matching_client_ids}})
+        query["$or"] = or_clauses
     
     structures = await db.structures.find(query, {"_id": 0}).to_list(1000)
     
@@ -830,33 +898,11 @@ async def get_structures(
     result = []
     for structure in structures:
         client_doc = clients_map.get(structure["client_id"], {})
-        stype = structure.get("structure_type", StructureType.APARTMENT)
-        has_multiple = stype in [StructureType.GUESTHOUSE, StructureType.HOTEL]
-        
-        result.append(StructureResponse(
-            id=structure["id"],
-            client_id=structure["client_id"],
-            client_name=get_client_display_name(client_doc) if client_doc else None,
-            name=structure["name"],
-            structure_type=stype,
-            address=structure.get("address"),
-            floor=structure.get("floor"),
-            access_type=structure.get("access_type", AccessType.KEYBOX),
-            access_details=structure.get("access_details"),
-            ical_url=structure.get("ical_url"),
-            ical_source=structure.get("ical_source"),
-            services=structure.get("services", []),
-            custom_services=structure.get("custom_services", []),
-            cleaning_template_id=structure.get("cleaning_template_id"),
-            check_in_time=structure.get("check_in_time"),
-            check_out_time=structure.get("check_out_time"),
-            bed_config=structure.get("bed_config"),
-            notes=structure.get("notes"),
-            is_active=structure.get("is_active", True),
-            unit_count=unit_counts.get(structure["id"], 0),
-            has_multiple_units=has_multiple,
-            created_at=structure["created_at"],
-            updated_at=structure["updated_at"]
+        result.append(build_structure_response(
+            structure,
+            get_client_display_name(client_doc) if client_doc else None,
+            unit_counts.get(structure["id"], 0),
+            current_user,
         ))
     
     return result
@@ -869,34 +915,7 @@ async def get_structure(structure_id: str, current_user: dict = Depends(get_curr
     
     client = await db.clients.find_one({"id": structure["client_id"]}, {"_id": 0})
     unit_count = await db.units.count_documents({"structure_id": structure_id})
-    stype = structure.get("structure_type", StructureType.APARTMENT)
-    has_multiple = stype in [StructureType.GUESTHOUSE, StructureType.HOTEL]
-    
-    return StructureResponse(
-        id=structure["id"],
-        client_id=structure["client_id"],
-        client_name=get_client_display_name(client) if client else None,
-        name=structure["name"],
-        structure_type=stype,
-        address=structure.get("address"),
-        floor=structure.get("floor"),
-        access_type=structure.get("access_type", AccessType.KEYBOX),
-        access_details=structure.get("access_details"),
-        ical_url=structure.get("ical_url"),
-        ical_source=structure.get("ical_source"),
-        services=structure.get("services", []),
-        custom_services=structure.get("custom_services", []),
-        cleaning_template_id=structure.get("cleaning_template_id"),
-        check_in_time=structure.get("check_in_time"),
-        check_out_time=structure.get("check_out_time"),
-        bed_config=structure.get("bed_config"),
-        notes=structure.get("notes"),
-        is_active=structure.get("is_active", True),
-        unit_count=unit_count,
-        has_multiple_units=has_multiple,
-        created_at=structure["created_at"],
-        updated_at=structure["updated_at"]
-    )
+    return build_structure_response(structure, get_client_display_name(client) if client else None, unit_count, current_user)
 
 @api_router.put("/structures/{structure_id}", response_model=StructureResponse)
 async def update_structure(
@@ -904,7 +923,7 @@ async def update_structure(
     structure_data: StructureUpdate,
     current_user: dict = Depends(get_current_user)
 ):
-    if current_user["role"] not in [UserRole.MANAGER]:
+    if current_user["role"] not in [UserRole.MANAGER, UserRole.OPS_MANAGER]:
         raise HTTPException(status_code=403, detail="Non autorizzato")
     
     structure = await db.structures.find_one({"id": structure_id}, {"_id": 0})
@@ -921,27 +940,7 @@ async def update_structure(
     updated_structure = await db.structures.find_one({"id": structure_id}, {"_id": 0})
     client = await db.clients.find_one({"id": updated_structure["client_id"]}, {"_id": 0})
     unit_count = await db.units.count_documents({"structure_id": structure_id})
-    stype = updated_structure.get("structure_type", StructureType.APARTMENT)
-    has_multiple = stype in [StructureType.GUESTHOUSE, StructureType.HOTEL]
-    
-    return StructureResponse(
-        id=updated_structure["id"],
-        client_id=updated_structure["client_id"],
-        client_name=get_client_display_name(client) if client else None,
-        name=updated_structure["name"],
-        structure_type=stype,
-        address=updated_structure.get("address"),
-        access_type=updated_structure.get("access_type", AccessType.KEYBOX),
-        access_details=updated_structure.get("access_details"),
-        ical_url=updated_structure.get("ical_url"),
-        services=updated_structure.get("services", []),
-        notes=updated_structure.get("notes"),
-        is_active=updated_structure.get("is_active", True),
-        unit_count=unit_count,
-        has_multiple_units=has_multiple,
-        created_at=updated_structure["created_at"],
-        updated_at=updated_structure["updated_at"]
-    )
+    return build_structure_response(updated_structure, get_client_display_name(client) if client else None, unit_count, current_user)
 
 @api_router.delete("/structures/{structure_id}")
 async def delete_structure(structure_id: str, current_user: dict = Depends(get_current_user)):
@@ -958,6 +957,156 @@ async def delete_structure(structure_id: str, current_user: dict = Depends(get_c
     
     await db.structures.delete_one({"id": structure_id})
     return {"message": "Struttura eliminata"}
+
+# ============== STRUCTURE MEDIA (foto/video/istruzioni) ==============
+
+MEDIA_CATEGORIES = ["arrive", "enter", "warehouse", "general"]
+
+class MediaNoteCreate(BaseModel):
+    category: str = "general"
+    title: Optional[str] = None
+    description: Optional[str] = None
+    unit_id: Optional[str] = None
+
+class MediaUpdate(BaseModel):
+    title: Optional[str] = None
+    description: Optional[str] = None
+    category: Optional[str] = None
+    unit_id: Optional[str] = None
+
+class MediaReorder(BaseModel):
+    ids: List[str]
+
+def _require_ops(current_user: dict):
+    if current_user["role"] not in [UserRole.MANAGER, UserRole.OPS_MANAGER]:
+        raise HTTPException(status_code=403, detail="Non autorizzato")
+
+@api_router.get("/structures/{structure_id}/media")
+async def list_structure_media(
+    structure_id: str,
+    category: Optional[str] = None,
+    current_user: dict = Depends(get_current_user)
+):
+    if current_user.get("role") == "client":
+        raise HTTPException(status_code=403, detail="Non autorizzato")
+    q = {"structure_id": structure_id}
+    if category:
+        q["category"] = category
+    items = await db.structure_media.find(q, {"_id": 0}).sort([("category", 1), ("order", 1), ("created_at", 1)]).to_list(500)
+    return items
+
+@api_router.post("/structures/{structure_id}/media")
+async def upload_structure_media(
+    structure_id: str,
+    file: UploadFile = File(...),
+    category: str = Form("general"),
+    title: Optional[str] = Form(None),
+    description: Optional[str] = Form(None),
+    unit_id: Optional[str] = Form(None),
+    current_user: dict = Depends(get_current_user)
+):
+    _require_ops(current_user)
+    structure = await db.structures.find_one({"id": structure_id}, {"_id": 0, "id": 1})
+    if not structure:
+        raise HTTPException(status_code=404, detail="Struttura non trovata")
+    if category not in MEDIA_CATEGORIES:
+        category = "general"
+    ext = file.filename.split(".")[-1].lower() if "." in file.filename else "jpg"
+    content_type = file.content_type or "application/octet-stream"
+    media_type = "video" if content_type.startswith("video") else "photo"
+    path = f"{APP_NAME}/structures/{structure_id}/{uuid.uuid4()}.{ext}"
+    data = await file.read()
+    result = put_object(path, data, content_type)
+    order = await db.structure_media.count_documents({"structure_id": structure_id, "category": category})
+    now = now_iso()
+    doc = {
+        "id": str(uuid.uuid4()),
+        "structure_id": structure_id,
+        "unit_id": unit_id or None,
+        "category": category,
+        "media_type": media_type,
+        "content_type": content_type,
+        "path": result["path"],
+        "title": title,
+        "description": description,
+        "order": order,
+        "created_at": now,
+        "updated_at": now,
+    }
+    await db.structure_media.insert_one({**doc})
+    return doc
+
+@api_router.post("/structures/{structure_id}/media/note")
+async def create_structure_note(
+    structure_id: str,
+    data: MediaNoteCreate,
+    current_user: dict = Depends(get_current_user)
+):
+    _require_ops(current_user)
+    structure = await db.structures.find_one({"id": structure_id}, {"_id": 0, "id": 1})
+    if not structure:
+        raise HTTPException(status_code=404, detail="Struttura non trovata")
+    category = data.category if data.category in MEDIA_CATEGORIES else "general"
+    order = await db.structure_media.count_documents({"structure_id": structure_id, "category": category})
+    now = now_iso()
+    doc = {
+        "id": str(uuid.uuid4()),
+        "structure_id": structure_id,
+        "unit_id": data.unit_id or None,
+        "category": category,
+        "media_type": "note",
+        "content_type": None,
+        "path": None,
+        "title": data.title,
+        "description": data.description,
+        "order": order,
+        "created_at": now,
+        "updated_at": now,
+    }
+    await db.structure_media.insert_one({**doc})
+    return doc
+
+@api_router.put("/structures/{structure_id}/media/{media_id}")
+async def update_structure_media(
+    structure_id: str,
+    media_id: str,
+    data: MediaUpdate,
+    current_user: dict = Depends(get_current_user)
+):
+    _require_ops(current_user)
+    media = await db.structure_media.find_one({"id": media_id, "structure_id": structure_id}, {"_id": 0})
+    if not media:
+        raise HTTPException(status_code=404, detail="Contenuto non trovato")
+    update = {"updated_at": now_iso()}
+    payload = data.model_dump(exclude_unset=True)
+    for k, v in payload.items():
+        update[k] = v
+    await db.structure_media.update_one({"id": media_id}, {"$set": update})
+    updated = await db.structure_media.find_one({"id": media_id}, {"_id": 0})
+    return updated
+
+@api_router.post("/structures/{structure_id}/media/reorder")
+async def reorder_structure_media(
+    structure_id: str,
+    data: MediaReorder,
+    current_user: dict = Depends(get_current_user)
+):
+    _require_ops(current_user)
+    for idx, mid in enumerate(data.ids):
+        await db.structure_media.update_one({"id": mid, "structure_id": structure_id}, {"$set": {"order": idx}})
+    return {"message": "Ordine aggiornato"}
+
+@api_router.delete("/structures/{structure_id}/media/{media_id}")
+async def delete_structure_media(
+    structure_id: str,
+    media_id: str,
+    current_user: dict = Depends(get_current_user)
+):
+    _require_ops(current_user)
+    result = await db.structure_media.delete_one({"id": media_id, "structure_id": structure_id})
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Contenuto non trovato")
+    return {"message": "Contenuto eliminato"}
 
 # ============== UNIT ENDPOINTS ==============
 
@@ -2839,8 +2988,20 @@ async def serve_file(
     file_path: str,
     authorization: Optional[str] = Header(None),
     auth: Optional[str] = Query(None),
-    current_user: dict = Depends(get_current_user),
 ):
+    token = None
+    if authorization and authorization.startswith("Bearer "):
+        token = authorization.split(" ", 1)[1]
+    elif auth:
+        token = auth
+    if not token:
+        raise HTTPException(status_code=401, detail="Non autenticato")
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        if not payload.get("sub"):
+            raise HTTPException(status_code=401, detail="Token non valido")
+    except jwt.InvalidTokenError:
+        raise HTTPException(status_code=401, detail="Token non valido")
     data, content_type = get_object(file_path)
     return Response(content=data, media_type=content_type)
 
@@ -5874,6 +6035,11 @@ async def startup_event():
     result = await db.users.update_many({"role": "manager"}, {"$set": {"role": "admin"}})
     if result.modified_count > 0:
         logger.info(f"Migrated {result.modified_count} users from 'manager' to 'admin' role")
+    # Assign KLV codes to structures missing one (idempotent)
+    try:
+        await ensure_klv_codes()
+    except Exception as e:
+        logger.error(f"KLV code migration failed: {e}")
     # Start scheduler with overdue task check every 30 minutes
     try:
         scheduler_service.start_scheduler(_check_overdue_tasks)

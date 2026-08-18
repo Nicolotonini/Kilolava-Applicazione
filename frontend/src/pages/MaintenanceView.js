@@ -148,7 +148,7 @@ const TaskDetail = ({ task, onBack, onRefresh }) => {
               <div className="flex gap-2 overflow-x-auto">
                 {issuePhotos.map((p, i) => (
                   <div key={i} className="w-24 h-24 rounded-lg bg-muted border overflow-hidden flex-shrink-0">
-                    <img src={`${API_BASE}/files/${p.path}`} alt="" className="w-full h-full object-cover" />
+                    <img src={`${API_BASE}/files/${p.path}?auth=${localStorage.getItem('kilolava_token')}`} alt="" className="w-full h-full object-cover" />
                   </div>
                 ))}
               </div>
@@ -164,7 +164,7 @@ const TaskDetail = ({ task, onBack, onRefresh }) => {
               <div className="flex gap-2 overflow-x-auto">
                 {afterPhotos.map((p, i) => (
                   <div key={i} className="w-24 h-24 rounded-lg bg-muted border overflow-hidden flex-shrink-0">
-                    <img src={`${API_BASE}/files/${p.path}`} alt="" className="w-full h-full object-cover" />
+                    <img src={`${API_BASE}/files/${p.path}?auth=${localStorage.getItem('kilolava_token')}`} alt="" className="w-full h-full object-cover" />
                   </div>
                 ))}
               </div>

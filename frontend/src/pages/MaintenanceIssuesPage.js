@@ -149,7 +149,7 @@ const IssueDetail = ({ issue, onBack, onRefresh, staffList }) => {
             <div className="flex gap-2 overflow-x-auto">
               {issue.photos.filter(p => p.path).map((p, i) => (
                 <div key={i} className="w-20 h-20 rounded-lg bg-muted border overflow-hidden flex-shrink-0">
-                  <img src={`${API_BASE}/files/${p.path}`} alt="" className="w-full h-full object-cover" />
+                  <img src={`${API_BASE}/files/${p.path}?auth=${localStorage.getItem('kilolava_token')}`} alt="" className="w-full h-full object-cover" />
                 </div>
               ))}
             </div>

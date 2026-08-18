@@ -66,7 +66,7 @@ const PhotoUploader = ({ taskId, photoType, label, photos, onUploaded }) => {
         <div className="flex gap-2 overflow-x-auto">
           {existing.map(p => (
             <div key={p.id} className="w-16 h-16 rounded-lg bg-muted border border-border overflow-hidden flex-shrink-0">
-              <img src={`${API_BASE}/files/${p.file_path}`} alt="" className="w-full h-full object-cover" />
+              <img src={`${API_BASE}/files/${p.file_path}?auth=${localStorage.getItem('kilolava_token')}`} alt="" className="w-full h-full object-cover" />
             </div>
           ))}
         </div>

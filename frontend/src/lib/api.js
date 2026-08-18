@@ -3,6 +3,9 @@ import axios from 'axios';
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 export const API_BASE = `${BACKEND_URL}/api`;
 
+// Authenticated file URL (for <img>/<video> tags)
+export const fileUrl = (path) => `${API_BASE}/files/${path}?auth=${localStorage.getItem('kilolava_token') || ''}`;
+
 // Create axios instance with default config
 const api = axios.create({
   baseURL: API_BASE,
