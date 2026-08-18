@@ -108,7 +108,7 @@ const DashboardPage = () => {
           </div>
         </div>
 
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
           <RevenueCard icon={TrendingUp} label="Fatturato Totale" value={rev.total} loading={loading} highlight testId="kpi-revenue" />
           <RevenueCard icon={Sparkles} label="Pulizie" value={rev.cleaning} loading={loading} testId="kpi-cleaning" />
           <Card className="border shadow-none">
@@ -133,7 +133,7 @@ const DashboardPage = () => {
       {/* SECTION 2 — OGGI */}
       <section>
         <h2 className="text-xs font-semibold uppercase tracking-widest text-muted-foreground mb-4">Oggi</h2>
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
           <TodayCard icon={Sparkles} label="Pulizie" data={today.cleaning} link="/cleaning" loading={loading} testId="today-cleaning" />
           <TodayCard icon={Shirt} label="Consegne Biancheria" data={today.deliveries_linen} link="/logistics" loading={loading} testId="today-linen" />
           <TodayCard icon={Truck} label="Consegne Consumabili" data={today.deliveries_consumables} link="/logistics" loading={loading} testId="today-consumables" />
@@ -201,18 +201,20 @@ function TodayCard({ icon: Icon, label, data, link, loading, testId }) {
     <Link to={link} className="block group">
       <Card className="border shadow-none h-full transition-colors group-hover:border-primary/30" data-testid={testId}>
         <CardContent className="p-4 lg:p-5">
-          <div className="flex items-center gap-2 mb-3">
-            <Icon className="h-4 w-4 text-muted-foreground" />
-            <span className="text-xs text-muted-foreground leading-tight">{label}</span>
+          <div className="flex items-center gap-2 mb-2.5">
+            <Icon className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+            <span className="text-xs text-muted-foreground truncate">{label}</span>
           </div>
-          <p className="text-3xl lg:text-4xl font-semibold tabular-nums mb-3">{loading ? '—' : total}</p>
-          <div className="flex items-center gap-3 text-xs">
-            <span className="flex items-center gap-1 text-emerald-600 font-medium tabular-nums">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />{completed} completate
-            </span>
-            <span className={cn('flex items-center gap-1 font-medium tabular-nums', missing > 0 ? 'text-red-500' : 'text-muted-foreground')}>
-              <span className={cn('w-1.5 h-1.5 rounded-full', missing > 0 ? 'bg-red-500' : 'bg-muted-foreground/40')} />{missing} mancanti
-            </span>
+          <div className="flex items-end justify-between gap-3">
+            <p className="text-3xl lg:text-4xl font-semibold tabular-nums leading-none">{loading ? '—' : total}</p>
+            <div className="flex flex-col items-end gap-1 text-xs">
+              <span className="flex items-center gap-1.5 text-emerald-600 font-medium tabular-nums whitespace-nowrap">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />{completed} completate
+              </span>
+              <span className={cn('flex items-center gap-1.5 font-medium tabular-nums whitespace-nowrap', missing > 0 ? 'text-red-500' : 'text-muted-foreground')}>
+                <span className={cn('w-1.5 h-1.5 rounded-full', missing > 0 ? 'bg-red-500' : 'bg-muted-foreground/40')} />{missing} mancanti
+              </span>
+            </div>
           </div>
         </CardContent>
       </Card>

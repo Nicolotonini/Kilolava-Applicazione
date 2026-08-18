@@ -107,6 +107,7 @@ const AppLayout = ({ children }) => {
   const navigate = useNavigate();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [accountOpen, setAccountOpen] = useState(false);
+  const [mobileAccountOpen, setMobileAccountOpen] = useState(false);
   const [openGroups, setOpenGroups] = useState({});
   const accountRef = useRef(null);
 
@@ -155,6 +156,7 @@ const AppLayout = ({ children }) => {
   const handleRoleSwitch = (newRole) => {
     setImpersonatedRole(newRole === realRole ? null : newRole);
     setAccountOpen(false);
+    setMobileAccountOpen(false);
     setMobileMenuOpen(false);
     const homeRoutes = {
       admin: '/dashboard', operations_manager: '/dashboard',
@@ -163,7 +165,7 @@ const AppLayout = ({ children }) => {
     navigate(homeRoutes[newRole] || '/dashboard');
   };
 
-  const { title, crumbs } = getBreadcrumb(location.pathname, location.search);
+  const { title } = getBreadcrumb(location.pathname, location.search);
 
   const renderNavEntry = (entry, onNavigate) => {
     if (entry.type === 'item') {
@@ -229,8 +231,8 @@ const AppLayout = ({ children }) => {
     );
   };
 
-  const accountDropdown = (
-    <div className="absolute left-0 bottom-full mb-2 w-64 bg-popover border border-border rounded-xl shadow-lg z-[70] py-1.5 animate-in" data-testid="role-dropdown">
+  const renderAccountDropdown = (posClass) => (
+    <div className={cn('w-64 bg-popover border border-border rounded-xl shadow-lg py-1.5 animate-in', posClass)} data-testid="role-dropdown">
       <div className="px-3.5 py-2 border-b border-border">
         <p className="text-sm font-semibold truncate">{user?.name}</p>
         <p className="text-xs text-muted-foreground truncate">{user?.email}</p>
@@ -264,7 +266,7 @@ const AppLayout = ({ children }) => {
       )}
       <Link
         to="/settings"
-        onClick={() => setAccountOpen(false)}
+        onClick={() => { setAccountOpen(false); setMobileAccountOpen(false); }}
         className="flex items-center gap-2.5 px-3.5 py-2 text-xs hover:bg-muted transition-colors"
         data-testid="account-settings-link"
       >
@@ -347,7 +349,7 @@ const AppLayout = ({ children }) => {
             </Button>
           </div>
           <div className="relative" ref={accountRef}>
-            {accountOpen && accountDropdown}
+            {accountOpen && renderAccountDropdown('absolute left-0 bottom-full mb-2 z-[70]')}
             <button
               onClick={() => setAccountOpen(!accountOpen)}
               className={cn(
@@ -371,11 +373,22 @@ const AppLayout = ({ children }) => {
 
       {/* Mobile Header */}
       <header className={cn(
-        'lg:hidden fixed top-0 left-0 right-0 h-14 bg-card border-b border-border z-50 flex items-center justify-between px-4',
+        'lg:hidden fixed top-0 left-0 right-0 h-14 bg-card border-b border-border z-50 flex items-center justify-between px-3',
         isImpersonating && 'top-7'
       )}>
-        <img src={LOGO_URL} alt="Kilolava" className="h-7 object-contain" />
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-1.5 min-w-0 flex-1">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+            data-testid="mobile-menu-btn"
+            className="h-10 w-10 flex-shrink-0"
+          >
+            {mobileMenuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+          </Button>
+          <span className="text-sm font-semibold truncate" data-testid="mobile-page-title">{title}</span>
+        </div>
+        <div className="flex items-center gap-0.5 flex-shrink-0">
           <NotificationBell />
           <Button
             variant="ghost"
@@ -386,33 +399,51 @@ const AppLayout = ({ children }) => {
           >
             {theme === 'dark' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
           </Button>
+          <button
+            onClick={() => setMobileAccountOpen(!mobileAccountOpen)}
+            data-testid="mobile-account-btn"
+            className={cn(
+              'w-8 h-8 ml-1 rounded-full bg-primary/10 flex items-center justify-center text-primary font-semibold text-xs',
+              isImpersonating && 'ring-1 ring-amber-400'
+            )}
+          >
+            {user?.name?.charAt(0).toUpperCase() || 'U'}
+          </button>
         </div>
       </header>
 
-      {/* Mobile "Altro" full menu */}
+      {/* Mobile account dropdown */}
+      {mobileAccountOpen && (
+        <>
+          <div className="lg:hidden fixed inset-0 z-[68]" onClick={() => setMobileAccountOpen(false)} />
+          <div className={cn(
+            'lg:hidden fixed right-2 z-[70]',
+            isImpersonating ? 'top-[calc(3.5rem+1.75rem+0.25rem)]' : 'top-[calc(3.5rem+0.25rem)]'
+          )}>
+            {renderAccountDropdown('')}
+          </div>
+        </>
+      )}
+
+      {/* Mobile side menu (from left) */}
       {mobileMenuOpen && (
         <div className="lg:hidden fixed inset-0 bg-black/50 z-[60]" onClick={() => setMobileMenuOpen(false)} />
       )}
       <div className={cn(
-        'lg:hidden fixed right-0 w-72 bg-card border-l border-border z-[65] transform transition-transform duration-200 flex flex-col',
-        isImpersonating ? 'top-[calc(3.5rem+1.75rem)]' : 'top-14',
-        'bottom-0',
-        mobileMenuOpen ? 'translate-x-0' : 'translate-x-full'
+        'lg:hidden fixed left-0 inset-y-0 w-[85vw] max-w-[320px] bg-card border-r border-border z-[65] transform transition-transform duration-200 flex flex-col',
+        mobileMenuOpen ? 'translate-x-0' : '-translate-x-full'
       )} data-testid="mobile-full-menu">
-        <div className="px-4 py-3 border-b border-border flex items-center gap-3">
-          <div className="w-9 h-9 rounded-full bg-primary/10 flex items-center justify-center text-primary font-semibold text-sm">
-            {user?.name?.charAt(0).toUpperCase() || 'U'}
+        <div className="flex items-center justify-between h-14 px-4 border-b border-border flex-shrink-0">
+          <div className="flex items-center gap-2">
+            <img src={LOGO_URL} alt="Kilolava" className="h-8 object-contain" />
+            <span className="text-lg font-heading font-bold text-primary tracking-tight">kilolava</span>
           </div>
-          <div className="flex-1 min-w-0">
-            <p className="text-sm font-medium truncate">{user?.name}</p>
-            <p className="text-xs text-muted-foreground truncate">{ROLE_LABELS[role]}</p>
-          </div>
-          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setMobileMenuOpen(false)}>
-            <X className="h-4 w-4" />
+          <Button variant="ghost" size="icon" className="h-9 w-9" onClick={() => setMobileMenuOpen(false)} data-testid="mobile-menu-close">
+            <X className="h-5 w-5" />
           </Button>
         </div>
         {isRealAdmin && (
-          <div className="px-4 py-2.5 border-b border-border">
+          <div className="px-4 py-2.5 border-b border-border flex-shrink-0">
             <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1.5">Visualizza come</p>
             <div className="flex flex-wrap gap-1">
               {ALL_ROLES.map((r) => (
@@ -433,65 +464,33 @@ const AppLayout = ({ children }) => {
         <nav className="flex-1 overflow-y-auto px-3 py-3 space-y-0.5">
           {visibleNav.map((entry) => renderNavEntry(entry, () => setMobileMenuOpen(false)))}
         </nav>
-        <div className="px-3 py-3 border-t border-border">
+        <div className="px-3 py-3 border-t border-border flex items-center gap-2 flex-shrink-0">
+          <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-primary font-semibold text-xs flex-shrink-0">
+            {user?.name?.charAt(0).toUpperCase() || 'U'}
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-xs font-medium truncate">{user?.name}</p>
+            <p className="text-[10px] text-muted-foreground truncate">{ROLE_LABELS[role]}</p>
+          </div>
           <Button
             variant="ghost"
-            size="sm"
+            size="icon"
             onClick={logout}
             data-testid="mobile-logout-btn"
-            className="w-full justify-start text-destructive hover:text-destructive"
+            title="Esci"
+            className="h-9 w-9 text-foreground/70 hover:text-destructive"
           >
-            <LogOut className="h-4 w-4 mr-2" />Esci
+            <LogOut className="h-[18px] w-[18px]" />
           </Button>
         </div>
       </div>
 
-      {/* Mobile Bottom Navigation: Home / Calendario / Pulizie / Altro */}
-      <nav className="lg:hidden mobile-nav" data-testid="mobile-bottom-nav">
-        <div className="flex items-center justify-around">
-          <NavLink to="/dashboard" data-testid="bottom-nav-dashboard" className={cn('mobile-nav-item', location.pathname === '/dashboard' && 'active')}>
-            <LayoutDashboard className="h-5 w-5" />
-            <span className="text-[10px] mt-0.5">Home</span>
-          </NavLink>
-          <NavLink to="/calendar" data-testid="bottom-nav-calendar" className={cn('mobile-nav-item', location.pathname.startsWith('/calendar') && 'active')}>
-            <CalendarDays className="h-5 w-5" />
-            <span className="text-[10px] mt-0.5">Calendario</span>
-          </NavLink>
-          <NavLink to="/cleaning" data-testid="bottom-nav-cleaning" className={cn('mobile-nav-item', location.pathname.startsWith('/cleaning') && 'active')}>
-            <Sparkles className="h-5 w-5" />
-            <span className="text-[10px] mt-0.5">Pulizie</span>
-          </NavLink>
-          <button onClick={() => setMobileMenuOpen(true)} data-testid="bottom-nav-more" className={cn('mobile-nav-item', mobileMenuOpen && 'active')}>
-            <Menu className="h-5 w-5" />
-            <span className="text-[10px] mt-0.5">Altro</span>
-          </button>
-        </div>
-      </nav>
-
-      {/* Mobile page title strip */}
-      <div className={cn(
-        'lg:hidden fixed left-0 right-0 h-10 bg-background/90 backdrop-blur-sm border-b border-border z-40 flex items-center px-4 gap-1.5',
-        isImpersonating ? 'top-[calc(3.5rem+1.75rem)]' : 'top-14'
-      )}>
-        {crumbs.map((c, i) => (
-          <React.Fragment key={i}>
-            {c.to ? (
-              <Link to={c.to} className="text-xs text-muted-foreground">{c.label}</Link>
-            ) : (
-              <span className="text-xs text-muted-foreground">{c.label}</span>
-            )}
-            <ChevronRight className="h-3 w-3 text-muted-foreground/50" />
-          </React.Fragment>
-        ))}
-        <span className="text-xs font-semibold truncate">{title}</span>
-      </div>
-
       {/* Main Content */}
       <main className={cn(
-        'lg:pl-72 pb-20 lg:pb-0',
+        'lg:pl-72',
         isImpersonating
-          ? 'pt-[calc(3.5rem+2.5rem+1.75rem)] lg:pt-7'
-          : 'pt-[calc(3.5rem+2.5rem)] lg:pt-0'
+          ? 'pt-[calc(3.5rem+1.75rem)] lg:pt-7'
+          : 'pt-14 lg:pt-0'
       )}>
         <div className="min-h-screen">
           {children || <Outlet />}
