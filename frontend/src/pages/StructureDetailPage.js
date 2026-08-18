@@ -38,6 +38,16 @@ const MEDIA_CATS = [
   { key: 'warehouse', label: 'Magazzino struttura' },
 ];
 
+const GENERAL_CATS = [
+  { key: 'general', label: 'Foto / Video / Altro' },
+];
+
+const KEY_COPIES = [
+  { letter: 'A', label: 'Addette alle Pulizie' },
+  { letter: 'B', label: 'Rider' },
+  { letter: 'C', label: 'Emergenza' },
+];
+
 const emptyBedConfig = { capacity_total: 0, beds_double: 0, beds_single: 0, sofa_beds: 0, capacity_persons: 0 };
 
 const StructureDetailPage = () => {
@@ -52,7 +62,7 @@ const StructureDetailPage = () => {
   const [clients, setClients] = useState([]);
   const [templates, setTemplates] = useState([]);
   const [units, setUnits] = useState([]);
-  const [section, setSection] = useState('general');
+  const [section, setSection] = useState(searchParams.get('section') || 'general');
 
   const [form, setForm] = useState({
     client_id: searchParams.get('client_id') || '',
@@ -108,6 +118,16 @@ const StructureDetailPage = () => {
   const setAccess = (field, value) => setForm(p => ({ ...p, access_info: { ...p.access_info, [field]: value } }));
   const setWarehouse = (field, value) => setForm(p => ({ ...p, warehouse_info: { ...p.warehouse_info, [field]: value } }));
   const setBed = (field, value) => setForm(p => ({ ...p, bed_config: { ...p.bed_config, [field]: parseInt(value) || 0 } }));
+  const setKeyBox = (letter, field, value) => setForm(p => ({
+    ...p,
+    access_info: {
+      ...p.access_info,
+      key_boxes: {
+        ...(p.access_info.key_boxes || {}),
+        [letter]: { ...((p.access_info.key_boxes || {})[letter] || {}), [field]: value },
+      },
+    },
+  }));
 
   const toggleService = (key, on) => {
     setForm(p => ({
@@ -143,7 +163,7 @@ const StructureDetailPage = () => {
     { key: 'services', label: 'Servizi', icon: Sparkles },
     { key: 'beds', label: 'Letti e Capacità', icon: Bed },
     { key: 'access', label: 'Accesso e Chiavi', icon: KeyRound },
-    { key: 'media', label: 'Foto / Video / Istruzioni', icon: Camera, disabled: isNew },
+    { key: 'photos', label: 'Foto / Video / Altro', icon: Camera, disabled: isNew },
     ...(form.has_units ? [{ key: 'units', label: `Unità (${units.length})`, icon: DoorOpen, disabled: isNew }] : []),
   ];
 
@@ -221,10 +241,23 @@ const StructureDetailPage = () => {
             <BedsSection form={form} setBed={setBed} set={set} />
           )}
           {section === 'access' && (
-            <AccessSection form={form} set={set} setAccess={setAccess} klvCode={structure?.klv_code} />
+            <>
+              <AccessSection form={form} set={set} setAccess={setAccess} setKeyBox={setKeyBox} klvCode={structure?.klv_code} />
+              {!isNew && (
+                <div className="pt-2 space-y-4">
+                  <h3 className="text-sm font-semibold">Istruzioni con foto e video</h3>
+                  <MediaSection structureId={structureId} units={units} hasUnits={form.has_units} form={form} setWarehouse={setWarehouse} onSaveStructure={handleSave} />
+                </div>
+              )}
+            </>
           )}
-          {section === 'media' && !isNew && (
-            <MediaSection structureId={structureId} units={units} hasUnits={form.has_units} form={form} setWarehouse={setWarehouse} onSaveStructure={handleSave} />
+          {section === 'photos' && !isNew && (
+            <>
+              <p className="text-sm text-muted-foreground">
+                Particolarità operative della casa: divano letto, caldaia, elettrodomestici, climatizzatore, punti delicati e informazioni speciali.
+              </p>
+              <MediaSection structureId={structureId} units={units} hasUnits={form.has_units} form={form} setWarehouse={setWarehouse} onSaveStructure={handleSave} categories={GENERAL_CATS} />
+            </>
           )}
           {section === 'units' && !isNew && form.has_units && (
             <UnitsSection structureId={structureId} units={units} refresh={fetchStructure} />
@@ -444,7 +477,7 @@ function BedsSection({ form, setBed }) {
   );
 }
 
-function AccessSection({ form, set, setAccess, klvCode }) {
+function AccessSection({ form, set, setAccess, setKeyBox, klvCode }) {
   const ai = form.access_info;
   return (
     <>
@@ -457,11 +490,43 @@ function AccessSection({ form, set, setAccess, klvCode }) {
             </div>
             <Switch checked={!!ai.kilolava_has_keys} onCheckedChange={v => setAccess('kilolava_has_keys', v)} data-testid="has-keys-toggle" />
           </div>
-          {ai.kilolava_has_keys && klvCode && (
-            <div className="rounded-lg bg-muted/60 p-3.5 text-xs text-muted-foreground space-y-1">
-              <p className="font-medium text-foreground">Predisposizione portachiavi (fase futura)</p>
-              <p><span className="font-mono font-semibold">{klvCode}-A</span> Box Operatrici · <span className="font-mono font-semibold">{klvCode}-B</span> Box Rider · <span className="font-mono font-semibold">{klvCode}-C</span> Box Emergenza</p>
-              <p>Il portachiavi fisico è identificato solo dal codice KLV, mai da nome o indirizzo.</p>
+          {ai.kilolava_has_keys && (
+            <div className="space-y-2.5">
+              {KEY_COPIES.map(kc => {
+                const kb = (ai.key_boxes || {})[kc.letter] || {};
+                return (
+                  <div key={kc.letter} className="rounded-lg border border-border p-3.5" data-testid={`keybox-${kc.letter}`}>
+                    <div className="flex items-center justify-between gap-2 flex-wrap mb-2.5">
+                      <div className="flex items-center gap-2">
+                        <span className="px-2 py-0.5 rounded-md bg-primary/10 text-primary font-mono text-xs font-bold">
+                          {klvCode ? `${klvCode}-${kc.letter}` : `KLV-····-${kc.letter}`}
+                        </span>
+                        <span className="text-xs font-medium">Box {kc.letter} — {kc.label}</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className={cn('text-xs font-semibold', kb.present ? 'text-emerald-600' : 'text-red-500')}>
+                          {kb.present ? 'Presente' : 'Copia mancante'}
+                        </span>
+                        <Switch checked={!!kb.present} onCheckedChange={v => setKeyBox(kc.letter, 'present', v)} data-testid={`keybox-present-${kc.letter}`} />
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                      <FieldRow label="Box">
+                        <Input value={kb.box ?? kc.letter} onChange={e => setKeyBox(kc.letter, 'box', e.target.value)} placeholder={kc.letter} className="h-8 font-mono text-xs" data-testid={`keybox-box-${kc.letter}`} />
+                      </FieldRow>
+                      <FieldRow label="Slot">
+                        <Input value={kb.slot || ''} onChange={e => setKeyBox(kc.letter, 'slot', e.target.value)} placeholder="es. 42" className="h-8 font-mono text-xs" data-testid={`keybox-slot-${kc.letter}`} />
+                      </FieldRow>
+                      <FieldRow label="Nota">
+                        <Input value={kb.note || ''} onChange={e => setKeyBox(kc.letter, 'note', e.target.value)} className="h-8 text-xs" />
+                      </FieldRow>
+                    </div>
+                  </div>
+                );
+              })}
+              <p className="text-[11px] text-muted-foreground">
+                Il portachiavi fisico è identificato solo dal codice KLV, mai da nome, indirizzo, piano o cliente. Predisposto per QR anonimo di recupero chiavi.
+              </p>
             </div>
           )}
         </CardContent>
@@ -483,6 +548,11 @@ function AccessSection({ form, set, setAccess, klvCode }) {
             <div className="sm:col-span-2">
               <FieldRow label="Posizione keybox">
                 <Input value={ai.keybox_location || ''} onChange={e => setAccess('keybox_location', e.target.value)} placeholder="es. Sul cancello a destra del portone" className="h-9" data-testid="keybox-location-input" />
+              </FieldRow>
+            </div>
+            <div className="sm:col-span-2">
+              <FieldRow label="Posizione chiavi">
+                <Input value={ai.keys_location || ''} onChange={e => setAccess('keys_location', e.target.value)} placeholder="es. Chiavi appese dietro la porta del magazzino" className="h-9" data-testid="keys-location-input" />
               </FieldRow>
             </div>
             <FieldRow label="Metodo di accesso principale">
@@ -509,8 +579,8 @@ function AccessSection({ form, set, setAccess, klvCode }) {
 
 /* ---------- Media section ---------- */
 
-function MediaSection({ structureId, units, hasUnits, form, setWarehouse, onSaveStructure }) {
-  const [cat, setCat] = useState('arrive');
+function MediaSection({ structureId, units, hasUnits, form, setWarehouse, onSaveStructure, categories = MEDIA_CATS }) {
+  const [cat, setCat] = useState(categories[0].key);
   const [media, setMedia] = useState([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
@@ -595,21 +665,23 @@ function MediaSection({ structureId, units, hasUnits, form, setWarehouse, onSave
   return (
     <div className="space-y-4">
       {/* Category tabs */}
-      <div className="flex gap-1 bg-muted p-1 rounded-lg w-fit max-w-full overflow-x-auto">
-        {MEDIA_CATS.map(c => (
-          <button
-            key={c.key}
-            onClick={() => setCat(c.key)}
-            className={cn(
-              'px-3.5 py-1.5 rounded-md text-xs font-medium whitespace-nowrap transition-colors',
-              cat === c.key ? 'bg-card shadow-sm text-primary' : 'text-muted-foreground hover:text-foreground'
-            )}
-            data-testid={`media-cat-${c.key}`}
-          >
-            {c.label}
-          </button>
-        ))}
-      </div>
+      {categories.length > 1 && (
+        <div className="flex gap-1 bg-muted p-1 rounded-lg w-fit max-w-full overflow-x-auto">
+          {categories.map(c => (
+            <button
+              key={c.key}
+              onClick={() => setCat(c.key)}
+              className={cn(
+                'px-3.5 py-1.5 rounded-md text-xs font-medium whitespace-nowrap transition-colors',
+                cat === c.key ? 'bg-card shadow-sm text-primary' : 'text-muted-foreground hover:text-foreground'
+              )}
+              data-testid={`media-cat-${c.key}`}
+            >
+              {c.label}
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* Warehouse extra fields */}
       {cat === 'warehouse' && (
@@ -670,7 +742,7 @@ function MediaSection({ structureId, units, hasUnits, form, setWarehouse, onSave
       ) : catMedia.length === 0 ? (
         <div className="text-center py-10 border border-dashed border-border rounded-xl" data-testid="media-empty">
           <Film className="h-8 w-8 mx-auto text-muted-foreground/30 mb-2" />
-          <p className="text-sm text-muted-foreground">Nessun contenuto in "{MEDIA_CATS.find(c => c.key === cat)?.label}"</p>
+          <p className="text-sm text-muted-foreground">Nessun contenuto in "{categories.find(c => c.key === cat)?.label}"</p>
         </div>
       ) : (
         <div className="space-y-2">

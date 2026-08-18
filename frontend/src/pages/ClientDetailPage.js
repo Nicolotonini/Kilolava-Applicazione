@@ -603,6 +603,27 @@ const ClientDetailPage = () => {
     finally { setSavingPortal(false); }
   };
 
+  const handleLogoUpload = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    const fd = new FormData();
+    fd.append('file', file);
+    try {
+      await api.post(`/clients/${clientId}/logo`, fd, { headers: { 'Content-Type': 'multipart/form-data' } });
+      toast.success('Immagine aggiornata');
+      fetchClient();
+    } catch (err) { toast.error(err.response?.data?.detail || 'Errore'); }
+  };
+
+  const handleLogoRemove = async () => {
+    try {
+      await api.delete(`/clients/${clientId}/logo`);
+      toast.success('Immagine rimossa');
+      fetchClient();
+    } catch (err) { toast.error('Errore'); }
+  };
+
   const handleToggleOrdering = async (enabled) => {
     try {
       await clientsApi.update(clientId, { ordering_enabled: enabled });
@@ -742,21 +763,44 @@ const ClientDetailPage = () => {
           <ChevronLeft className="h-5 w-5" />
         </Button>
         <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-3">
-            <div className={cn(
-              "w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0",
-              client?.client_type === 'company' ? "bg-blue-100 dark:bg-blue-900/30" : "bg-primary/10"
-            )}>
-              {client?.client_type === 'company' 
-                ? <Briefcase className="h-5 w-5 text-blue-600 dark:text-blue-400" />
-                : <User className="h-5 w-5 text-primary" />
-              }
+          <div className="flex items-center gap-4">
+            <div className="flex-shrink-0">
+              {client?.logo_path ? (
+                <img
+                  src={`${process.env.REACT_APP_BACKEND_URL}/api/files/${client.logo_path}?auth=${localStorage.getItem('kilolava_token')}`}
+                  alt=""
+                  className="w-16 h-16 rounded-xl object-cover border border-border"
+                  data-testid="client-logo-img"
+                />
+              ) : (
+                <div className={cn(
+                  "w-16 h-16 rounded-xl flex items-center justify-center text-lg font-bold",
+                  client?.client_type === 'company' ? "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300" : "bg-primary/10 text-primary"
+                )} data-testid="client-logo-fallback">
+                  {(client?.display_name || '?').split(' ').filter(Boolean).slice(0, 2).map(w => w[0]).join('').toUpperCase()}
+                </div>
+              )}
             </div>
-            <div>
-              <h1 className="text-xl lg:text-2xl font-heading font-semibold text-foreground">
+            <div className="min-w-0">
+              <h1 className="text-xl lg:text-2xl font-heading font-semibold text-foreground truncate">
                 {client?.display_name}
               </h1>
               <span className="text-xs text-muted-foreground">{t(`clients.types.${client?.client_type}`)}</span>
+              <div className="flex items-center gap-3 mt-1.5">
+                <input type="file" accept="image/*" id="client-logo-input" className="hidden" onChange={handleLogoUpload} data-testid="client-logo-input" />
+                <button
+                  onClick={() => document.getElementById('client-logo-input').click()}
+                  className="text-[11px] font-medium text-primary hover:underline"
+                  data-testid="upload-logo-btn"
+                >
+                  {client?.logo_path ? 'Sostituisci immagine' : 'Carica logo / foto'}
+                </button>
+                {client?.logo_path && (
+                  <button onClick={handleLogoRemove} className="text-[11px] font-medium text-muted-foreground hover:text-destructive" data-testid="remove-logo-btn">
+                    Rimuovi
+                  </button>
+                )}
+              </div>
             </div>
           </div>
         </div>

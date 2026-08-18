@@ -31,6 +31,7 @@ import StructuresListPage from './pages/StructuresListPage';
 import StructureDetailPage from './pages/StructureDetailPage';
 import StructureInventoryPage from './pages/StructureInventoryPage';
 import PrivateLaundryPage from './pages/PrivateLaundryPage';
+import KeysPage from './pages/KeysPage';
 import ReportsPage from './pages/ReportsPage';
 
 // Portal Pages
@@ -174,6 +175,7 @@ function AppRoutes() {
         <Route path="logistics" element={<LogisticsPage />} />
         <Route path="deliveries" element={<Navigate to="/logistics" replace />} />
         <Route path="structure-inventory" element={<StructureInventoryPage />} />
+        <Route path="keys" element={<KeysPage />} />
         <Route path="private-laundry/jobs" element={<PrivateLaundryPage view="jobs" />} />
         <Route path="private-laundry/history" element={<PrivateLaundryPage view="history" />} />
         <Route path="cleaning" element={<CleaningPage />} />

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useLanguage } from '../contexts/LanguageContext';
-import { clientsApi } from '../lib/api';
+import { clientsApi, fileUrl } from '../lib/api';
 import api from '../lib/api';
 import { ExportButton } from '../components/ExportButton';
 import { Card, CardContent } from '../components/ui/card';
@@ -41,6 +41,8 @@ import { cn } from '../lib/utils';
 
 const defaultPrivateInfo = { name: '', surname: '', address: '', fiscal_code: '', phone: '', email: '', sdi: '0000000' };
 const defaultCompanyInfo = { company_name: '', representative_name: '', representative_surname: '', vat_number: '', fiscal_code: '', sdi: '0000000', address: '', phone: '', email: '', pec: '' };
+
+const getInitials = (name = '') => name.split(' ').filter(Boolean).slice(0, 2).map(w => w[0]).join('').toUpperCase() || '?';
 
 const ClientsPage = () => {
   const { t } = useLanguage();
@@ -251,28 +253,34 @@ const ClientsPage = () => {
               <div
                 key={client.id}
                 onClick={() => handleClientClick(client)}
-                className="flex flex-wrap items-center gap-x-6 gap-y-2.5 p-4 rounded-xl border border-border bg-card hover:border-primary/40 cursor-pointer transition-colors"
+                className="flex flex-wrap items-center gap-x-8 gap-y-3 px-5 py-5 rounded-xl border border-border bg-card hover:border-primary/40 cursor-pointer transition-colors"
                 data-testid={`client-row-${client.id}`}
               >
                 {/* Identity */}
-                <div className="flex items-center gap-3 min-w-[190px] flex-1">
-                  <div className={cn(
-                    "w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0",
-                    client.client_type === 'company' ? "bg-blue-100 dark:bg-blue-900/30" : "bg-primary/10"
-                  )}>
-                    {client.client_type === 'company'
-                      ? <Briefcase className="h-4 w-4 text-blue-600 dark:text-blue-400" />
-                      : <User className="h-4 w-4 text-primary" />
-                    }
-                  </div>
+                <div className="flex items-center gap-3.5 min-w-[210px] flex-1">
+                  {client.logo_path ? (
+                    <img
+                      src={fileUrl(client.logo_path)}
+                      alt=""
+                      className="w-11 h-11 rounded-full object-cover border border-border flex-shrink-0"
+                      data-testid={`client-logo-${client.id}`}
+                    />
+                  ) : (
+                    <div className={cn(
+                      "w-11 h-11 rounded-full flex items-center justify-center flex-shrink-0 text-sm font-bold",
+                      client.client_type === 'company' ? "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300" : "bg-primary/10 text-primary"
+                    )}>
+                      {getInitials(client.display_name)}
+                    </div>
+                  )}
                   <div className="min-w-0">
-                    <p className="font-semibold text-sm truncate">{client.display_name}</p>
-                    <p className="text-xs text-muted-foreground">{t(`clients.types.${client.client_type}`)}</p>
+                    <p className="font-semibold text-[15px] truncate">{client.display_name}</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">{t(`clients.types.${client.client_type}`)}</p>
                   </div>
                 </div>
 
                 {/* KPIs */}
-                <div className="flex items-center gap-6 flex-wrap">
+                <div className="flex items-center gap-7 flex-wrap">
                   <div className="min-w-[72px]" data-testid={`kpi-structures-${client.id}`}>
                     <p className="text-[10px] uppercase tracking-wider text-muted-foreground">Strutture</p>
                     <p className="text-sm font-semibold tabular-nums flex items-center gap-1.5">

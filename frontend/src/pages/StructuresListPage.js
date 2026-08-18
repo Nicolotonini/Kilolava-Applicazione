@@ -5,17 +5,18 @@ import { ExportButton } from '../components/ExportButton';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import {
-  Building2, Plus, Search, MapPin, User, Trash2, ArrowRight, Boxes,
+  Building2, Plus, Search, MapPin, User, Trash2, Boxes,
+  Sparkles, Shirt, Layers, Package, Wrench,
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { toast } from 'sonner';
 
-const SERVICE_LABELS = {
-  cleaning: 'Pulizie',
-  private_laundry: 'Lav. Privata',
-  rental_laundry: 'Noleggio',
-  consumables: 'Consumabili',
-  maintenance: 'Manutenzioni',
+const SERVICE_BADGES = {
+  cleaning: { label: 'Pulizie', icon: Sparkles, cls: 'bg-sky-50 text-sky-700 border-sky-200 dark:bg-sky-900/20 dark:text-sky-300 dark:border-sky-800' },
+  private_laundry: { label: 'Lav. Privata', icon: Shirt, cls: 'bg-violet-50 text-violet-700 border-violet-200 dark:bg-violet-900/20 dark:text-violet-300 dark:border-violet-800' },
+  rental_laundry: { label: 'Noleggio', icon: Layers, cls: 'bg-teal-50 text-teal-700 border-teal-200 dark:bg-teal-900/20 dark:text-teal-300 dark:border-teal-800' },
+  consumables: { label: 'Consumabili', icon: Package, cls: 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-900/20 dark:text-amber-300 dark:border-amber-800' },
+  maintenance: { label: 'Manutenzioni', icon: Wrench, cls: 'bg-orange-50 text-orange-700 border-orange-200 dark:bg-orange-900/20 dark:text-orange-300 dark:border-orange-800' },
 };
 
 const StructuresListPage = () => {
@@ -125,11 +126,14 @@ const StructuresListPage = () => {
                 </div>
               </div>
               <div className="flex items-center gap-1.5 flex-wrap">
-                {(s.services || []).filter(svc => SERVICE_LABELS[svc]).map(svc => (
-                  <span key={svc} className="px-2 py-0.5 rounded-full bg-muted text-[11px] font-medium text-foreground/70">
-                    {SERVICE_LABELS[svc]}
-                  </span>
-                ))}
+                {(s.services || []).filter(svc => SERVICE_BADGES[svc]).map(svc => {
+                  const b = SERVICE_BADGES[svc];
+                  return (
+                    <span key={svc} className={cn('inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-[11px] font-medium', b.cls)}>
+                      <b.icon className="h-3 w-3" />{b.label}
+                    </span>
+                  );
+                })}
               </div>
               <div className="flex items-center gap-1.5 ml-auto" onClick={e => e.stopPropagation()}>
                 <Button
@@ -140,14 +144,6 @@ const StructuresListPage = () => {
                   data-testid={`open-warehouse-${s.id}`}
                 >
                   <Boxes className="h-3.5 w-3.5 mr-1" />Magazzino
-                </Button>
-                <Button
-                  size="sm"
-                  className="h-8 text-xs bg-primary hover:bg-primary/90 text-primary-foreground"
-                  onClick={() => navigate(`/structures/${s.id}`)}
-                  data-testid={`open-structure-${s.id}`}
-                >
-                  Apri<ArrowRight className="h-3.5 w-3.5 ml-1" />
                 </Button>
                 <Button
                   variant="ghost"

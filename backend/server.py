@@ -194,6 +194,7 @@ class ClientResponse(BaseModel):
     ordering_enabled: bool = False
     has_portal_account: bool = False
     structure_count: int = 0
+    logo_path: Optional[str] = None
     created_at: str
     updated_at: str
 
@@ -591,6 +592,34 @@ async def create_client(client_data: ClientCreate, current_user: dict = Depends(
         updated_at=now
     )
 
+@api_router.post("/clients/{client_id}/logo")
+async def upload_client_logo(
+    client_id: str,
+    file: UploadFile = File(...),
+    current_user: dict = Depends(get_current_user)
+):
+    if current_user["role"] not in [UserRole.MANAGER, UserRole.OPS_MANAGER]:
+        raise HTTPException(status_code=403, detail="Non autorizzato")
+    client = await db.clients.find_one({"id": client_id}, {"_id": 0, "id": 1})
+    if not client:
+        raise HTTPException(status_code=404, detail="Cliente non trovato")
+    ext = file.filename.split(".")[-1].lower() if "." in file.filename else "jpg"
+    content_type = file.content_type or "image/jpeg"
+    if not content_type.startswith("image"):
+        raise HTTPException(status_code=400, detail="Il file deve essere un'immagine")
+    data = await file.read()
+    path = f"{APP_NAME}/clients/{client_id}/logo_{uuid.uuid4()}.{ext}"
+    result = put_object(path, data, content_type)
+    await db.clients.update_one({"id": client_id}, {"$set": {"logo_path": result["path"], "updated_at": now_iso()}})
+    return {"logo_path": result["path"]}
+
+@api_router.delete("/clients/{client_id}/logo")
+async def delete_client_logo(client_id: str, current_user: dict = Depends(get_current_user)):
+    if current_user["role"] not in [UserRole.MANAGER, UserRole.OPS_MANAGER]:
+        raise HTTPException(status_code=403, detail="Non autorizzato")
+    await db.clients.update_one({"id": client_id}, {"$set": {"logo_path": None, "updated_at": now_iso()}})
+    return {"message": "Logo rimosso"}
+
 @api_router.get("/clients", response_model=List[ClientResponse])
 async def get_clients(
     is_active: Optional[bool] = None,
@@ -646,11 +675,26 @@ async def get_clients(
             ordering_enabled=client_doc.get("ordering_enabled", False),
             has_portal_account=client_doc["id"] in portal_set,
             structure_count=counts.get(client_doc["id"], 0),
+            logo_path=client_doc.get("logo_path"),
             created_at=client_doc["created_at"],
             updated_at=client_doc["updated_at"]
         ))
     
     return result
+
+@api_router.get("/integrations/google-sheets/status")
+async def google_sheets_status(current_user: dict = Depends(get_current_user)):
+    if not is_ops_user(current_user):
+        raise HTTPException(status_code=403, detail="Non autorizzato")
+    from services.sheets_sync import get_status
+    return await get_status()
+
+@api_router.post("/integrations/google-sheets/sync")
+async def google_sheets_sync(current_user: dict = Depends(get_current_user)):
+    if current_user["role"] not in [UserRole.MANAGER, UserRole.OPS_MANAGER]:
+        raise HTTPException(status_code=403, detail="Non autorizzato")
+    from services.sheets_sync import run_sync
+    return await run_sync()
 
 @api_router.get("/clients/overview")
 async def clients_overview(current_user: dict = Depends(get_current_user)):
@@ -755,6 +799,7 @@ async def get_client(client_id: str, current_user: dict = Depends(get_current_us
         ordering_enabled=client.get("ordering_enabled", False),
         has_portal_account=has_portal,
         structure_count=structure_count,
+        logo_path=client.get("logo_path"),
         created_at=client["created_at"],
         updated_at=client["updated_at"]
     )
@@ -804,6 +849,7 @@ async def update_client(
         is_active=updated_client.get("is_active", True),
         ordering_enabled=updated_client.get("ordering_enabled", False),
         structure_count=structure_count,
+        logo_path=updated_client.get("logo_path"),
         created_at=updated_client["created_at"],
         updated_at=updated_client["updated_at"]
     )
@@ -823,8 +869,6 @@ async def delete_client(client_id: str, current_user: dict = Depends(get_current
     
     await db.clients.delete_one({"id": client_id})
     return {"message": "Cliente eliminato"}
-
-# ============== STRUCTURE ENDPOINTS ==============
 
 # ============== STRUCTURE ENDPOINTS ==============
 

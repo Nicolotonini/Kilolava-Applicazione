@@ -7,7 +7,7 @@ import { NotificationBell } from '../NotificationBell';
 import {
   LayoutDashboard, Users, CalendarDays, Truck, Settings, LogOut, Menu, X,
   Sun, Moon, Shield, Sparkles, Wrench, FileText, ChevronDown, ChevronRight,
-  Eye, Building2, Shirt, Layers, Boxes,
+  Eye, Building2, Shirt, Layers, Boxes, KeyRound,
 } from 'lucide-react';
 import { Button } from '../ui/button';
 import { cn } from '../../lib/utils';
@@ -25,6 +25,7 @@ const NAV = [
   },
   { type: 'item', key: 'cleaning', path: '/cleaning', icon: Sparkles, label: 'Pulizie' },
   { type: 'item', key: 'structure-inventory', path: '/structure-inventory', icon: Boxes, label: 'Magazzino Strutture' },
+  { type: 'item', key: 'keys', path: '/keys', icon: KeyRound, label: 'Chiavi' },
   { type: 'item', key: 'deliveries', path: '/logistics', icon: Truck, label: 'Consegne' },
   {
     type: 'group', key: 'private-laundry', icon: Shirt, label: 'Lavanderia Privata', children: [
@@ -83,6 +84,7 @@ function getBreadcrumb(pathname, search) {
   if (pathname === '/cleaning') return { title: 'Pulizie', crumbs: [] };
   if (pathname === '/checklist-templates') return { title: 'Checklist', crumbs: [{ label: 'Pulizie', to: '/cleaning' }] };
   if (pathname === '/structure-inventory') return { title: 'Magazzino Strutture', crumbs: [] };
+  if (pathname === '/keys') return { title: 'Chiavi', crumbs: [] };
   if (pathname === '/logistics') return { title: 'Consegne', crumbs: [] };
   if (pathname === '/private-laundry/jobs') return { title: 'Lavorazioni', crumbs: [{ label: 'Lavanderia Privata' }] };
   if (pathname === '/private-laundry/history') return { title: 'Storico', crumbs: [{ label: 'Lavanderia Privata' }] };
