@@ -652,6 +652,80 @@ async def get_clients(
     
     return result
 
+@api_router.get("/clients/overview")
+async def clients_overview(current_user: dict = Depends(get_current_user)):
+    if not is_ops_user(current_user):
+        raise HTTPException(status_code=403, detail="Non autorizzato")
+    now_dt = datetime.now(timezone.utc)
+    today = now_dt.strftime("%Y-%m-%d")
+    next_day = (now_dt + timedelta(days=1)).strftime("%Y-%m-%d")
+    month_start = f"{now_dt.year}-{now_dt.month:02d}-01"
+    if now_dt.month == 12:
+        month_end = f"{now_dt.year + 1}-01-01"
+    else:
+        month_end = f"{now_dt.year}-{now_dt.month + 1:02d}-01"
+
+    stats = {}
+
+    def entry(cid):
+        return stats.setdefault(cid, {"revenue_month": 0, "today_activities": 0, "alerts": 0})
+
+    # Revenue this month (orders, not cancelled)
+    async for doc in db.orders.aggregate([
+        {"$match": {"created_at": {"$gte": month_start, "$lt": month_end}, "status": {"$nin": ["cancelled"]}, "client_id": {"$nin": [None, ""]}}},
+        {"$group": {"_id": "$client_id", "total": {"$sum": "$total"}}},
+    ]):
+        entry(doc["_id"])["revenue_month"] = doc.get("total", 0) or 0
+
+    # Today's activities: cleaning + deliveries scheduled today, maintenance opened today
+    for coll, match in [
+        (db.cleaning_tasks, {"date": today}),
+        (db.logistics_tasks, {"date": today}),
+        (db.maintenance_issues, {"created_at": {"$gte": today, "$lt": next_day}}),
+    ]:
+        async for doc in coll.aggregate([
+            {"$match": {**match, "client_id": {"$nin": [None, ""]}}},
+            {"$group": {"_id": "$client_id", "n": {"$sum": 1}}},
+        ]):
+            entry(doc["_id"])["today_activities"] += doc["n"]
+
+    # Alerts: overdue tasks, urgent open maintenance, negative structure stock
+    open_statuses = ["pending", "assigned", "in_progress"]
+    for coll, match in [
+        (db.cleaning_tasks, {"date": {"$lt": today}, "status": {"$in": open_statuses}}),
+        (db.logistics_tasks, {"date": {"$lt": today}, "status": {"$in": open_statuses}}),
+        (db.maintenance_issues, {"priority": {"$in": ["urgent", "high"]}, "status": {"$in": ["open", "assigned", "in_progress"]}}),
+    ]:
+        async for doc in coll.aggregate([
+            {"$match": {**match, "client_id": {"$nin": [None, ""]}}},
+            {"$group": {"_id": "$client_id", "n": {"$sum": 1}}},
+        ]):
+            entry(doc["_id"])["alerts"] += doc["n"]
+
+    neg_pipeline = [
+        {"$match": {"structure_id": {"$nin": [None, ""]}}},
+        {"$unwind": "$items"},
+        {"$group": {
+            "_id": {"s": "$structure_id", "a": "$items.article_id"},
+            "bal": {"$sum": {"$cond": [
+                {"$eq": ["$movement_type", "delivered"]}, "$items.quantity",
+                {"$cond": [
+                    {"$in": ["$movement_type", ["picked_up", "returned", "missing", "damaged"]]},
+                    {"$multiply": ["$items.quantity", -1]}, 0
+                ]}
+            ]}},
+        }},
+        {"$match": {"bal": {"$lt": 0}}},
+        {"$group": {"_id": "$_id.s"}},
+    ]
+    neg_structure_ids = [d["_id"] async for d in db.movements.aggregate(neg_pipeline)]
+    if neg_structure_ids:
+        async for s in db.structures.find({"id": {"$in": neg_structure_ids}}, {"_id": 0, "client_id": 1}):
+            if s.get("client_id"):
+                entry(s["client_id"])["alerts"] += 1
+
+    return stats
+
 @api_router.get("/clients/{client_id}", response_model=ClientResponse)
 async def get_client(client_id: str, current_user: dict = Depends(get_current_user)):
     client = await db.clients.find_one({"id": client_id}, {"_id": 0})

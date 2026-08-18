@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useLanguage } from '../contexts/LanguageContext';
 import { clientsApi } from '../lib/api';
+import api from '../lib/api';
 import { ExportButton } from '../components/ExportButton';
 import { Card, CardContent } from '../components/ui/card';
 import { Button } from '../components/ui/button';
@@ -34,7 +35,7 @@ import {
 import { toast } from 'sonner';
 import { 
   Plus, Search, Pencil, Trash2, Building2, 
-  LayoutGrid, List, ChevronRight, Phone, Mail, User, Briefcase
+  Phone, Mail, User, Briefcase, TrendingUp, CalendarCheck, AlertTriangle
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 
@@ -45,9 +46,9 @@ const ClientsPage = () => {
   const { t } = useLanguage();
   const navigate = useNavigate();
   const [clients, setClients] = useState([]);
+  const [overview, setOverview] = useState({});
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
-  const [viewMode, setViewMode] = useState('list');
   const [sheetOpen, setSheetOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [selectedClient, setSelectedClient] = useState(null);
@@ -77,6 +78,10 @@ const ClientsPage = () => {
   useEffect(() => {
     fetchClients();
   }, [fetchClients]);
+
+  useEffect(() => {
+    api.get('/clients/overview').then(r => setOverview(r.data)).catch(() => {});
+  }, []);
 
   const resetForm = () => {
     setFormData({
@@ -210,41 +215,19 @@ const ClientsPage = () => {
         </div>
       </div>
 
-      {/* Search & View Toggle */}
-      <div className="flex flex-col sm:flex-row gap-3">
-        <div className="relative flex-1 max-w-md">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input
-            placeholder={t('clients.search')}
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="pl-9 h-9"
-            data-testid="search-input"
-          />
-        </div>
-        <div className="flex items-center gap-1 bg-muted p-1 rounded-lg">
-          <Button
-            variant={viewMode === 'list' ? 'secondary' : 'ghost'}
-            size="sm"
-            onClick={() => setViewMode('list')}
-            className="h-7 px-2"
-            data-testid="view-list-btn"
-          >
-            <List className="h-4 w-4" />
-          </Button>
-          <Button
-            variant={viewMode === 'grid' ? 'secondary' : 'ghost'}
-            size="sm"
-            onClick={() => setViewMode('grid')}
-            className="h-7 px-2"
-            data-testid="view-grid-btn"
-          >
-            <LayoutGrid className="h-4 w-4" />
-          </Button>
-        </div>
+      {/* Search */}
+      <div className="relative flex-1 max-w-md">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+        <Input
+          placeholder={t('clients.search')}
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          className="pl-9 h-9"
+          data-testid="search-input"
+        />
       </div>
 
-      {/* Clients Display */}
+      {/* Clients management list */}
       {loading ? (
         <div className="text-center py-12 text-muted-foreground">{t('common.loading')}</div>
       ) : clients.length === 0 ? (
@@ -257,120 +240,120 @@ const ClientsPage = () => {
             </Button>
           </CardContent>
         </Card>
-      ) : viewMode === 'grid' ? (
-        /* Grid View */
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
-          {clients.map((client) => (
-            <Card
-              key={client.id}
-              className="kilolava-card-interactive cursor-pointer group"
-              onClick={() => handleClientClick(client)}
-              data-testid={`client-card-${client.id}`}
-            >
-              <CardContent className="p-4">
-                <div className="flex items-start justify-between mb-2">
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <div className={cn(
-                        "w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0",
-                        client.client_type === 'company' ? "bg-blue-100 dark:bg-blue-900/30" : "bg-primary/10"
-                      )}>
-                        {client.client_type === 'company' 
-                          ? <Briefcase className="h-3.5 w-3.5 text-blue-600 dark:text-blue-400" />
-                          : <User className="h-3.5 w-3.5 text-primary" />
-                        }
-                      </div>
-                      <div className="min-w-0">
-                        <h3 className="font-medium text-foreground truncate text-sm">
-                          {client.display_name}
-                        </h3>
-                        <p className="text-xs text-muted-foreground">
-                          {t(`clients.types.${client.client_type}`)}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-0.5">
-                    <Button variant="ghost" size="icon" onClick={(e) => openEditSheet(client, e)} className="h-7 w-7">
-                      <Pencil className="h-3.5 w-3.5" />
-                    </Button>
-                    <Button variant="ghost" size="icon" onClick={(e) => openDeleteDialog(client, e)} className="h-7 w-7 text-destructive hover:text-destructive">
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </Button>
-                  </div>
-                </div>
-
-                <div className="flex items-center justify-between mt-3 pt-3 border-t border-border">
-                  <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                    <Building2 className="h-3.5 w-3.5" />
-                    <span>{client.structure_count} {t('structures.title').toLowerCase()}</span>
-                  </div>
-                  <ChevronRight className="h-4 w-4 text-muted-foreground group-hover:text-primary transition-colors" />
-                </div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
       ) : (
-        /* List View with Sticky Header */
-        <div className="border border-border rounded-xl overflow-hidden bg-card">
-          <div className="sticky top-0 z-10 bg-muted/80 backdrop-blur-sm border-b border-border">
-            <div className="grid grid-cols-[1fr_auto_auto_auto_auto] sm:grid-cols-[1fr_150px_200px_80px_80px] items-center gap-2 px-4 py-2.5">
-              <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">{t('clients.columns.name')}</span>
-              <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider hidden sm:block">{t('clients.columns.phone')}</span>
-              <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider hidden sm:block">{t('clients.columns.email')}</span>
-              <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider text-center">{t('clients.columns.structures')}</span>
-              <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider text-center">{t('common.actions')}</span>
-            </div>
-          </div>
-          <div className="divide-y divide-border">
-            {clients.map((client) => (
+        <div className="space-y-2">
+          {clients.map((client) => {
+            const st = overview[client.id] || {};
+            const revenue = st.revenue_month || 0;
+            const todayN = st.today_activities || 0;
+            const alerts = st.alerts || 0;
+            return (
               <div
                 key={client.id}
-                className="grid grid-cols-[1fr_auto_auto_auto_auto] sm:grid-cols-[1fr_150px_200px_80px_80px] items-center gap-2 px-4 py-3 cursor-pointer hover:bg-accent/40 transition-colors group"
                 onClick={() => handleClientClick(client)}
+                className="flex flex-wrap items-center gap-x-6 gap-y-2.5 p-4 rounded-xl border border-border bg-card hover:border-primary/40 cursor-pointer transition-colors"
                 data-testid={`client-row-${client.id}`}
               >
-                <div className="flex items-center gap-3 min-w-0">
+                {/* Identity */}
+                <div className="flex items-center gap-3 min-w-[190px] flex-1">
                   <div className={cn(
-                    "w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0",
+                    "w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0",
                     client.client_type === 'company' ? "bg-blue-100 dark:bg-blue-900/30" : "bg-primary/10"
                   )}>
-                    {client.client_type === 'company' 
+                    {client.client_type === 'company'
                       ? <Briefcase className="h-4 w-4 text-blue-600 dark:text-blue-400" />
                       : <User className="h-4 w-4 text-primary" />
                     }
                   </div>
                   <div className="min-w-0">
-                    <span className="font-medium text-sm text-foreground truncate block">{client.display_name}</span>
-                    <span className="text-xs text-muted-foreground">{t(`clients.types.${client.client_type}`)}</span>
+                    <p className="font-semibold text-sm truncate">{client.display_name}</p>
+                    <p className="text-xs text-muted-foreground">{t(`clients.types.${client.client_type}`)}</p>
                   </div>
                 </div>
-                <span className="text-sm text-muted-foreground truncate hidden sm:block">
-                  {client.phone ? (
-                    <span className="flex items-center gap-1"><Phone className="h-3 w-3 flex-shrink-0" />{client.phone}</span>
-                  ) : '—'}
-                </span>
-                <span className="text-sm text-muted-foreground truncate hidden sm:block">
-                  {client.email ? (
-                    <span className="flex items-center gap-1"><Mail className="h-3 w-3 flex-shrink-0" />{client.email}</span>
-                  ) : '—'}
-                </span>
-                <div className="flex items-center justify-center gap-1.5 text-sm text-muted-foreground">
-                  <Building2 className="h-3.5 w-3.5" />
-                  <span>{client.structure_count}</span>
+
+                {/* KPIs */}
+                <div className="flex items-center gap-6 flex-wrap">
+                  <div className="min-w-[72px]" data-testid={`kpi-structures-${client.id}`}>
+                    <p className="text-[10px] uppercase tracking-wider text-muted-foreground">Strutture</p>
+                    <p className="text-sm font-semibold tabular-nums flex items-center gap-1.5">
+                      <Building2 className="h-3.5 w-3.5 text-muted-foreground" />{client.structure_count}
+                    </p>
+                  </div>
+                  <div className="min-w-[92px]" data-testid={`kpi-revenue-${client.id}`}>
+                    <p className="text-[10px] uppercase tracking-wider text-muted-foreground">Questo mese</p>
+                    <p className="text-sm font-semibold tabular-nums flex items-center gap-1.5">
+                      <TrendingUp className="h-3.5 w-3.5 text-muted-foreground" />
+                      {revenue.toLocaleString('it-IT', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 })}
+                    </p>
+                  </div>
+                  <div className="min-w-[72px]" data-testid={`kpi-today-${client.id}`}>
+                    <p className="text-[10px] uppercase tracking-wider text-muted-foreground">Oggi</p>
+                    <p className="text-sm font-semibold tabular-nums flex items-center gap-1.5">
+                      <CalendarCheck className="h-3.5 w-3.5 text-muted-foreground" />
+                      {todayN} {todayN === 1 ? 'attività' : 'attività'}
+                    </p>
+                  </div>
+                  <div className="min-w-[72px]" data-testid={`kpi-alerts-${client.id}`}>
+                    <p className="text-[10px] uppercase tracking-wider text-muted-foreground">Alert</p>
+                    {alerts > 0 ? (
+                      <p className="text-sm font-semibold tabular-nums flex items-center gap-1.5 text-red-600 dark:text-red-400">
+                        <AlertTriangle className="h-3.5 w-3.5" />{alerts}
+                      </p>
+                    ) : (
+                      <p className="text-sm text-muted-foreground/50">—</p>
+                    )}
+                  </div>
                 </div>
-                <div className="flex items-center justify-center gap-1">
-                  <Button variant="ghost" size="icon" onClick={(e) => openEditSheet(client, e)} className="h-7 w-7">
+
+                {/* Quick actions */}
+                <div className="flex items-center gap-0.5 ml-auto" onClick={(e) => e.stopPropagation()}>
+                  {client.phone ? (
+                    <a
+                      href={`tel:${client.phone}`}
+                      title={client.phone}
+                      className="h-8 w-8 flex items-center justify-center rounded-md text-muted-foreground hover:text-primary hover:bg-muted transition-colors"
+                      data-testid={`call-${client.id}`}
+                    >
+                      <Phone className="h-3.5 w-3.5" />
+                    </a>
+                  ) : (
+                    <span
+                      title="Telefono non inserito"
+                      className="h-8 w-8 flex items-center justify-center rounded-md text-muted-foreground/25 cursor-default"
+                      data-testid={`call-${client.id}`}
+                    >
+                      <Phone className="h-3.5 w-3.5" />
+                    </span>
+                  )}
+                  {client.email ? (
+                    <a
+                      href={`mailto:${client.email}`}
+                      title={client.email}
+                      className="h-8 w-8 flex items-center justify-center rounded-md text-muted-foreground hover:text-primary hover:bg-muted transition-colors"
+                      data-testid={`email-${client.id}`}
+                    >
+                      <Mail className="h-3.5 w-3.5" />
+                    </a>
+                  ) : (
+                    <span
+                      title="Email non inserita"
+                      className="h-8 w-8 flex items-center justify-center rounded-md text-muted-foreground/25 cursor-default"
+                      data-testid={`email-${client.id}`}
+                    >
+                      <Mail className="h-3.5 w-3.5" />
+                    </span>
+                  )}
+                  <div className="w-px h-5 bg-border mx-1" />
+                  <Button variant="ghost" size="icon" onClick={(e) => openEditSheet(client, e)} className="h-8 w-8 text-muted-foreground">
                     <Pencil className="h-3.5 w-3.5" />
                   </Button>
-                  <Button variant="ghost" size="icon" onClick={(e) => openDeleteDialog(client, e)} className="h-7 w-7 text-destructive hover:text-destructive">
+                  <Button variant="ghost" size="icon" onClick={(e) => openDeleteDialog(client, e)} className="h-8 w-8 text-muted-foreground hover:text-destructive">
                     <Trash2 className="h-3.5 w-3.5" />
                   </Button>
                 </div>
               </div>
-            ))}
-          </div>
+            );
+          })}
         </div>
       )}
 
