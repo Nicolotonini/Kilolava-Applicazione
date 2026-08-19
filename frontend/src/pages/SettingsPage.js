@@ -15,7 +15,8 @@ import {
   SelectValue,
 } from '../components/ui/select';
 import { toast } from 'sonner';
-import { Globe, Palette, User, FileSpreadsheet, RefreshCw } from 'lucide-react';
+import { Globe, Palette, User, FileSpreadsheet, RefreshCw, KeyRound } from 'lucide-react';
+import { Input } from '../components/ui/input';
 
 const SettingsPage = () => {
   const { user, updateUser } = useAuth();
@@ -23,12 +24,28 @@ const SettingsPage = () => {
   const { theme, setTheme, isDark } = useTheme();
   const [gsStatus, setGsStatus] = useState(null);
   const [syncing, setSyncing] = useState(false);
+  const [boxCapacity, setBoxCapacity] = useState(60);
+  const [savingCapacity, setSavingCapacity] = useState(false);
 
   const fetchGsStatus = () => {
     api.get('/integrations/google-sheets/status').then(r => setGsStatus(r.data)).catch(() => setGsStatus({ configured: false, missing: [] }));
   };
 
-  useEffect(() => { fetchGsStatus(); }, []);
+  useEffect(() => {
+    fetchGsStatus();
+    api.get('/settings/keys').then(r => setBoxCapacity(r.data.box_capacity || 60)).catch(() => {});
+  }, []);
+
+  const handleSaveCapacity = async () => {
+    setSavingCapacity(true);
+    try {
+      const res = await api.put('/settings/keys', { box_capacity: parseInt(boxCapacity) || 60 });
+      setBoxCapacity(res.data.box_capacity);
+      toast.success('Capacità box aggiornata');
+    } catch (e) {
+      toast.error(e.response?.data?.detail || 'Errore');
+    } finally { setSavingCapacity(false); }
+  };
 
   const handleSync = async () => {
     setSyncing(true);
@@ -156,6 +173,45 @@ const SettingsPage = () => {
               onCheckedChange={(checked) => handleThemeChange(checked ? 'dark' : 'light')}
               data-testid="theme-switch"
             />
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Key Boxes capacity */}
+      <Card className="kilolava-card" data-testid="keybox-settings-card">
+        <CardHeader>
+          <div className="flex items-center gap-3">
+            <div className="p-2 rounded-lg bg-primary/10">
+              <KeyRound className="h-5 w-5 text-primary" />
+            </div>
+            <div>
+              <CardTitle className="text-lg font-heading">Box Chiavi</CardTitle>
+              <CardDescription>Capacità fisica di ogni box (A, B, C)</CardDescription>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <div className="flex items-end gap-3">
+            <div>
+              <Label className="text-xs">Posizioni per box</Label>
+              <Input
+                type="number"
+                min={1}
+                value={boxCapacity}
+                onChange={(e) => setBoxCapacity(e.target.value)}
+                className="h-9 w-32 mt-1"
+                data-testid="box-capacity-input"
+              />
+            </div>
+            <Button
+              onClick={handleSaveCapacity}
+              disabled={savingCapacity}
+              variant="outline"
+              className="h-9"
+              data-testid="save-capacity-btn"
+            >
+              {savingCapacity ? 'Salvataggio...' : 'Salva'}
+            </Button>
           </div>
         </CardContent>
       </Card>

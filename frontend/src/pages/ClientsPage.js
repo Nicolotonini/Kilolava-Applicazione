@@ -3,7 +3,6 @@ import { useNavigate } from 'react-router-dom';
 import { useLanguage } from '../contexts/LanguageContext';
 import { clientsApi, fileUrl } from '../lib/api';
 import api from '../lib/api';
-import { ExportButton } from '../components/ExportButton';
 import { Card, CardContent } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
@@ -205,7 +204,6 @@ const ClientsPage = () => {
           <p className="text-sm text-muted-foreground">{t('clients.subtitle')}</p>
         </div>
         <div className="flex items-center gap-2">
-          <ExportButton entity="clients" className="h-9" />
           <Button
             onClick={openCreateSheet}
             className="bg-[#F24E75] hover:bg-[#E03B62] text-white h-9"
@@ -257,25 +255,25 @@ const ClientsPage = () => {
                 data-testid={`client-row-${client.id}`}
               >
                 {/* Identity */}
-                <div className="flex items-center gap-3.5 min-w-[210px] flex-1">
+                <div className="flex items-center gap-4 min-w-[230px] flex-1">
                   {client.logo_path ? (
                     <img
                       src={fileUrl(client.logo_path)}
                       alt=""
-                      className="w-11 h-11 rounded-full object-cover border border-border flex-shrink-0"
+                      className="w-12 h-12 rounded-full object-cover border border-border flex-shrink-0"
                       data-testid={`client-logo-${client.id}`}
                     />
                   ) : (
                     <div className={cn(
-                      "w-11 h-11 rounded-full flex items-center justify-center flex-shrink-0 text-sm font-bold",
+                      "w-12 h-12 rounded-full flex items-center justify-center flex-shrink-0 text-base font-bold",
                       client.client_type === 'company' ? "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300" : "bg-primary/10 text-primary"
                     )}>
                       {getInitials(client.display_name)}
                     </div>
                   )}
                   <div className="min-w-0">
-                    <p className="font-semibold text-[15px] truncate">{client.display_name}</p>
-                    <p className="text-xs text-muted-foreground mt-0.5">{t(`clients.types.${client.client_type}`)}</p>
+                    <p className="font-semibold text-base truncate">{client.display_name}</p>
+                    <p className="text-xs text-muted-foreground mt-1">{t(`clients.types.${client.client_type}`)}</p>
                   </div>
                 </div>
 

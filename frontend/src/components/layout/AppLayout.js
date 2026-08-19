@@ -21,11 +21,11 @@ const NAV = [
     type: 'group', key: 'clients-structures', icon: Users, label: 'Clienti e Strutture', children: [
       { key: 'clients', path: '/clients', label: 'Clienti' },
       { key: 'structures', path: '/structures', label: 'Strutture' },
+      { key: 'keys', path: '/keys', label: 'Chiavi' },
     ],
   },
   { type: 'item', key: 'cleaning', path: '/cleaning', icon: Sparkles, label: 'Pulizie' },
   { type: 'item', key: 'structure-inventory', path: '/structure-inventory', icon: Boxes, label: 'Magazzino Strutture' },
-  { type: 'item', key: 'keys', path: '/keys', icon: KeyRound, label: 'Chiavi' },
   { type: 'item', key: 'deliveries', path: '/logistics', icon: Truck, label: 'Consegne' },
   {
     type: 'group', key: 'private-laundry', icon: Shirt, label: 'Lavanderia Privata', children: [
@@ -84,7 +84,7 @@ function getBreadcrumb(pathname, search) {
   if (pathname === '/cleaning') return { title: 'Pulizie', crumbs: [] };
   if (pathname === '/checklist-templates') return { title: 'Checklist', crumbs: [{ label: 'Pulizie', to: '/cleaning' }] };
   if (pathname === '/structure-inventory') return { title: 'Magazzino Strutture', crumbs: [] };
-  if (pathname === '/keys') return { title: 'Chiavi', crumbs: [] };
+  if (pathname === '/keys') return { title: 'Chiavi', crumbs: [{ label: 'Clienti e Strutture' }] };
   if (pathname === '/logistics') return { title: 'Consegne', crumbs: [] };
   if (pathname === '/private-laundry/jobs') return { title: 'Lavorazioni', crumbs: [{ label: 'Lavanderia Privata' }] };
   if (pathname === '/private-laundry/history') return { title: 'Storico', crumbs: [{ label: 'Lavanderia Privata' }] };

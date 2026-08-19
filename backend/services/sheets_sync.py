@@ -107,10 +107,13 @@ def _date(iso):
 
 
 async def _build_tabs():
+    from datetime import datetime, timezone, timedelta
     clients = await db.clients.find({}, {"_id": 0}).to_list(3000)
     structures = await db.structures.find({}, {"_id": 0}).to_list(3000)
     users = await db.users.find({}, {"_id": 0, "id": 1, "name": 1}).to_list(3000)
     articles = await db.articles.find({}, {"_id": 0}).to_list(3000)
+    keys_settings = await db.app_settings.find_one({"_id": "keys"}) or {}
+    box_capacity = keys_settings.get("box_capacity", 60)
 
     cmap = {c["id"]: c for c in clients}
     smap = {s["id"]: s for s in structures}
@@ -133,6 +136,35 @@ async def _build_tabs():
     for s in structures:
         structure_counts[s["client_id"]] = structure_counts.get(s["client_id"], 0) + 1
 
+    # Per-client KPIs (month revenue, today's activities, open alerts)
+    now_dt = datetime.now(timezone.utc)
+    today = now_dt.strftime("%Y-%m-%d")
+    next_day = (now_dt + timedelta(days=1)).strftime("%Y-%m-%d")
+    month_start = f"{now_dt.year}-{now_dt.month:02d}-01"
+    month_end = f"{now_dt.year + 1}-01-01" if now_dt.month == 12 else f"{now_dt.year}-{now_dt.month + 1:02d}-01"
+
+    revenue_month, today_acts, alerts = {}, {}, {}
+    async for doc in db.orders.aggregate([
+        {"$match": {"created_at": {"$gte": month_start, "$lt": month_end}, "status": {"$nin": ["cancelled"]}, "client_id": {"$nin": [None, ""]}}},
+        {"$group": {"_id": "$client_id", "total": {"$sum": "$total"}}},
+    ]):
+        revenue_month[doc["_id"]] = doc.get("total", 0) or 0
+    for coll, match in [
+        (db.cleaning_tasks, {"date": today}),
+        (db.logistics_tasks, {"date": today}),
+        (db.maintenance_issues, {"created_at": {"$gte": today, "$lt": next_day}}),
+    ]:
+        async for doc in coll.aggregate([{"$match": {**match, "client_id": {"$nin": [None, ""]}}}, {"$group": {"_id": "$client_id", "n": {"$sum": 1}}}]):
+            today_acts[doc["_id"]] = today_acts.get(doc["_id"], 0) + doc["n"]
+    open_statuses = ["pending", "assigned", "in_progress"]
+    for coll, match in [
+        (db.cleaning_tasks, {"date": {"$lt": today}, "status": {"$in": open_statuses}}),
+        (db.logistics_tasks, {"date": {"$lt": today}, "status": {"$in": open_statuses}}),
+        (db.maintenance_issues, {"priority": {"$in": ["urgent", "high"]}, "status": {"$in": ["open", "assigned", "in_progress"]}}),
+    ]:
+        async for doc in coll.aggregate([{"$match": {**match, "client_id": {"$nin": [None, ""]}}}, {"$group": {"_id": "$client_id", "n": {"$sum": 1}}}]):
+            alerts[doc["_id"]] = alerts.get(doc["_id"], 0) + doc["n"]
+
     tabs = []
 
     # ---- Clienti ----
@@ -145,29 +177,33 @@ async def _build_tabs():
             _client_contact(c, "phone"),
             _client_contact(c, "email"),
             structure_counts.get(c["id"], 0),
+            revenue_month.get(c["id"], 0),
+            today_acts.get(c["id"], 0),
+            alerts.get(c["id"], 0),
             f"/api/files/{c['logo_path']}" if c.get("logo_path") else "",
             c.get("notes") or "",
         ])
     tabs.append({
         "title": "Clienti",
-        "headers": ["ID", "Nome / Ragione Sociale", "Tipo Cliente", "Telefono", "Email", "Numero Strutture", "Logo / Foto", "Note"],
+        "headers": ["ID Cliente", "Nome / Ragione Sociale", "Tipo", "Telefono", "Email", "Numero Strutture", "Fatturato mese", "Attività oggi", "Alert", "Link Logo/Foto", "Note"],
         "rows": rows,
-        "widths": [90, 220, 100, 130, 200, 120, 220, 260],
+        "currency_cols": [6],
+        "widths": [90, 220, 90, 130, 200, 120, 115, 100, 70, 220, 240],
+        "conditional_rules": [
+            {"condition": {"type": "CUSTOM_FORMULA", "values": [{"userEnteredValue": "=$I2>0"}]}, "color": RED_BG},
+        ],
     })
 
-    # ---- Strutture ----
+    # ---- Strutture (mirrors the new list view) ----
     rows = []
     for s in sorted(structures, key=lambda x: x.get("klv_code") or ""):
         services = s.get("services") or []
         ai = s.get("access_info") or {}
-        bc = s.get("bed_config") or {}
         rows.append([
             s.get("klv_code") or "",
             s.get("name") or "",
             cname(s.get("client_id")),
             s.get("address") or "",
-            s.get("floor") or "",
-            bc.get("capacity_total") or 0,
             "cleaning" in services,
             "private_laundry" in services,
             "rental_laundry" in services,
@@ -178,19 +214,25 @@ async def _build_tabs():
         ])
     tabs.append({
         "title": "Strutture",
-        "headers": ["Codice KLV", "Nome", "Cliente", "Indirizzo", "Piano", "Posti letto", "Pulizie", "Lavanderia Privata", "Lavanderia a Noleggio", "Consumabili", "Manutenzioni", "Possiede chiavi", "Note"],
+        "headers": ["Codice KLV", "Struttura", "Cliente", "Indirizzo", "Pulizie", "Lavanderia Privata", "Lavanderia a Noleggio", "Consumabili", "Manutenzioni", "Possiede chiavi", "Note"],
         "rows": rows,
-        "checkbox_cols": [6, 7, 8, 9, 10, 11],
-        "widths": [95, 180, 160, 200, 60, 85, 75, 130, 150, 100, 105, 115, 220],
+        "checkbox_cols": [4, 5, 6, 7, 8, 9],
+        "widths": [95, 180, 160, 210, 75, 130, 150, 100, 105, 115, 220],
     })
 
     # ---- Chiavi (NO access codes: only presence/box/slot) ----
     rows = []
+    box_occupied = {"A": 0, "B": 0, "C": 0}
     for s in sorted(structures, key=lambda x: x.get("klv_code") or ""):
         ai = s.get("access_info") or {}
         has_keys = bool(ai.get("kilolava_has_keys"))
         kb = ai.get("key_boxes") or {}
         a, b, c_ = kb.get("A") or {}, kb.get("B") or {}, kb.get("C") or {}
+        if has_keys:
+            for letter, copy in [("A", a), ("B", b), ("C", c_)]:
+                box_name = str(copy.get("box") or letter).upper()
+                if copy.get("present") and box_name[:1] in box_occupied:
+                    box_occupied[box_name[:1]] += 1
         complete = has_keys and bool(a.get("present")) and bool(b.get("present")) and bool(c_.get("present"))
         notes = "; ".join(filter(None, [a.get("note"), b.get("note"), c_.get("note")]))
         rows.append([
@@ -218,6 +260,15 @@ async def _build_tabs():
             {"condition": {"type": "CUSTOM_FORMULA", "values": [{"userEnteredValue": "=AND($D2=TRUE,$K2=FALSE)"}]}, "color": RED_BG},
             {"condition": {"type": "CUSTOM_FORMULA", "values": [{"userEnteredValue": "=$D2=FALSE"}]}, "color": GREY_BG},
         ],
+        "extra_block": {
+            "start_cell": "N1",
+            "values": [
+                ["Box", "Capacità", "Occupati", "Liberi"],
+                ["A — Addette", box_capacity, box_occupied["A"], max(0, box_capacity - box_occupied["A"])],
+                ["B — Rider", box_capacity, box_occupied["B"], max(0, box_capacity - box_occupied["B"])],
+                ["C — Emergenza", box_capacity, box_occupied["C"], max(0, box_capacity - box_occupied["C"])],
+            ],
+        },
     })
 
     # ---- Magazzino Strutture (balances from movements) ----
@@ -456,6 +507,14 @@ def _push(creds, spreadsheet_id, tabs):
             valueInputOption="USER_ENTERED",
             body={"values": [tab["headers"]] + tab["rows"]},
         ).execute()
+        extra = tab.get("extra_block")
+        if extra:
+            service.spreadsheets().values().update(
+                spreadsheetId=spreadsheet_id,
+                range=f"'{tab['title']}'!{extra['start_cell']}",
+                valueInputOption="USER_ENTERED",
+                body={"values": extra["values"]},
+            ).execute()
         total += len(tab["rows"])
         fmt_requests += _format_requests(sheet_id, tab, len(tab["rows"]), cond_counts.get(tab["title"], 0))
 

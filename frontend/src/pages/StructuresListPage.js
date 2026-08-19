@@ -1,23 +1,36 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { structuresApi } from '../lib/api';
-import { ExportButton } from '../components/ExportButton';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import {
-  Building2, Plus, Search, MapPin, User, Trash2, Boxes,
+  Building2, Plus, Search, MapPin, User, Trash2, Boxes, DoorOpen,
   Sparkles, Shirt, Layers, Package, Wrench,
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { toast } from 'sonner';
 
-const SERVICE_BADGES = {
-  cleaning: { label: 'Pulizie', icon: Sparkles, cls: 'bg-sky-50 text-sky-700 border-sky-200 dark:bg-sky-900/20 dark:text-sky-300 dark:border-sky-800' },
-  private_laundry: { label: 'Lav. Privata', icon: Shirt, cls: 'bg-violet-50 text-violet-700 border-violet-200 dark:bg-violet-900/20 dark:text-violet-300 dark:border-violet-800' },
-  rental_laundry: { label: 'Noleggio', icon: Layers, cls: 'bg-teal-50 text-teal-700 border-teal-200 dark:bg-teal-900/20 dark:text-teal-300 dark:border-teal-800' },
-  consumables: { label: 'Consumabili', icon: Package, cls: 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-900/20 dark:text-amber-300 dark:border-amber-800' },
-  maintenance: { label: 'Manutenzioni', icon: Wrench, cls: 'bg-orange-50 text-orange-700 border-orange-200 dark:bg-orange-900/20 dark:text-orange-300 dark:border-orange-800' },
-};
+const SERVICE_COLS = [
+  { key: 'cleaning', label: 'Pulizie', icon: Sparkles, on: 'bg-sky-100 text-sky-600 dark:bg-sky-900/30 dark:text-sky-400' },
+  { key: 'private_laundry', label: 'Privata', icon: Shirt, on: 'bg-violet-100 text-violet-600 dark:bg-violet-900/30 dark:text-violet-400' },
+  { key: 'rental_laundry', label: 'Noleggio', icon: Layers, on: 'bg-teal-100 text-teal-600 dark:bg-teal-900/30 dark:text-teal-400' },
+  { key: 'consumables', label: 'Consum.', icon: Package, on: 'bg-amber-100 text-amber-600 dark:bg-amber-900/30 dark:text-amber-400' },
+  { key: 'maintenance', label: 'Manut.', icon: Wrench, on: 'bg-orange-100 text-orange-600 dark:bg-orange-900/30 dark:text-orange-400' },
+];
+
+const ServiceDot = ({ svc, active }) => (
+  <span
+    title={`${svc.label}${active ? ' — attivo' : ' — non attivo'}`}
+    className={cn(
+      'inline-flex w-7 h-7 rounded-full items-center justify-center',
+      active ? svc.on : 'text-muted-foreground/20'
+    )}
+  >
+    <svc.icon className="h-3.5 w-3.5" />
+  </span>
+);
+
+const TH = 'sticky top-0 z-10 bg-card border-b border-border font-medium';
 
 const StructuresListPage = () => {
   const navigate = useNavigate();
@@ -58,6 +71,11 @@ const StructuresListPage = () => {
     }
   };
 
+  const goStructure = (id) => navigate(`/structures/${id}`);
+  const goClient = (e, clientId) => { e.stopPropagation(); navigate(`/clients/${clientId}`); };
+  const goAccess = (e, id) => { e.stopPropagation(); navigate(`/structures/${id}?section=access`); };
+  const goWarehouse = (e, id) => { e.stopPropagation(); navigate(`/structure-inventory?structure_id=${id}`); };
+
   return (
     <div className="p-4 lg:p-8 space-y-5" data-testid="structures-list-page">
       {/* Header */}
@@ -66,16 +84,13 @@ const StructuresListPage = () => {
           <h1 className="text-xl lg:text-2xl font-heading font-semibold">Strutture</h1>
           <p className="text-sm text-muted-foreground">{structures.length} strutture registrate</p>
         </div>
-        <div className="flex items-center gap-2">
-          <ExportButton entity="structures" className="h-9" />
-          <Button
-            onClick={() => navigate('/structures/new')}
-            className="bg-primary hover:bg-primary/90 text-primary-foreground"
-            data-testid="add-structure-btn"
-          >
-            <Plus className="h-4 w-4 mr-1.5" />Nuova Struttura
-          </Button>
-        </div>
+        <Button
+          onClick={() => navigate('/structures/new')}
+          className="bg-primary hover:bg-primary/90 text-primary-foreground"
+          data-testid="add-structure-btn"
+        >
+          <Plus className="h-4 w-4 mr-1.5" />Nuova Struttura
+        </Button>
       </div>
 
       {/* Search */}
@@ -90,7 +105,6 @@ const StructuresListPage = () => {
         />
       </div>
 
-      {/* List */}
       {loading ? (
         <div className="text-center py-12 text-muted-foreground">Caricamento...</div>
       ) : filtered.length === 0 ? (
@@ -99,65 +113,143 @@ const StructuresListPage = () => {
           <p className="text-muted-foreground">Nessuna struttura trovata</p>
         </div>
       ) : (
-        <div className="space-y-2">
-          {filtered.map(s => (
-            <div
-              key={s.id}
-              onClick={() => navigate(`/structures/${s.id}`)}
-              className="flex flex-wrap items-center gap-x-4 gap-y-2 p-4 rounded-xl border border-border bg-card hover:border-primary/40 cursor-pointer transition-colors group"
-              data-testid={`structure-row-${s.id}`}
-            >
-              <span className="px-2 py-1 rounded-md bg-primary/10 text-primary font-mono text-xs font-bold flex-shrink-0" data-testid={`klv-${s.id}`}>
-                {s.klv_code || '—'}
-              </span>
-              <div className="min-w-[180px] flex-1">
-                <p className="font-semibold text-sm">{s.name}</p>
-                <div className="flex items-center gap-3 text-xs text-muted-foreground mt-0.5 flex-wrap">
-                  {s.address && (
-                    <span className="flex items-center gap-1">
-                      <MapPin className="h-3 w-3 flex-shrink-0" />{s.address}{s.floor ? `, P.${s.floor}` : ''}
-                    </span>
-                  )}
+        <>
+          {/* Desktop table */}
+          <div className="hidden lg:block border border-border rounded-xl bg-card">
+            <table className="w-full text-sm border-separate border-spacing-0" data-testid="structures-table">
+              <thead>
+                <tr className="text-left text-[10px] uppercase tracking-wider text-muted-foreground">
+                  <th className={cn(TH, 'py-2.5 pl-4 pr-2 rounded-tl-xl')}>KLV</th>
+                  <th className={cn(TH, 'py-2.5 px-2')}>Struttura</th>
+                  {SERVICE_COLS.map(s => (
+                    <th key={s.key} className={cn(TH, 'py-2.5 px-1 text-center')}>{s.label}</th>
+                  ))}
+                  <th className={cn(TH, 'py-2.5 px-1 text-center')}>Ingresso</th>
+                  <th className={cn(TH, 'py-2.5 px-1 text-center')}>Magazzino</th>
+                  <th className={cn(TH, 'py-2.5 pl-1 pr-3 rounded-tr-xl')} />
+                </tr>
+              </thead>
+              <tbody className="[&>tr>td]:border-b [&>tr>td]:border-border/60 [&>tr:last-child>td]:border-0">
+                {filtered.map(s => (
+                  <tr
+                    key={s.id}
+                    onClick={() => goStructure(s.id)}
+                    className="hover:bg-muted/40 cursor-pointer transition-colors"
+                    data-testid={`structure-row-${s.id}`}
+                  >
+                    <td className="py-3 pl-4 pr-2">
+                      <span className="px-2 py-1 rounded-md bg-primary/10 text-primary font-mono text-xs font-bold whitespace-nowrap" data-testid={`klv-${s.id}`}>
+                        {s.klv_code || '—'}
+                      </span>
+                    </td>
+                    <td className="py-3 px-2">
+                      <p className="font-semibold leading-tight">{s.name}</p>
+                      <div className="flex items-center gap-3 mt-1 flex-wrap">
+                        {s.address && (
+                          <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                            <MapPin className="h-3 w-3 shrink-0" />{s.address}{s.floor ? `, P.${s.floor}` : ''}
+                          </span>
+                        )}
+                        {s.client_name && (
+                          <button
+                            onClick={e => goClient(e, s.client_id)}
+                            className="flex items-center gap-1 text-xs font-medium text-primary hover:underline underline-offset-2"
+                            data-testid={`client-link-${s.id}`}
+                          >
+                            <User className="h-3 w-3 shrink-0" />{s.client_name}
+                          </button>
+                        )}
+                      </div>
+                    </td>
+                    {SERVICE_COLS.map(svc => (
+                      <td key={svc.key} className="py-3 px-1 text-center" data-testid={`svc-${svc.key}-${s.id}`}>
+                        <ServiceDot svc={svc} active={(s.services || []).includes(svc.key)} />
+                      </td>
+                    ))}
+                    <td className="py-3 px-1 text-center">
+                      <Button
+                        variant="outline"
+                        size="icon"
+                        className="h-8 w-8"
+                        title="Accesso e Chiavi"
+                        onClick={e => goAccess(e, s.id)}
+                        data-testid={`open-access-${s.id}`}
+                      >
+                        <DoorOpen className="h-4 w-4" />
+                      </Button>
+                    </td>
+                    <td className="py-3 px-1 text-center">
+                      <Button
+                        variant="outline"
+                        size="icon"
+                        className="h-8 w-8"
+                        title="Magazzino Struttura"
+                        onClick={e => goWarehouse(e, s.id)}
+                        data-testid={`open-warehouse-${s.id}`}
+                      >
+                        <Boxes className="h-4 w-4" />
+                      </Button>
+                    </td>
+                    <td className="py-3 pl-1 pr-3 text-center">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                        onClick={e => handleDelete(s.id, e)}
+                        data-testid={`delete-structure-${s.id}`}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Mobile cards */}
+          <div className="lg:hidden space-y-2">
+            {filtered.map(s => (
+              <div
+                key={s.id}
+                onClick={() => goStructure(s.id)}
+                className="p-4 rounded-xl border border-border bg-card cursor-pointer"
+                data-testid={`structure-card-${s.id}`}
+              >
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="px-2 py-0.5 rounded-md bg-primary/10 text-primary font-mono text-xs font-bold">{s.klv_code || '—'}</span>
+                  <p className="font-semibold text-sm flex-1 min-w-0 truncate">{s.name}</p>
+                  <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-destructive" onClick={e => handleDelete(s.id, e)}>
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+                <div className="flex items-center gap-3 text-xs text-muted-foreground mt-1.5 flex-wrap">
+                  {s.address && <span className="flex items-center gap-1"><MapPin className="h-3 w-3" />{s.address}</span>}
                   {s.client_name && (
-                    <span className="flex items-center gap-1">
-                      <User className="h-3 w-3 flex-shrink-0" />{s.client_name}
-                    </span>
+                    <button onClick={e => goClient(e, s.client_id)} className="flex items-center gap-1 text-primary">
+                      <User className="h-3 w-3" />{s.client_name}
+                    </button>
                   )}
                 </div>
+                <div className="flex items-center justify-between mt-3">
+                  <div className="flex items-center gap-0.5">
+                    {SERVICE_COLS.map(svc => (
+                      <ServiceDot key={svc.key} svc={svc} active={(s.services || []).includes(svc.key)} />
+                    ))}
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <Button variant="outline" size="sm" className="h-8 text-xs" onClick={e => goAccess(e, s.id)}>
+                      <DoorOpen className="h-3.5 w-3.5 mr-1" />Ingresso
+                    </Button>
+                    <Button variant="outline" size="sm" className="h-8 text-xs" onClick={e => goWarehouse(e, s.id)}>
+                      <Boxes className="h-3.5 w-3.5 mr-1" />Magazzino
+                    </Button>
+                  </div>
+                </div>
               </div>
-              <div className="flex items-center gap-1.5 flex-wrap">
-                {(s.services || []).filter(svc => SERVICE_BADGES[svc]).map(svc => {
-                  const b = SERVICE_BADGES[svc];
-                  return (
-                    <span key={svc} className={cn('inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-[11px] font-medium', b.cls)}>
-                      <b.icon className="h-3 w-3" />{b.label}
-                    </span>
-                  );
-                })}
-              </div>
-              <div className="flex items-center gap-1.5 ml-auto" onClick={e => e.stopPropagation()}>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="h-8 text-xs"
-                  onClick={() => navigate(`/structure-inventory?structure_id=${s.id}`)}
-                  data-testid={`open-warehouse-${s.id}`}
-                >
-                  <Boxes className="h-3.5 w-3.5 mr-1" />Magazzino
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-8 w-8 text-muted-foreground hover:text-destructive"
-                  onClick={e => handleDelete(s.id, e)}
-                  data-testid={`delete-structure-${s.id}`}
-                >
-                  <Trash2 className="h-3.5 w-3.5" />
-                </Button>
-              </div>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        </>
       )}
     </div>
   );

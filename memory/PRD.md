@@ -114,6 +114,11 @@ frontend/src/pages/
 
 ## Prioritized Backlog
 
+### Recent iterations (Giugno 2026)
+- [x] Pagina Chiavi ridisegnata: rimossi KPI "Strutture con chiavi/Complete/Copie mancanti"; 3 card Box A/B/C (X/60, posti liberi) + 3 card "Chiavi fuori — Box A/B/C" (copie fuori dalla lavanderia); filtri solo Box A/B/C toggle; lista a tabella KLV | Struttura (con via + cliente cliccabile sotto il nome) | Box A | Box B | Box C con Slot ingranditi (text-base), check verde / COPIA MANCANTE rossa / grigio non disponibile; mobile card compatte con stessa logica. Verificato desktop + mobile via screenshot.
+- [x] Header sticky tabella Strutture (KLV, Struttura, servizi, Ingresso, Magazzino) e header lista Chiavi: restano visibili durante lo scroll.
+- [x] Tabella Strutture desktop: rimossa colonna Cliente separata; via + nome cliente (cliccabile, magenta) sotto al nome della struttura, come nelle card mobile.
+
 ### P0 (Next)
 - [ ] Continue server.py refactor: extract route handlers per domain (routes/events.py, routes/structures.py, routes/clients.py, routes/inventory.py, routes/orders.py, etc.). Target: server.py < 500 lines acting only as composition root.
 

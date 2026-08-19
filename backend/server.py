@@ -682,6 +682,24 @@ async def get_clients(
     
     return result
 
+class KeysSettingsUpdate(BaseModel):
+    box_capacity: int = 60
+
+@api_router.get("/settings/keys")
+async def get_keys_settings(current_user: dict = Depends(get_current_user)):
+    if not is_ops_user(current_user):
+        raise HTTPException(status_code=403, detail="Non autorizzato")
+    doc = await db.app_settings.find_one({"_id": "keys"}) or {}
+    return {"box_capacity": doc.get("box_capacity", 60)}
+
+@api_router.put("/settings/keys")
+async def update_keys_settings(data: KeysSettingsUpdate, current_user: dict = Depends(get_current_user)):
+    if current_user["role"] not in [UserRole.MANAGER, UserRole.OPS_MANAGER]:
+        raise HTTPException(status_code=403, detail="Non autorizzato")
+    capacity = max(1, data.box_capacity)
+    await db.app_settings.update_one({"_id": "keys"}, {"$set": {"box_capacity": capacity}}, upsert=True)
+    return {"box_capacity": capacity}
+
 @api_router.get("/integrations/google-sheets/status")
 async def google_sheets_status(current_user: dict = Depends(get_current_user)):
     if not is_ops_user(current_user):
