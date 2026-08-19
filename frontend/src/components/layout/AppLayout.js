@@ -24,7 +24,13 @@ const NAV = [
       { key: 'keys', path: '/keys', label: 'Chiavi' },
     ],
   },
-  { type: 'item', key: 'cleaning', path: '/cleaning', icon: Sparkles, label: 'Pulizie' },
+  {
+    type: 'group', key: 'cleaning', icon: Sparkles, label: 'Pulizie', children: [
+      { key: 'cleaning-overview', path: '/cleaning', label: 'Panoramica' },
+      { key: 'cleaning-organize', path: '/cleaning-organize', label: 'Organizzazione' },
+      { key: 'cleaning-issues', path: '/cleaning-issues', label: 'Segnalazioni' },
+    ],
+  },
   { type: 'item', key: 'structure-inventory', path: '/structure-inventory', icon: Boxes, label: 'Magazzino Strutture' },
   { type: 'item', key: 'deliveries', path: '/logistics', icon: Truck, label: 'Consegne' },
   {
@@ -82,7 +88,9 @@ function getBreadcrumb(pathname, search) {
   if (pathname === '/structures') return { title: 'Strutture', crumbs: [] };
   if (pathname === '/structures/new') return { title: 'Nuova struttura', crumbs: [{ label: 'Strutture', to: '/structures' }] };
   if (pathname.startsWith('/structures/')) return { title: 'Dettaglio struttura', crumbs: [{ label: 'Strutture', to: '/structures' }] };
-  if (pathname === '/cleaning') return { title: 'Pulizie', crumbs: [] };
+  if (pathname === '/cleaning') return { title: 'Panoramica', crumbs: [{ label: 'Pulizie' }] };
+  if (pathname === '/cleaning-organize') return { title: 'Organizzazione', crumbs: [{ label: 'Pulizie' }] };
+  if (pathname === '/cleaning-issues') return { title: 'Segnalazioni', crumbs: [{ label: 'Pulizie' }] };
   if (pathname === '/checklist-templates') return { title: 'Checklist', crumbs: [{ label: 'Pulizie', to: '/cleaning' }] };
   if (pathname === '/structure-inventory') return { title: 'Magazzino Strutture', crumbs: [] };
   if (pathname === '/keys') return { title: 'Chiavi', crumbs: [{ label: 'Clienti e Strutture' }] };

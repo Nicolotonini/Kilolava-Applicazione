@@ -229,6 +229,7 @@ class StructureCreate(BaseModel):
     check_in_time: Optional[str] = None  # e.g. "15:00"
     check_out_time: Optional[str] = None  # e.g. "10:00"
     bed_config: Optional[dict] = None  # {capacity_total, beds_double, beds_single, sofa_beds, capacity_persons}
+    operational_zone_id: Optional[str] = None
     notes: Optional[str] = None
     is_active: bool = True
 
@@ -253,6 +254,7 @@ class StructureUpdate(BaseModel):
     check_in_time: Optional[str] = None
     check_out_time: Optional[str] = None
     bed_config: Optional[dict] = None
+    operational_zone_id: Optional[str] = None
     notes: Optional[str] = None
     is_active: Optional[bool] = None
 
@@ -281,6 +283,8 @@ class StructureResponse(BaseModel):
     check_in_time: Optional[str] = None
     check_out_time: Optional[str] = None
     bed_config: Optional[dict] = None
+    operational_zone_id: Optional[str] = None
+    zone_name: Optional[str] = None
     notes: Optional[str] = None
     is_active: bool
     unit_count: int = 0
@@ -953,6 +957,8 @@ def build_structure_response(structure: dict, client_name: Optional[str], unit_c
         "check_in_time": structure.get("check_in_time"),
         "check_out_time": structure.get("check_out_time"),
         "bed_config": structure.get("bed_config"),
+        "operational_zone_id": structure.get("operational_zone_id"),
+        "zone_name": structure.get("zone_name"),
         "notes": structure.get("notes"),
         "is_active": structure.get("is_active", True),
         "unit_count": unit_count,
@@ -1100,6 +1106,98 @@ async def delete_structure(structure_id: str, current_user: dict = Depends(get_c
     
     await db.structures.delete_one({"id": structure_id})
     return {"message": "Struttura eliminata"}
+
+# ============== RIONI / ZONE OPERATIVE ==============
+
+OPERATIONAL_ZONES_SEED = [
+    ("Centro e centro storico", ["Borgo Teresiano", "Centro", "Cavana", "Città Vecchia", "San Vito", "Barriera Nuova"]),
+    ("Centro / Est", ["Barriera Vecchia", "San Giacomo", "Ponziana", "Campi Elisi"]),
+    ("Sud", ["Servola", "Chiarbola", "Valmaura", "Borgo San Sergio", "Altura", "Melara"]),
+    ("Est / Colle", ["Rozzol", "Chiadino", "San Luigi", "San Giovanni", "Guardiella", "Cattinara", "Longera"]),
+    ("Nord / Centro-nord", ["Scorcola", "Cologna", "Roiano", "Gretta"]),
+    ("Costa", ["Barcola", "Grignano", "Miramare"]),
+    ("Carso / Altipiano", ["Opicina", "Prosecco", "Contovello", "Basovizza", "Padriciano", "Trebiciano", "Gropada", "Banne"]),
+    ("Fuori Trieste", ["Sistiana", "Muggia"]),
+    ("", ["Altro / Da definire"]),
+]
+
+
+async def seed_operational_zones():
+    if await db.operational_zones.count_documents({}) > 0:
+        return
+    now = now_iso()
+    docs = []
+    order = 0
+    for group, names in OPERATIONAL_ZONES_SEED:
+        for name in names:
+            docs.append({"id": str(uuid.uuid4()), "name": name, "group": group, "order": order, "active": True, "created_at": now})
+            order += 1
+    if docs:
+        await db.operational_zones.insert_many(docs)
+
+
+class ZoneCreate(BaseModel):
+    name: str
+    group: str = ""
+
+class ZoneUpdate(BaseModel):
+    name: Optional[str] = None
+    group: Optional[str] = None
+    active: Optional[bool] = None
+
+class ZoneReorder(BaseModel):
+    ids: List[str]
+
+
+@api_router.get("/zones")
+async def list_zones(include_inactive: bool = False, current_user: dict = Depends(get_current_user)):
+    if not is_ops_user(current_user):
+        raise HTTPException(status_code=403, detail="Non autorizzato")
+    query = {} if include_inactive else {"active": {"$ne": False}}
+    return await db.operational_zones.find(query, {"_id": 0}).sort("order", 1).to_list(300)
+
+
+@api_router.post("/zones")
+async def create_zone(data: ZoneCreate, current_user: dict = Depends(get_current_user)):
+    if not is_ops_user(current_user):
+        raise HTTPException(status_code=403, detail="Non autorizzato")
+    if not data.name.strip():
+        raise HTTPException(status_code=400, detail="Inserisci il nome del rione")
+    last = await db.operational_zones.find({}, {"_id": 0, "order": 1}).sort("order", -1).to_list(1)
+    zone = {"id": str(uuid.uuid4()), "name": data.name.strip(), "group": data.group,
+            "order": (last[0].get("order", 0) + 1) if last else 0, "active": True, "created_at": now_iso()}
+    await db.operational_zones.insert_one(zone)
+    zone.pop("_id", None)
+    return zone
+
+
+@api_router.put("/zones/reorder")
+async def reorder_zones(data: ZoneReorder, current_user: dict = Depends(get_current_user)):
+    if not is_ops_user(current_user):
+        raise HTTPException(status_code=403, detail="Non autorizzato")
+    for i, zid in enumerate(data.ids):
+        await db.operational_zones.update_one({"id": zid}, {"$set": {"order": i}})
+    return {"updated": len(data.ids)}
+
+
+@api_router.put("/zones/{zone_id}")
+async def update_zone(zone_id: str, data: ZoneUpdate, current_user: dict = Depends(get_current_user)):
+    if not is_ops_user(current_user):
+        raise HTTPException(status_code=403, detail="Non autorizzato")
+    zone = await db.operational_zones.find_one({"id": zone_id}, {"_id": 0})
+    if not zone:
+        raise HTTPException(status_code=404, detail="Rione non trovato")
+    update = {}
+    if data.name is not None and data.name.strip():
+        update["name"] = data.name.strip()
+    if data.group is not None:
+        update["group"] = data.group
+    if data.active is not None:
+        update["active"] = data.active
+    if update:
+        await db.operational_zones.update_one({"id": zone_id}, {"$set": update})
+    return await db.operational_zones.find_one({"id": zone_id}, {"_id": 0})
+
 
 # ============== STRUCTURE MEDIA (foto/video/istruzioni) ==============
 
@@ -4388,11 +4486,15 @@ async def _enrich_cleaning_task(task: dict) -> dict:
                 pi = c.get("private_info") or {}
                 task["client_name"] = f"{pi.get('first_name', '')} {pi.get('last_name', '')}".strip()
     if task.get("structure_id"):
-        s = await db.structures.find_one({"id": task["structure_id"]}, {"_id": 0, "name": 1, "address": 1, "klv_code": 1})
+        s = await db.structures.find_one({"id": task["structure_id"]}, {"_id": 0, "name": 1, "address": 1, "klv_code": 1, "operational_zone_id": 1})
         if s:
             task["structure_name"] = s.get("name", "")
             task["structure_address"] = s.get("address", "")
             task["klv_code"] = s.get("klv_code")
+            task["zone_id"] = s.get("operational_zone_id")
+            if s.get("operational_zone_id"):
+                z = await db.operational_zones.find_one({"id": s["operational_zone_id"]}, {"_id": 0, "name": 1})
+                task["zone_name"] = z.get("name") if z else None
     if task.get("unit_id"):
         u = await db.units.find_one({"id": task["unit_id"]}, {"_id": 0, "name": 1})
         if u:
@@ -4575,6 +4677,71 @@ async def create_cleaning_task(data: CleaningTaskCreate, current_user: dict = De
             "cleaning_assigned", "normal", "cleaning_task", task["id"]
         )
     return enriched
+
+
+class AssignCleanerRequest(BaseModel):
+    cleaner_id: str
+
+
+@api_router.post("/cleaning-tasks/{task_id}/assign")
+async def assign_cleaner_to_task(task_id: str, data: AssignCleanerRequest, current_user: dict = Depends(get_current_user)):
+    """Aggiunge un'addetta alla pulizia (drag & drop board). Idempotente."""
+    if not is_ops_user(current_user):
+        raise HTTPException(status_code=403, detail="Non autorizzato")
+    task = await db.cleaning_tasks.find_one({"id": task_id}, {"_id": 0})
+    if not task:
+        raise HTTPException(status_code=404, detail="Task non trovato")
+    cleaner = await db.users.find_one({"id": data.cleaner_id, "role": UserRole.CLEANER}, {"_id": 0, "id": 1, "name": 1})
+    if not cleaner:
+        raise HTTPException(status_code=404, detail="Addetta non trovata")
+    ids = _cleaner_ids_of(task)
+    if data.cleaner_id in ids:
+        return await _enrich_cleaning_task(task)
+    ids.append(data.cleaner_id)
+    update = {"assigned_cleaner_ids": ids, "assigned_cleaner_id": ids[0], "updated_at": now_iso()}
+    if task.get("status") == CleaningTaskStatus.UNASSIGNED:
+        update["status"] = CleaningTaskStatus.ASSIGNED
+    await db.cleaning_tasks.update_one({"id": task_id}, {"$set": update})
+    updated = await db.cleaning_tasks.find_one({"id": task_id}, {"_id": 0})
+    enriched = await _enrich_cleaning_task(updated)
+    await create_notification(
+        data.cleaner_id, "Nuova pulizia assegnata",
+        f"Pulizia per {enriched.get('structure_name', '')} il {task.get('date', '')}",
+        "cleaning_assigned", "normal", "cleaning_task", task_id
+    )
+    return enriched
+
+
+@api_router.delete("/cleaning-tasks/{task_id}/assign/{cleaner_id}")
+async def unassign_cleaner_from_task(task_id: str, cleaner_id: str, current_user: dict = Depends(get_current_user)):
+    """Rimuove SOLO quella addetta dalla pulizia (non elimina la pulizia)."""
+    if not is_ops_user(current_user):
+        raise HTTPException(status_code=403, detail="Non autorizzato")
+    task = await db.cleaning_tasks.find_one({"id": task_id}, {"_id": 0})
+    if not task:
+        raise HTTPException(status_code=404, detail="Task non trovato")
+    ids = [i for i in _cleaner_ids_of(task) if i != cleaner_id]
+    update = {"assigned_cleaner_ids": ids, "assigned_cleaner_id": ids[0] if ids else None, "updated_at": now_iso()}
+    if not ids and task.get("status") == CleaningTaskStatus.ASSIGNED:
+        update["status"] = CleaningTaskStatus.UNASSIGNED
+    await db.cleaning_tasks.update_one({"id": task_id}, {"$set": update, "$unset": {f"route_order.{cleaner_id}": ""}})
+    updated = await db.cleaning_tasks.find_one({"id": task_id}, {"_id": 0})
+    return await _enrich_cleaning_task(updated)
+
+
+class RouteOrderRequest(BaseModel):
+    cleaner_id: str
+    ordered_task_ids: List[str]
+
+
+@api_router.put("/cleaning-tasks/route-order")
+async def set_cleaner_route_order(data: RouteOrderRequest, current_user: dict = Depends(get_current_user)):
+    """Ordine manuale del giro dell'addetta (per i percorsi futuri)."""
+    if not is_ops_user(current_user):
+        raise HTTPException(status_code=403, detail="Non autorizzato")
+    for i, tid in enumerate(data.ordered_task_ids):
+        await db.cleaning_tasks.update_one({"id": tid}, {"$set": {f"route_order.{data.cleaner_id}": i, "updated_at": now_iso()}})
+    return {"updated": len(data.ordered_task_ids)}
 
 
 @api_router.put("/cleaning-tasks/{task_id}")
@@ -6730,6 +6897,11 @@ async def startup_event():
         await ensure_klv_codes()
     except Exception as e:
         logger.error(f"KLV code migration failed: {e}")
+    # Seed rioni / zone operative (idempotente)
+    try:
+        await seed_operational_zones()
+    except Exception as e:
+        logger.error(f"Zone seed failed: {e}")
     # Start scheduler with overdue task check every 30 minutes
     try:
         scheduler_service.start_scheduler(_check_overdue_tasks)

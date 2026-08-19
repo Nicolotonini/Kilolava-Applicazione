@@ -17,6 +17,7 @@ import {
 import { toast } from 'sonner';
 import { Globe, Palette, User, FileSpreadsheet, RefreshCw, KeyRound } from 'lucide-react';
 import { Input } from '../components/ui/input';
+import { ZonesSettingsCard } from '../components/ZonesSettingsCard';
 
 const SettingsPage = () => {
   const { user, updateUser } = useAuth();
@@ -215,6 +216,9 @@ const SettingsPage = () => {
           </div>
         </CardContent>
       </Card>
+
+      {/* Rioni / Zone operative */}
+      <ZonesSettingsCard />
 
       {/* Google Sheets Integration */}
       <Card className="kilolava-card" data-testid="gsheets-card">

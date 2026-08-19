@@ -62,6 +62,7 @@ const StructureDetailPage = () => {
   const [clients, setClients] = useState([]);
   const [templates, setTemplates] = useState([]);
   const [units, setUnits] = useState([]);
+  const [zones, setZones] = useState([]);
   const [section, setSection] = useState(searchParams.get('section') || 'general');
 
   const [form, setForm] = useState({
@@ -76,12 +77,14 @@ const StructureDetailPage = () => {
     services: [], custom_services: [], cleaning_template_id: '',
     check_in_time: '15:00', check_out_time: '10:00',
     bed_config: { ...emptyBedConfig },
+    operational_zone_id: '',
     notes: '', is_active: true,
   });
 
   useEffect(() => {
     api.get('/clients').then(r => setClients(r.data)).catch(() => {});
     api.get('/checklist-templates').then(r => setTemplates(r.data)).catch(() => {});
+    api.get('/zones').then(r => setZones(r.data)).catch(() => {});
   }, []);
 
   const fetchStructure = useCallback(async () => {
@@ -104,6 +107,7 @@ const StructureDetailPage = () => {
         cleaning_template_id: s.cleaning_template_id || '',
         check_in_time: s.check_in_time || '15:00', check_out_time: s.check_out_time || '10:00',
         bed_config: { ...emptyBedConfig, ...(s.bed_config || {}) },
+        operational_zone_id: s.operational_zone_id || '',
         notes: s.notes || '', is_active: s.is_active !== false,
       });
       const uRes = await unitsApi.getAll({ structure_id: structureId });
@@ -232,7 +236,7 @@ const StructureDetailPage = () => {
         {/* Content */}
         <div className="flex-1 min-w-0 space-y-4">
           {section === 'general' && (
-            <GeneralSection form={form} set={set} clients={clients} isNew={isNew} />
+            <GeneralSection form={form} set={set} clients={clients} isNew={isNew} zones={zones} />
           )}
           {section === 'services' && (
             <ServicesSection form={form} set={set} toggleService={toggleService} templates={templates} />
@@ -278,7 +282,7 @@ const FieldRow = ({ label, children, hint }) => (
   </div>
 );
 
-function GeneralSection({ form, set, clients, isNew }) {
+function GeneralSection({ form, set, clients, isNew, zones }) {
   return (
     <>
       <Card className="border shadow-none">
@@ -328,6 +332,22 @@ function GeneralSection({ form, set, clients, isNew }) {
             <FieldRow label="Interno">
               <Input value={form.interior} onChange={e => set('interior', e.target.value)} placeholder="es. Int. 5" className="h-9" data-testid="interior-input" />
             </FieldRow>
+            <div className="sm:col-span-3">
+              <FieldRow label="Rione / Zona operativa" hint="Zona operativa Kilolava della struttura: usata per organizzare le pulizie per giro.">
+                <Select value={form.operational_zone_id || 'none'} onValueChange={v => set('operational_zone_id', v === 'none' ? '' : v)}>
+                  <SelectTrigger className="h-9" data-testid="zone-select">
+                    <span className="flex items-center gap-1.5">
+                      <MapPin className="h-3.5 w-3.5 text-primary" />
+                      <SelectValue placeholder="Seleziona rione..." />
+                    </span>
+                  </SelectTrigger>
+                  <SelectContent className="max-h-72">
+                    <SelectItem value="none">Nessuno / Da definire</SelectItem>
+                    {zones.map(z => <SelectItem key={z.id} value={z.id}>{z.name}{z.group ? ` — ${z.group}` : ''}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </FieldRow>
+            </div>
             <FieldRow label="Parcheggio">
               <Input value={form.parking_info} onChange={e => set('parking_info', e.target.value)} placeholder="es. Strisce blu in piazza" className="h-9" data-testid="parking-input" />
             </FieldRow>

@@ -1,0 +1,26 @@
+{
+  "summary": "Iteration 10 — RISTRUTTURAZIONE NAVIGAZIONE Pulizie Admin: sidebar espandibile + 3 pagine separate (Panoramica /cleaning, Organizzazione /cleaning-organize, Segnalazioni /cleaning-issues). Testato desktop 1920x1080 e mobile 390x844. Backend regression 22/22 PASS (test_cleaning_ops_center.py + test_cleaning_fixes_v3.py) — nessun cambio backend, tutte le API assign/unassign/route-order/zones/bed_max/recurrence/media-timestamps/duplicate/cascade-issues/portal-cliente confermate OK.\n\nFRONTEND desktop:\n(1) SIDEBAR: data-testid nav-group-cleaning presente; click espande e mostra nav-cleaning-overview + nav-cleaning-organize + nav-cleaning-issues (tutti visible). Navigando a /cleaning-organize: gruppo auto-aperto, la voce Organizzazione ha classe bg-primary/10 (attiva), la voce Panoramica NON è attiva — evidenziazione corretta come richiesto.\n(2) PANORAMICA /cleaning: barra tab interna COMPLETAMENTE ELIMINATA (cleaning-tab-days/organize/today/calendar/all/issues tutti absent OK); manage-templates-btn absent OK; day-zone-filter absent OK. Selettore giorno presente (giornate-prev/next/date-input); giornate-today-btn correttamente nascosto quando data == oggi. KPI 6 card grandi presenti (kpi-total/assigned/unassigned/completed/inprogress/problems) con numeri coerenti (2026-09-02 → 2/2/0/0/0/0). View modes: view-mode-list/cleaner/zone tutti presenti; switching commuta correttamente i container (view-mode-cleaner → grouped-by-cleaner visibile, view-mode-zone → grouped-by-zone visibile, view-mode-list → lista piatta). new-cleaning-btn presente.\n(3) PRONTA PER X: navigato a 2026-08-19, testo 'Pronta per 4' presente (regex match) sul task Appartamento Centro completato con 4 ospiti — comportamento corretto.\n(4) NEW CLEANING PREFILL: da 2026-09-05 click su Nuova pulizia → drawer si apre con date-picker-input=2026-09-05 (data precompilata). OK.\n(5) ORGANIZZAZIONE /cleaning-organize: pagina separata con org-prev/next/date-input/org-master-list/org-filter-unassigned/org-filter-assigned tutti presenti; 2 cleaner-column-* rendered (Anna+Maria). Drag&drop HTML5 non testato via Playwright (inaffidabile in headless) — le API sottostanti (assign/unassign/route-order) sono già coperte al 100% dai pytest.\n(6) SEGNALAZIONI /cleaning-issues: pagina separata con issues-filter-open/closed/all tutti presenti.\n(7) MOBILE 390x844: mobile-menu-btn apre menu, nav-group-cleaning presente e Pulizie mostrato ESPANSO con Panoramica/Organizzazione/Segnalazioni visibili (screenshot confermato). KPI leggibili in mobile.\n\nRISULTATO: la ristrutturazione è FEDELE alle specifiche utente. Nessuna regressione backend, tutti gli elementi vecchi eliminati, tutte le nuove strutture presenti e funzionanti.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_cleaning_ops_center.py",
+    "/app/backend/tests/test_cleaning_fixes_v3.py",
+    "/app/test_reports/pytest/iteration_10.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "DayView.jsx: quando la lista è vuota nel modo Lista, non c'è un container con data-testid dedicato — la vista mostra direttamente CompactTaskRow senza wrapper. Non blocca ma per testabilità considera aggiungere data-testid='grouped-by-list'.",
+    "TaskRow.jsx usa data-testid 'cleaning-row-{id}' e 'row-menu-{id}'; la request menzionava genericamente 'menu ⋯' — testids attuali sono OK e già coprono Apri/Modifica/Assegna/Duplica/Ricorrenza/Annulla via menu-detail/edit/assign/duplicate/recur/cancel-{id}. Tutto in linea."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100% (22/22)", "frontend": "100% dei controlli testabili (drag&drop HTML5 deferito, API coperte da pytest)"},
+  "test_credentials": "Admin: test_user@kilolava.com / TestPass123! | Cleaner: addetta_test@kilolava.com / AddettaTest123! | Client: cliente_test@kilolava.com / ClienteTest123!",
+  "seed_data_creation": "Nessun dato di test persistente creato in questa iterazione (nessun nuovo task salvato — il drawer test-4 è stato chiuso via Escape senza salvare). I task esistenti Appartamento Centro (2026-09-02 e 2026-08-19) sono stati SOLO letti.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Il backend NON è cambiato da iteration_9; i test pytest test_cleaning_ops_center.py + test_cleaning_fixes_v3.py restano la regression suite canonica (22 test, self-cleaning, ~12s). Layout frontend definitivo: sidebar con nav-group-cleaning + 3 figli, tre pagine separate CleaningPage/CleaningOrganizePage/CleaningIssuesPage. TaskRow testids sono 'cleaning-row-{id}' e menu items 'menu-detail/edit/assign/duplicate/recur/series/cancel-{id}' (NON 'compact-task-row-*' o 'task-menu-*'). DayView container testids: grouped-by-cleaner, grouped-by-zone, group-unassigned. Drag&drop UI non testato — considerato coperto via API pytest."
+}
