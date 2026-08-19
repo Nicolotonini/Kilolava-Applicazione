@@ -64,7 +64,8 @@ class ICalAdapter(BaseAdapter):
             raise AdapterError("URL feed iCal mancante o non valido")
         return url
 
-    async def test_connection(self, credentials: dict) -> dict:
+    async def test_connection(self, connection: dict) -> dict:
+        credentials = (connection or {}).get("credentials") or {}
         checks = []
         result = {"ok": False, "provider": self.provider, "mode": self.mode, "checks": checks, "missing": []}
         try:
@@ -100,15 +101,15 @@ class ICalAdapter(BaseAdapter):
         result["ok"] = True
         return result
 
-    async def list_properties(self, credentials: dict) -> List[NormalizedProperty]:
-        url = self._url(credentials)
+    async def list_properties(self, connection: dict) -> List[NormalizedProperty]:
+        url = self._url((connection or {}).get("credentials") or {})
         host = urlparse(url).netloc or "feed"
         return [NormalizedProperty(external_id=FEED_ID, name=f"Feed iCal ({host})")]
 
     async def fetch_reservations(
-        self, credentials: dict, external_property_ids: List[str], date_from: str, date_to: str
+        self, connection: dict, external_property_ids: List[str], date_from: str, date_to: str
     ) -> List[NormalizedReservation]:
-        url = self._url(credentials)
+        url = self._url((connection or {}).get("credentials") or {})
         try:
             text = await _fetch_text(url)
         except httpx.HTTPError as e:

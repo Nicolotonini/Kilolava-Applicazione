@@ -13,6 +13,7 @@ import {
 import {
   Plug, Plus, RefreshCw, Trash2, CheckCircle2, XCircle, AlertTriangle,
   Link2, Building2, CalendarDays, Loader2, KeyRound, Download, Unlink, EyeOff,
+  Settings2, ExternalLink, Webhook,
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { toast } from 'sonner';
@@ -62,9 +63,18 @@ export default function IntegrationsPage() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editConn, setEditConn] = useState(null);
   const [testResult, setTestResult] = useState(null);
+  const [octorateAppOpen, setOctorateAppOpen] = useState(false);
 
   const reload = useCallback(() => {
     integrationsApi.list().then(r => setConnections(r.data)).catch(e => console.error(e));
+  }, []);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const oct = params.get('octorate');
+    if (oct === 'connected') toast.success('Octorate collegato via OAuth');
+    else if (oct === 'error') toast.error(`Collegamento Octorate fallito${params.get('reason') ? `: ${params.get('reason')}` : ''}`);
+    if (oct) window.history.replaceState({}, '', '/integrations');
   }, []);
 
   useEffect(() => {
@@ -92,13 +102,22 @@ export default function IntegrationsPage() {
           <p className="text-sm text-muted-foreground">Channel Manager e fonti prenotazioni — priorità: API → iCal → Manuale</p>
         </div>
         {tab === 'connections' && (
-          <Button
-            onClick={() => { setEditConn(null); setDialogOpen(true); }}
-            className="bg-primary hover:bg-primary/90 text-primary-foreground"
-            data-testid="add-channel-manager-btn"
-          >
-            <Plus className="h-4 w-4 mr-1.5" />Aggiungi Channel Manager
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              onClick={() => setOctorateAppOpen(true)}
+              data-testid="octorate-app-settings-btn"
+            >
+              <Settings2 className="h-4 w-4 mr-1.5" />App Octorate
+            </Button>
+            <Button
+              onClick={() => { setEditConn(null); setDialogOpen(true); }}
+              className="bg-primary hover:bg-primary/90 text-primary-foreground"
+              data-testid="add-channel-manager-btn"
+            >
+              <Plus className="h-4 w-4 mr-1.5" />Aggiungi Channel Manager
+            </Button>
+          </div>
         )}
       </div>
 
@@ -155,6 +174,7 @@ export default function IntegrationsPage() {
         editConn={editConn}
         onSaved={reload}
       />
+      <OctorateAppDialog open={octorateAppOpen} onClose={() => setOctorateAppOpen(false)} />
       <TestResultDialog result={testResult} onClose={() => setTestResult(null)} />
     </div>
   );
@@ -201,6 +221,17 @@ function ConnectionCard({ conn, structures, onReload, onEdit, onTestResult }) {
     }
   };
 
+  const handleOctorateConnect = async () => {
+    setBusy('oauth');
+    try {
+      const res = await integrationsApi.octorateConnect(conn.id);
+      window.location.assign(res.data.authorize_url);
+    } catch (e) {
+      toast.error(e.response?.data?.detail || 'Impossibile avviare il flusso OAuth');
+      setBusy('');
+    }
+  };
+
   const handleSync = async () => {
     const res = await run('sync', () => integrationsApi.sync(conn.id));
     if (res) {
@@ -233,10 +264,18 @@ function ConnectionCard({ conn, structures, onReload, onEdit, onTestResult }) {
             </div>
             <div className="flex items-center gap-4 mt-1.5 text-xs text-muted-foreground flex-wrap">
               {conn.client_name && <span>Cliente: {conn.client_name}</span>}
-              <span className="flex items-center gap-1"><Building2 className="h-3 w-3" />{conn.linked_structures} strutture collegate</span>
+              <span className="flex items-center gap-1"><Download className="h-3 w-3" />{conn.properties_imported} proprietà importate</span>
+              <span className="flex items-center gap-1"><Building2 className="h-3 w-3" />{conn.linked_structures} collegate a Kilolava</span>
               <span className="flex items-center gap-1"><CalendarDays className="h-3 w-3" />{conn.reservations_imported} prenotazioni importate</span>
               <span>Ultima sync: {fmtDateTime(conn.last_sync)}</span>
             </div>
+            {conn.provider === 'hostaway' && conn.webhook_path && (
+              <p className="text-[11px] text-muted-foreground mt-1.5 flex items-center gap-1 flex-wrap" data-testid={`webhook-url-${conn.id}`}>
+                <Webhook className="h-3 w-3 shrink-0" />
+                Webhook: <span className="font-mono select-all">{window.location.origin}{conn.webhook_path}</span>
+                <span>(registralo su Hostaway → Settings → Add Webhook con login/password webhook)</span>
+              </p>
+            )}
             {lastErr && (
               <p className="text-xs text-red-600 dark:text-red-400 mt-1.5 flex items-center gap-1" data-testid={`connection-error-${conn.id}`}>
                 <XCircle className="h-3.5 w-3.5 shrink-0" />{lastErr}
@@ -244,6 +283,15 @@ function ConnectionCard({ conn, structures, onReload, onEdit, onTestResult }) {
             )}
           </div>
           <div className="flex items-center gap-1.5 flex-wrap">
+            {conn.provider === 'octorate' && !conn.oauth_connected && (
+              <Button
+                size="sm" className="h-8 text-xs bg-primary text-primary-foreground"
+                onClick={handleOctorateConnect} disabled={!!busy}
+                data-testid={`octorate-connect-${conn.id}`}
+              >
+                {busy === 'oauth' ? <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" /> : <ExternalLink className="h-3.5 w-3.5 mr-1" />}Collega Octorate
+              </Button>
+            )}
             <Button variant="outline" size="sm" className="h-8 text-xs" onClick={handleTest} disabled={!!busy} data-testid={`test-connection-${conn.id}`}>
               {busy === 'test' ? <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" /> : <Plug className="h-3.5 w-3.5 mr-1" />}Testa connessione
             </Button>
@@ -491,6 +539,81 @@ function ConnectionDialog({ open, onClose, providers, clients, editConn, onSaved
           <div className="flex justify-end gap-2 pt-1">
             <Button variant="outline" onClick={onClose}>Annulla</Button>
             <Button onClick={save} disabled={saving} className="bg-primary text-primary-foreground" data-testid="save-connection-btn">
+              {saving && <Loader2 className="h-4 w-4 mr-1 animate-spin" />}Salva
+            </Button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function OctorateAppDialog({ open, onClose }) {
+  const [form, setForm] = useState({ client_id: '', client_secret: '', redirect_uri: '' });
+  const [secretSet, setSecretSet] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const suggested = `${window.location.origin}/api/integrations/octorate/callback`;
+
+  useEffect(() => {
+    if (open) {
+      integrationsApi.octorateAppSettings().then(r => {
+        setForm({
+          client_id: r.data.client_id || '',
+          client_secret: '',
+          redirect_uri: r.data.redirect_uri || '',
+        });
+        setSecretSet(r.data.client_secret_set);
+      }).catch(() => {});
+    }
+  }, [open]);
+
+  const save = async () => {
+    setSaving(true);
+    try {
+      await integrationsApi.saveOctorateAppSettings({
+        client_id: form.client_id,
+        client_secret: form.client_secret || null,
+        redirect_uri: form.redirect_uri,
+      });
+      toast.success('Credenziali app Octorate salvate');
+      onClose();
+    } catch (e) {
+      toast.error(e.response?.data?.detail || 'Errore durante il salvataggio');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={v => !v && onClose()}>
+      <DialogContent className="max-w-lg" data-testid="octorate-app-dialog">
+        <DialogHeader>
+          <DialogTitle>App Octorate (credenziali globali)</DialogTitle>
+          <DialogDescription>
+            Credenziali dell'applicazione Kilolava fornite da Octorate al partner. Si configurano una sola volta:
+            i singoli account si collegano poi con "Collega Octorate" (OAuth).
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-3">
+          <div>
+            <label className="text-xs font-medium text-muted-foreground">Client ID Octorate</label>
+            <Input value={form.client_id} onChange={e => setForm(f => ({ ...f, client_id: e.target.value }))} className="h-9 mt-1" data-testid="octorate-client-id-input" />
+          </div>
+          <div>
+            <label className="text-xs font-medium text-muted-foreground">Client Secret Octorate</label>
+            <Input type="password" value={form.client_secret} onChange={e => setForm(f => ({ ...f, client_secret: e.target.value }))} placeholder={secretSet ? 'Impostato — lascia vuoto per non modificare' : ''} className="h-9 mt-1" data-testid="octorate-client-secret-input" />
+          </div>
+          <div>
+            <label className="text-xs font-medium text-muted-foreground">Redirect URI Kilolava</label>
+            <Input value={form.redirect_uri} onChange={e => setForm(f => ({ ...f, redirect_uri: e.target.value }))} placeholder={suggested} className="h-9 mt-1 font-mono text-xs" data-testid="octorate-redirect-uri-input" />
+            <p className="text-[11px] text-muted-foreground mt-1">
+              Suggerita: <button type="button" className="font-mono underline underline-offset-2" onClick={() => setForm(f => ({ ...f, redirect_uri: suggested }))}>{suggested}</button>
+              <br />Deve essere whitelistata da Octorate per la vostra app (HTTPS obbligatorio).
+            </p>
+          </div>
+          <div className="flex justify-end gap-2 pt-1">
+            <Button variant="outline" onClick={onClose}>Annulla</Button>
+            <Button onClick={save} disabled={saving} className="bg-primary text-primary-foreground" data-testid="save-octorate-app-btn">
               {saving && <Loader2 className="h-4 w-4 mr-1 animate-spin" />}Salva
             </Button>
           </div>

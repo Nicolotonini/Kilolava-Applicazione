@@ -125,7 +125,7 @@ class KrossAdapter(BaseAdapter):
     notes = ("Usa la stessa API v5 dell'app mobile ufficiale Kross. Non è l'API ufficiale partner: "
              "Kross può modificarla senza preavviso. Per l'API ufficiale contattare il supporto "
              "Kross / partner program (partner.krossbooking.com) e richiedere il contratto di "
-             "integrazione read-only.")
+             "integrazione read-only. Stato attuale: configurazione API da verificare con Kross.")
     missing_requirements = []
 
     def _client(self, creds: dict) -> KrossAPI:
@@ -167,8 +167,8 @@ class KrossAdapter(BaseAdapter):
             return []
 
     # ---------- test connection ----------
-    async def test_connection(self, credentials: dict) -> dict:
-        return await asyncio.to_thread(self._test_sync, credentials or {})
+    async def test_connection(self, connection: dict) -> dict:
+        return await asyncio.to_thread(self._test_sync, (connection or {}).get("credentials") or {})
 
     def _test_sync(self, creds: dict) -> dict:
         checks = []
@@ -241,7 +241,8 @@ class KrossAdapter(BaseAdapter):
         return [], None
 
     # ---------- properties ----------
-    async def list_properties(self, credentials: dict) -> List[NormalizedProperty]:
+    async def list_properties(self, connection: dict) -> List[NormalizedProperty]:
+        credentials = (connection or {}).get("credentials") or {}
         def run():
             api = self._client(credentials)
             try:
@@ -257,8 +258,9 @@ class KrossAdapter(BaseAdapter):
 
     # ---------- reservations ----------
     async def fetch_reservations(
-        self, credentials: dict, external_property_ids: List[str], date_from: str, date_to: str
+        self, connection: dict, external_property_ids: List[str], date_from: str, date_to: str
     ) -> List[NormalizedReservation]:
+        credentials = (connection or {}).get("credentials") or {}
         try:
             return await asyncio.to_thread(
                 self._fetch_sync, credentials, external_property_ids, date_from, date_to
@@ -309,8 +311,10 @@ class KrossAdapter(BaseAdapter):
         return out
 
     async def fetch_reservations_by_ids(
-        self, credentials: dict, external_ids: List[str]
+        self, connection: dict, items: List[dict]
     ) -> List[NormalizedReservation]:
+        credentials = (connection or {}).get("credentials") or {}
+        external_ids = [i.get("external_id") for i in items]
         def run():
             api = self._client(credentials)
             try:

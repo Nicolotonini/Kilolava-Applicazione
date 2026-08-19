@@ -185,6 +185,9 @@ export const integrationsApi = {
   updateMapping: (mappingId, data) => api.put(`/integrations/mappings/${mappingId}`, data),
   sync: (id) => api.post(`/integrations/channel-managers/${id}/sync`),
   reservations: (params) => api.get('/integrations/reservations', { params }),
+  octorateAppSettings: () => api.get('/integrations/octorate/app-settings'),
+  saveOctorateAppSettings: (data) => api.put('/integrations/octorate/app-settings', data),
+  octorateConnect: (id) => api.get(`/integrations/octorate/connect/${id}`),
 };
 
 export default api;

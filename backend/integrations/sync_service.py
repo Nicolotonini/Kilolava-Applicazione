@@ -104,7 +104,7 @@ async def sync_connection(connection: dict, trigger: str = "manual") -> dict:
 
     try:
         normalized = await adapter.fetch_reservations(
-            connection.get("credentials") or {}, list(map_by_ext.keys()), date_from, date_to
+            connection, list(map_by_ext.keys()), date_from, date_to
         )
     except AdapterError as e:
         result["errors"].append(str(e))
@@ -144,7 +144,8 @@ async def sync_connection(connection: dict, trigger: str = "manual") -> dict:
         else:
             try:
                 refreshed = await adapter.fetch_reservations_by_ids(
-                    connection.get("credentials") or {}, [m["external_id"] for m in missing]
+                    connection,
+                    [{"external_id": m["external_id"], "external_property_id": m.get("external_property_id")} for m in missing],
                 )
                 for n in refreshed:
                     mapping = map_by_ext.get(str(n.external_property_id))

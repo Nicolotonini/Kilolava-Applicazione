@@ -1,17 +1,34 @@
 """API routes — Channel Manager integrations (Sistema → Integrazioni)."""
+import base64
+import hashlib
+import hmac as hmac_mod
 import uuid
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
 
 from core.database import db
 from core.utils import now_iso
 from integrations.channel_managers import get_adapter, provider_catalog
 from integrations.channel_managers.base import AdapterError
-from integrations.sync_service import sync_connection
+from integrations.channel_managers.octorate import OctorateAdapter, get_app_settings
+from integrations.sync_service import _upsert_reservation, sync_connection
+from integrations.token_store import save_oauth
 
 SECRET_MASK = "••••••••"
+
+
+def _extract_reservation_id(payload: dict):
+    rid = payload.get("reservationId")
+    if rid:
+        return rid
+    res = payload.get("reservation")
+    if isinstance(res, dict):
+        return res.get("id")
+    return None
 
 
 def _mask_credentials(provider: str, creds: dict) -> dict:
@@ -54,6 +71,12 @@ class MappingUpdate(BaseModel):
     structure_id: Optional[str] = None
 
 
+class OctorateAppSettings(BaseModel):
+    client_id: Optional[str] = None
+    client_secret: Optional[str] = None
+    redirect_uri: Optional[str] = None
+
+
 def create_integrations_router(get_current_user, is_ops_user):
     router = APIRouter(prefix="/integrations")
 
@@ -70,6 +93,7 @@ def create_integrations_router(get_current_user, is_ops_user):
     async def _serialize_connection(conn: dict) -> dict:
         linked = await db.cm_property_mappings.count_documents({"connection_id": conn["id"], "status": "linked"})
         to_link = await db.cm_property_mappings.count_documents({"connection_id": conn["id"], "status": "unlinked"})
+        properties_imported = await db.cm_property_mappings.count_documents({"connection_id": conn["id"]})
         reservations = await db.cm_reservations.count_documents({"connection_id": conn["id"]})
         client_name = None
         if conn.get("client_id"):
@@ -96,7 +120,10 @@ def create_integrations_router(get_current_user, is_ops_user):
             "last_test_at": conn.get("last_test_at"),
             "linked_structures": linked,
             "properties_to_link": to_link,
+            "properties_imported": properties_imported,
             "reservations_imported": reservations,
+            "oauth_connected": bool((conn.get("oauth") or {}).get("refresh_token") or (conn.get("oauth") or {}).get("access_token")),
+            "webhook_path": f"/api/integrations/webhooks/hostaway/{conn['id']}" if conn["provider"] == "hostaway" else None,
             "created_at": conn.get("created_at"),
         }
 
@@ -170,6 +197,7 @@ def create_integrations_router(get_current_user, is_ops_user):
             {"connection_id": connection_id, "status": "linked"}, {"_id": 0, "structure_id": 1}
         ).to_list(500)
         await db.cm_property_mappings.delete_many({"connection_id": connection_id})
+        await db.cm_webhook_events.delete_many({"connection_id": connection_id})
         for m in linked:
             sid = m.get("structure_id")
             if not sid:
@@ -185,7 +213,7 @@ def create_integrations_router(get_current_user, is_ops_user):
         _require_ops(current_user)
         conn = await _get_connection(connection_id)
         adapter = get_adapter(conn["provider"])
-        result = await adapter.test_connection(conn.get("credentials") or {})
+        result = await adapter.test_connection(conn)
         if result.get("ok"):
             status = "warning" if any(not c.get("ok") for c in result.get("checks", [])) else "connected"
         else:
@@ -202,7 +230,7 @@ def create_integrations_router(get_current_user, is_ops_user):
         conn = await _get_connection(connection_id)
         adapter = get_adapter(conn["provider"])
         try:
-            props = await adapter.list_properties(conn.get("credentials") or {})
+            props = await adapter.list_properties(conn)
         except AdapterError as e:
             raise HTTPException(status_code=400, detail=str(e))
         now = now_iso()
@@ -213,7 +241,7 @@ def create_integrations_router(get_current_user, is_ops_user):
             if existing:
                 await db.cm_property_mappings.update_one(
                     {"connection_id": connection_id, "external_id": p.external_id},
-                    {"$set": {"external_name": p.name, "updated_at": now}},
+                    {"$set": {"external_name": p.name, "external_address": p.address, "updated_at": now}},
                 )
             else:
                 await db.cm_property_mappings.insert_one({
@@ -222,6 +250,7 @@ def create_integrations_router(get_current_user, is_ops_user):
                     "provider": conn["provider"],
                     "external_id": p.external_id,
                     "external_name": p.name,
+                    "external_address": p.address,
                     "structure_id": None,
                     "klv_code": None,
                     "status": "unlinked",
@@ -347,5 +376,144 @@ def create_integrations_router(get_current_user, is_ops_user):
             if not r.get("klv_code") and s:
                 r["klv_code"] = s.get("klv_code")
         return rows
+
+    # ---------------- Octorate: credenziali app globali + flusso OAuth ----------------
+
+    @router.get("/octorate/app-settings")
+    async def octorate_app_settings(current_user: dict = Depends(get_current_user)):
+        _require_ops(current_user)
+        app = await get_app_settings()
+        return {
+            "client_id": app.get("client_id"),
+            "client_secret_set": bool(app.get("client_secret")),
+            "redirect_uri": app.get("redirect_uri"),
+        }
+
+    @router.put("/octorate/app-settings")
+    async def update_octorate_app_settings(data: OctorateAppSettings, current_user: dict = Depends(get_current_user)):
+        _require_ops(current_user)
+        updates = {}
+        if data.client_id is not None:
+            updates["client_id"] = data.client_id.strip() or None
+        if data.client_secret not in (None, "", SECRET_MASK):
+            updates["client_secret"] = data.client_secret
+        if data.redirect_uri is not None:
+            updates["redirect_uri"] = data.redirect_uri.strip() or None
+        if updates:
+            await db.app_settings.update_one({"_id": "octorate_app"}, {"$set": updates}, upsert=True)
+        app = await get_app_settings()
+        return {
+            "client_id": app.get("client_id"),
+            "client_secret_set": bool(app.get("client_secret")),
+            "redirect_uri": app.get("redirect_uri"),
+        }
+
+    @router.get("/octorate/connect/{connection_id}")
+    async def octorate_connect(connection_id: str, current_user: dict = Depends(get_current_user)):
+        _require_ops(current_user)
+        conn = await _get_connection(connection_id)
+        if conn["provider"] != "octorate":
+            raise HTTPException(status_code=400, detail="La connessione non è Octorate")
+        adapter: OctorateAdapter = get_adapter("octorate")
+        app = await get_app_settings()
+        state = str(uuid.uuid4())
+        try:
+            url = adapter.build_authorize_url(app, state)
+        except AdapterError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        await db.cm_oauth_states.insert_one({
+            "state": state, "connection_id": connection_id,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        })
+        return {"authorize_url": url}
+
+    @router.get("/octorate/callback")
+    async def octorate_callback(code: Optional[str] = None, state: Optional[str] = None, error: Optional[str] = None):
+        # Endpoint pubblico: è il redirect del browser da Octorate. Protetto dallo state monouso.
+        def back(status: str, reason: str = ""):
+            suffix = f"&reason={reason[:120]}" if reason else ""
+            return RedirectResponse(f"/integrations?octorate={status}{suffix}")
+        if error:
+            return back("error", error)
+        if not code or not state:
+            return back("error", "code o state mancanti")
+        record = await db.cm_oauth_states.find_one({"state": state})
+        if not record:
+            return back("error", "state non valido o già usato")
+        await db.cm_oauth_states.delete_one({"state": state})
+        created = datetime.fromisoformat(record["created_at"])
+        if datetime.now(timezone.utc) - created > timedelta(minutes=15):
+            return back("error", "sessione OAuth scaduta, riprova")
+        conn = await db.cm_connections.find_one({"id": record["connection_id"]}, {"_id": 0})
+        if not conn:
+            return back("error", "connessione non trovata")
+        adapter: OctorateAdapter = get_adapter("octorate")
+        app = await get_app_settings()
+        try:
+            oauth = await adapter.exchange_code(app, code)
+        except AdapterError as e:
+            await db.cm_connections.update_one({"id": conn["id"]}, {"$set": {"status": "error", "last_test": {"ok": False, "checks": [], "error": str(e)}}})
+            return back("error", "scambio token fallito")
+        await save_oauth(conn["id"], oauth)
+        await db.cm_connections.update_one({"id": conn["id"]}, {"$set": {"status": "connected", "updated_at": now_iso()}})
+        return back("connected")
+
+    # ---------------- Hostaway: webhook receiver (reservation created/updated) ----------------
+
+    @router.post("/webhooks/hostaway/{connection_id}")
+    async def hostaway_webhook(connection_id: str, request: Request):
+        conn = await db.cm_connections.find_one({"id": connection_id}, {"_id": 0})
+        if not conn or conn["provider"] != "hostaway":
+            raise HTTPException(status_code=404, detail="Connessione webhook non trovata")
+        creds = conn.get("credentials") or {}
+        login, password = creds.get("webhook_login"), creds.get("webhook_password")
+        if not login or not password:
+            raise HTTPException(status_code=401, detail="Webhook non abilitato: configura webhook login/password sulla connessione Hostaway")
+        auth = request.headers.get("authorization", "")
+        ok = False
+        if auth.lower().startswith("basic "):
+            try:
+                raw = base64.b64decode(auth.split(" ", 1)[1]).decode()
+                user, pwd = raw.split(":", 1)
+                ok = hmac_mod.compare_digest(user, login) and hmac_mod.compare_digest(pwd, password)
+            except Exception:
+                ok = False
+        if not ok:
+            raise HTTPException(status_code=401, detail="Autenticazione webhook non valida")
+        raw_body = await request.body()
+        try:
+            payload = await request.json()
+        except Exception:
+            payload = {"raw": raw_body.decode(errors="replace")}
+        dedupe = hashlib.sha256(raw_body + connection_id.encode()).hexdigest()
+        existing = await db.cm_webhook_events.find_one({"dedupe_key": dedupe}, {"_id": 0, "dedupe_key": 1})
+        if existing:
+            return {"status": "duplicate_ignored"}
+        event = payload.get("event") or payload.get("eventType") or "unknown"
+        rid = _extract_reservation_id(payload)
+        inbox = {
+            "dedupe_key": dedupe, "connection_id": connection_id, "provider": "hostaway",
+            "event": str(event), "reservation_id": str(rid) if rid else None,
+            "received_at": now_iso(), "processed": False, "error": None,
+        }
+        await db.cm_webhook_events.insert_one(inbox)
+        if rid:
+            adapter = get_adapter("hostaway")
+            try:
+                rows = await adapter.fetch_reservations_by_ids(conn, [{"external_id": str(rid)}])
+                if rows:
+                    n = rows[0]
+                    mapping = await db.cm_property_mappings.find_one({
+                        "connection_id": connection_id, "external_id": str(n.external_property_id), "status": "linked",
+                    }, {"_id": 0})
+                    await _upsert_reservation(
+                        conn, n,
+                        mapping.get("structure_id") if mapping else None,
+                        mapping.get("klv_code") if mapping else None,
+                    )
+                    await db.cm_webhook_events.update_one({"dedupe_key": dedupe}, {"$set": {"processed": True}})
+            except AdapterError as e:
+                await db.cm_webhook_events.update_one({"dedupe_key": dedupe}, {"$set": {"error": str(e)}})
+        return {"status": "accepted"}
 
     return router

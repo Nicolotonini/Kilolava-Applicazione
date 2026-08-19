@@ -1,0 +1,35 @@
+{
+  "summary": "Iteration 6 — Real Channel Manager adapters (Guesty, Hostaway, Octorate) + Kross regression + iCal regression + unique-source conflict. Backend: 21/21 pytest tests PASS in 8.55s. Verified: providers catalog (5 providers, all implemented=true, octorate oauth_flow=true, guesty/hostaway credential_fields, octorate credential_fields=[]), REAL Guesty error via open-api.guesty.com/oauth2/token (HTTP invalid_client), REAL Hostaway error via api.hostaway.com/v1/accessTokens (401 Client authentication failed), Octorate app-settings CRUD with client_secret never in clear (only client_secret_set boolean), authorize_url building https://admin.octorate.com/octobook/identity/oauth.xhtml with client_id+redirect_uri+state, connect without settings → 400 with clear instructions, callback with invalid/missing state → 307 redirect to /integrations?octorate=error (state single-use protected), Hostaway webhook receiver 401 without/with wrong Basic Auth, 200 accepted with correct Basic Auth, 200 duplicate_ignored on replay (SHA256 dedupe on body+connection_id), 401 when webhook creds not configured on connection, credentials always masked (secret fields = '••••••••') in list channel-managers, oauth field never present in serialized response. Regression full iCal flow (create→test→import→link→sync→modify→sync→cancel) with created≥1, updated+cancelled≥1, exactly 2 reservations (no duplicates), unique-source conflict returns 400 when 2nd connection tries to link same structure. Frontend E2E via Playwright verified: /integrations page loads with both header buttons (App Octorate + Aggiungi Channel Manager), App Octorate dialog contains 3 credential inputs + save button + suggested redirect_uri placeholder, connection dialog provider select lists exactly 5 providers (Kross/Guesty/Hostaway/Octorate/iCal) with no '— Non configurato' text, Guesty selection shows client_id + client_secret fields, Hostaway selection shows 4 fields (account_id, client_secret, webhook_login, webhook_password), Octorate selection shows NO credential inputs (OAuth note visible), Kross real connection 'Kross Booking - Affitto Breve' visible with proper counters ('proprietà importate' / 'collegate') and NOT touched, mobile 390px layout usable (both header buttons visible).",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_channel_managers_oauth.py",
+    "/app/test_reports/pytest/iteration_6.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "routes/integrations.py — octorate_callback: on token exchange failure the connection status is set to 'error' and last_test is overwritten with a partial dict {ok:false,error:str} that has no 'checks'; downstream UI reading result.checks safely handles it, but consider structuring like other test results for consistency.",
+    "routes/integrations.py — hostaway_webhook: payload parsing uses `payload.get('reservationId') or (payload.get('reservation') or {}).get('id') if isinstance(payload.get('reservation'), dict) else payload.get('reservationId')` — the `if/else` binds only to the RHS of `or`, so semantics are OK but readability suffers; extract into helper `_extract_reservation_id(payload)` for clarity.",
+    "routes/integrations.py — delete_connection still leaves cm_webhook_events, cm_oauth_states and cm_reservations orphaned (mappings are removed but not those). Consider extending cascade or documenting explicitly.",
+    "integrations/channel_managers/octorate.py — _token_valid returns True when expire_date is missing OR unparseable ('ValueError' fallback). If provider returns malformed expiry, the app will keep using an expired token until it 401s — acceptable given the refresh-on-401 loop but noteworthy.",
+    "integrations/channel_managers/hostaway.py — token expires_at defaults to 24 months (24*30*24*3600); if Hostaway later changes expires_in, we honour it. Fine.",
+    "integrations/token_store.py — ensure `save_oauth` never leaks the oauth blob back through _serialize_connection (verified via test: 'oauth' key is stripped)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_channel_managers_oauth.py"
+  ],
+  "success_rate": {"backend": "100% (21/21)", "frontend": "100% (all flows verified)"},
+  "test_credentials": "Admin: test_user@kilolava.com / TestPass123!",
+  "seed_data_creation": "Test connections created and CLEANED UP at teardown: TEST_GUESTY_FAKE, TEST_HOSTAWAY_FAKE, TEST_OCTORATE_NOAPP, TEST_HOSTAWAY_WH, TEST_HOSTAWAY_NOWH, TEST_ICAL_OAUTH_REG, TEST_ICAL_OAUTH_REG2. All cm_property_mappings/cm_reservations/cm_webhook_events/cm_oauth_states for these IDs were deleted. app_settings _id 'octorate_app' (created with fake values TEST_APP_CID/TEST_APP_SECRET) DELETED. Structures with booking_source='ical' set back to 'manual'. Real Kross connection 'Kross Booking - Affitto Breve' and real structures KLV-000x untouched.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Regression file /app/backend/tests/test_channel_managers_oauth.py runs in ~9s with no external creds — it hits open-api.guesty.com and api.hostaway.com REAL endpoints and expects their genuine 400/401 responses (no simulation). If run offline, TestGuestyRealError/TestHostawayRealError will fail with connection error (not assertion). The iCal regression uses a local http.server on 127.0.0.1 free port serving /app/backend/tests/_ical_tmp_oauth/feed.ics with dates relative to today() so it stays valid indefinitely. Also keep the older /app/backend/tests/test_integrations_channel_managers.py for the deeper iCal flow assertions. TestICalRegression links a mapping to the first structure without any existing linked mapping — booking_source is reset to 'manual' at teardown.",
+  "rca_of_the_issue": "No issues found. All requested scenarios verified end-to-end: real provider errors surface unaltered, OAuth flow for Octorate is correctly staged (app-settings → connect → callback with state protection), Hostaway webhook is authenticated and idempotent, credentials never leak in list responses, iCal regression + unique-source conflict work as spec'd."
+}
