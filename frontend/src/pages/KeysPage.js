@@ -50,7 +50,7 @@ const KeysPage = () => {
   const hasKeys = (s) => !!s.access_info?.kilolava_has_keys;
 
   const withKeys = structures.filter(hasKeys);
-  const boxOccupied = (letter) => withKeys.reduce((n, s) => n + copies(s).filter(c => c.present && String(c.box).toUpperCase().startsWith(letter)).length, 0);
+  const boxOccupied = (letter) => withKeys.reduce((n, s) => n + copies(s).filter(c => String(c.slot).trim() !== '' && String(c.box).toUpperCase().startsWith(letter)).length, 0);
   const boxOut = (letter) => withKeys.reduce((n, s) => n + copies(s).filter(c => c.exists && !c.present && String(c.box).toUpperCase().startsWith(letter)).length, 0);
 
   const q = search.trim().toLowerCase();
@@ -275,7 +275,7 @@ function BoxCard({ letter, label, occupied, capacity, testId }) {
           {occupied} <span className="text-base text-muted-foreground font-normal">/ {capacity}</span>
         </p>
         <p className={cn('text-xs mt-1', free === 0 ? 'text-red-600 font-medium' : 'text-muted-foreground')} data-testid={`${testId}-free`}>
-          {free} posti liberi
+          slot assegnati — {free} disponibili
         </p>
       </CardContent>
     </Card>

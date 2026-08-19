@@ -243,10 +243,9 @@ async def _build_tabs():
                 key = box_name[:1]
                 if key not in box_occupied:
                     continue
-                state = _copy_state(copy)
-                if state == "Presente":
+                if str(copy.get("slot") or "").strip():
                     box_occupied[key] += 1
-                elif state == "Fuori sede":
+                if _copy_state(copy) == "Fuori sede":
                     box_out[key] += 1
         complete = has_keys and all(_copy_state(x) == "Presente" for x in (a, b, c_))
         notes = "; ".join(filter(None, [a.get("note"), b.get("note"), c_.get("note")]))
@@ -278,7 +277,7 @@ async def _build_tabs():
         "extra_block": {
             "start_cell": "N1",
             "values": [
-                ["Box", "Capacità", "Occupati", "Liberi", "Fuori sede"],
+                ["Box", "Capacità", "Slot assegnati", "Slot disponibili", "Fuori sede"],
                 ["A — Addette", box_capacity, box_occupied["A"], max(0, box_capacity - box_occupied["A"]), box_out["A"]],
                 ["B — Rider", box_capacity, box_occupied["B"], max(0, box_capacity - box_occupied["B"]), box_out["B"]],
                 ["C — Emergenza", box_capacity, box_occupied["C"], max(0, box_capacity - box_occupied["C"]), box_out["C"]],
