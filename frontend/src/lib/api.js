@@ -151,6 +151,7 @@ export const logisticsApi = {
 // ============== PORTAL API (client-facing) ==============
 export const portalApi = {
   getDashboard: () => api.get('/portal/dashboard'),
+  getMyStructuresToday: () => api.get('/portal/my-structures-today'),
   getStructures: () => api.get('/portal/structures'),
   getServices: (params = {}) => api.get('/portal/services', { params }),
   getCatalog: () => api.get('/portal/catalog'),

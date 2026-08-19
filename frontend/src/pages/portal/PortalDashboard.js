@@ -21,6 +21,7 @@ const PortalDashboard = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
   const [data, setData] = useState(null);
+  const [structuresToday, setStructuresToday] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -32,6 +33,7 @@ const PortalDashboard = () => {
       finally { setLoading(false); }
     };
     load();
+    portalApi.getMyStructuresToday?.().then(r => setStructuresToday(r.data)).catch(() => {});
   }, []);
 
   if (loading) return <div className="text-center py-16 text-muted-foreground">Caricamento...</div>;
@@ -44,6 +46,37 @@ const PortalDashboard = () => {
         <h1 className="text-2xl font-heading font-semibold">Buongiorno, {data.client_name || user?.name}</h1>
         <p className="text-sm text-muted-foreground mt-1">Ecco il riepilogo delle tue attivita</p>
       </div>
+
+      {/* Le mie strutture oggi */}
+      {structuresToday.length > 0 && (
+        <div data-testid="portal-structures-today">
+          <h2 className="text-base md:text-lg font-heading font-semibold mb-2">Le mie strutture oggi</h2>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {structuresToday.map(s => {
+              const meta = {
+                to_clean: { label: 'Da pulire', cls: 'bg-sky-100 text-sky-700' },
+                in_cleaning: { label: 'In pulizia', cls: 'bg-amber-100 text-amber-700' },
+                ready: { label: s.guests_count ? `Pronto per ${s.guests_count} persone` : 'Pronto', cls: 'bg-green-100 text-green-700' },
+              }[s.cleaning_status];
+              return (
+                <Card key={s.structure_id} className="border shadow-none">
+                  <CardContent className="p-4 flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="font-semibold truncate">{s.name}</p>
+                      {s.address && <p className="text-xs text-muted-foreground truncate">{s.address}</p>}
+                    </div>
+                    {meta ? (
+                      <span className={cn('shrink-0 px-3 py-1.5 rounded-full text-xs font-semibold', meta.cls)} data-testid={`structure-status-${s.structure_id}`}>{meta.label}</span>
+                    ) : (
+                      <span className="shrink-0 px-3 py-1.5 rounded-full text-xs font-medium bg-muted text-muted-foreground">Nessuna pulizia oggi</span>
+                    )}
+                  </CardContent>
+                </Card>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Quick Stats */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">

@@ -12,6 +12,13 @@ from pydantic import BaseModel, Field, EmailStr, ConfigDict
 from typing import List, Optional
 import uuid
 from datetime import datetime, timezone, timedelta
+from zoneinfo import ZoneInfo
+
+BUSINESS_TZ = ZoneInfo("Europe/Rome")
+
+
+def local_today() -> str:
+    return datetime.now(BUSINESS_TZ).strftime("%Y-%m-%d")
 import jwt
 from passlib.context import CryptContext
 import requests as http_requests
@@ -4180,12 +4187,16 @@ class CleaningTaskStatus:
     COMPLETED = "completed"
     ISSUE_REPORTED = "issue_reported"
     NEEDS_REVIEW = "needs_review"
+    CANCELLED = "cancelled"
 
 CLEANING_TASK_STATUSES = [
-    "unassigned", "assigned", "in_progress", "completed", "issue_reported", "needs_review"
+    "unassigned", "assigned", "in_progress", "completed", "issue_reported", "needs_review", "cancelled"
 ]
 
-ISSUE_CATEGORIES = ["broken_item", "missing_supplies", "damage", "maintenance", "electrical", "plumbing", "furniture", "missing_item", "other"]
+# Nuove categorie segnalazione (4 tipi ufficiali) — le legacy restano valide per i dati esistenti
+CLEANING_REPORT_CATEGORIES = ["missing", "damage", "malfunction", "other"]
+REPORT_CATEGORIES_REQUIRING_MEDIA = ["damage", "malfunction"]
+ISSUE_CATEGORIES = CLEANING_REPORT_CATEGORIES + ["broken_item", "missing_supplies", "maintenance", "electrical", "plumbing", "furniture", "missing_item"]
 
 CHECKLIST_ITEM_TYPES = ["checkbox", "yesno", "text", "number", "photo", "conditional"]
 
@@ -4292,23 +4303,78 @@ class CleaningTaskCreate(BaseModel):
     structure_id: Optional[str] = None
     unit_id: Optional[str] = None
     assigned_cleaner_id: Optional[str] = None
+    assigned_cleaner_ids: Optional[List[str]] = None
     date: str
     scheduled_time: Optional[str] = None
     estimated_duration_minutes: Optional[int] = None
+    guests_count: Optional[int] = None
+    beds_double: Optional[int] = None
+    beds_single: Optional[int] = None
+    beds_sofa: Optional[int] = None
+    checkin_today: Optional[bool] = None
+    checkin_time: Optional[str] = None
     access_notes: Optional[str] = None
     notes: Optional[str] = None
     checklist_template_id: Optional[str] = None
 
 
 class CleaningTaskUpdate(BaseModel):
+    structure_id: Optional[str] = None
     assigned_cleaner_id: Optional[str] = None
+    assigned_cleaner_ids: Optional[List[str]] = None
     date: Optional[str] = None
     scheduled_time: Optional[str] = None
     estimated_duration_minutes: Optional[int] = None
+    guests_count: Optional[int] = None
+    beds_double: Optional[int] = None
+    beds_single: Optional[int] = None
+    beds_sofa: Optional[int] = None
+    checkin_today: Optional[bool] = None
+    checkin_time: Optional[str] = None
     access_notes: Optional[str] = None
     notes: Optional[str] = None
     checklist_template_id: Optional[str] = None
     status: Optional[str] = None
+
+
+def _cleaner_ids_of(task: dict) -> list:
+    ids = list(task.get("assigned_cleaner_ids") or [])
+    if task.get("assigned_cleaner_id") and task["assigned_cleaner_id"] not in ids:
+        ids.append(task["assigned_cleaner_id"])
+    return ids
+
+
+def _cleaner_can_access(task: dict, user: dict) -> bool:
+    return user["id"] in _cleaner_ids_of(task)
+
+
+async def _validate_beds(structure_id: Optional[str], beds: dict):
+    """Enforce structure bed capacity (max) and configured minimum."""
+    if not structure_id:
+        return
+    s = await db.structures.find_one({"id": structure_id}, {"_id": 0, "name": 1, "bed_config": 1})
+    bc = (s or {}).get("bed_config") or {}
+    if not bc:
+        return
+    rules = [
+        ("beds_double", "beds_double", "beds_double_min", "matrimoniali"),
+        ("beds_single", "beds_single", "beds_single_min", "singoli"),
+        ("beds_sofa", "sofa_beds", "sofa_beds_min", "divani letto"),
+    ]
+    for field, max_key, min_key, label in rules:
+        val = beds.get(field)
+        if val is None:
+            continue
+        try:
+            val = int(val)
+        except (TypeError, ValueError):
+            continue
+        mx = int(bc.get(max_key) or 0)
+        mn = int(bc.get(min_key) or 0)
+        if mx and val > mx:
+            raise HTTPException(status_code=400, detail=f"La struttura ha massimo {mx} {label}: non puoi selezionarne {val}")
+        if mn and val < mn:
+            raise HTTPException(status_code=400, detail=f"La struttura prevede minimo {mn} {label}")
 
 
 async def _enrich_cleaning_task(task: dict) -> dict:
@@ -4322,18 +4388,31 @@ async def _enrich_cleaning_task(task: dict) -> dict:
                 pi = c.get("private_info") or {}
                 task["client_name"] = f"{pi.get('first_name', '')} {pi.get('last_name', '')}".strip()
     if task.get("structure_id"):
-        s = await db.structures.find_one({"id": task["structure_id"]}, {"_id": 0, "name": 1, "address": 1})
+        s = await db.structures.find_one({"id": task["structure_id"]}, {"_id": 0, "name": 1, "address": 1, "klv_code": 1})
         if s:
             task["structure_name"] = s.get("name", "")
             task["structure_address"] = s.get("address", "")
+            task["klv_code"] = s.get("klv_code")
     if task.get("unit_id"):
         u = await db.units.find_one({"id": task["unit_id"]}, {"_id": 0, "name": 1})
         if u:
             task["unit_name"] = u.get("name", "")
-    if task.get("assigned_cleaner_id"):
-        cl = await db.users.find_one({"id": task["assigned_cleaner_id"]}, {"_id": 0, "name": 1, "first_name": 1, "last_name": 1})
-        if cl:
-            task["cleaner_name"] = cl.get("name") or f"{cl.get('first_name', '')} {cl.get('last_name', '')}".strip()
+    cleaner_ids = _cleaner_ids_of(task)
+    if cleaner_ids:
+        names = []
+        async for cl in db.users.find({"id": {"$in": cleaner_ids}}, {"_id": 0, "id": 1, "name": 1, "first_name": 1, "last_name": 1}):
+            names.append(cl.get("name") or f"{cl.get('first_name', '')} {cl.get('last_name', '')}".strip())
+        task["cleaner_names"] = names
+        task["cleaner_name"] = ", ".join(names)
+    task["open_issues_count"] = len([i for i in (task.get("issues") or []) if i.get("status", "open") == "open"])
+    if task.get("client_id"):
+        c = await db.clients.find_one({"id": task["client_id"]}, {"_id": 0, "client_type": 1, "private_info": 1, "company_info": 1})
+        if c:
+            if c.get("client_type") == "company":
+                task["client_name"] = (c.get("company_info") or {}).get("company_name")
+            else:
+                pi = c.get("private_info") or {}
+                task["client_name"] = f"{pi.get('name', '') or pi.get('first_name', '')} {pi.get('surname', '') or pi.get('last_name', '')}".strip()
     return task
 
 
@@ -4380,13 +4459,12 @@ async def my_cleaning_tasks(
     current_user: dict = Depends(get_current_user),
 ):
     """Get cleaning tasks assigned to current cleaner."""
-    query = {"assigned_cleaner_id": current_user["id"]}
+    query = {"$or": [{"assigned_cleaner_id": current_user["id"]}, {"assigned_cleaner_ids": current_user["id"]}]}
     if date:
         query["date"] = date
     else:
-        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-        query["date"] = today
-    tasks = await db.cleaning_tasks.find(query, {"_id": 0}).sort([("scheduled_time", 1), ("created_at", 1)]).to_list(100)
+        query["date"] = {"$gte": local_today()}
+    tasks = await db.cleaning_tasks.find(query, {"_id": 0}).sort([("date", 1), ("scheduled_time", 1), ("created_at", 1)]).to_list(100)
     enriched = []
     for t in tasks:
         enriched.append(await _enrich_cleaning_task(t))
@@ -4412,7 +4490,7 @@ async def get_cleaning_task(task_id: str, current_user: dict = Depends(get_curre
     if not task:
         raise HTTPException(status_code=404, detail="Task non trovato")
     # Cleaners can only see their own tasks
-    if current_user["role"] == UserRole.CLEANER and task.get("assigned_cleaner_id") != current_user["id"]:
+    if current_user["role"] == UserRole.CLEANER and not _cleaner_can_access(task, current_user):
         raise HTTPException(status_code=403, detail="Non autorizzato")
     return await _enrich_cleaning_task(task)
 
@@ -4422,14 +4500,27 @@ async def create_cleaning_task(data: CleaningTaskCreate, current_user: dict = De
     if not is_ops_user(current_user):
         raise HTTPException(status_code=403, detail="Non autorizzato")
     now = now_iso()
-    status = CleaningTaskStatus.UNASSIGNED
-    if data.assigned_cleaner_id:
-        status = CleaningTaskStatus.ASSIGNED
+    cleaner_ids = list(dict.fromkeys((data.assigned_cleaner_ids or []) + ([data.assigned_cleaner_id] if data.assigned_cleaner_id else [])))
+    status = CleaningTaskStatus.ASSIGNED if cleaner_ids else CleaningTaskStatus.UNASSIGNED
+    await _validate_beds(data.structure_id, {"beds_double": data.beds_double, "beds_single": data.beds_single, "beds_sofa": data.beds_sofa})
 
-    # Load checklist template if specified
+    # Checklist: template esplicito → template della struttura → template standard Kilolava
+    template_id = data.checklist_template_id
+    client_id = data.client_id
+    if data.structure_id:
+        s = await db.structures.find_one({"id": data.structure_id}, {"_id": 0, "cleaning_template_id": 1, "client_id": 1})
+        if s:
+            if not template_id:
+                template_id = s.get("cleaning_template_id")
+            if not client_id:
+                client_id = s.get("client_id")
+    if not template_id:
+        std = await db.checklist_templates.find_one({"key": "standard_kilolava"}, {"_id": 0, "id": 1})
+        if std:
+            template_id = std["id"]
     checklist_data = None
-    if data.checklist_template_id:
-        tmpl = await db.checklist_templates.find_one({"id": data.checklist_template_id}, {"_id": 0})
+    if template_id:
+        tmpl = await db.checklist_templates.find_one({"id": template_id}, {"_id": 0})
         if tmpl:
             checklist_data = {
                 "template_id": tmpl["id"],
@@ -4440,21 +4531,34 @@ async def create_cleaning_task(data: CleaningTaskCreate, current_user: dict = De
 
     task = {
         "id": str(uuid.uuid4()),
-        "client_id": data.client_id,
+        "client_id": client_id,
         "structure_id": data.structure_id,
         "unit_id": data.unit_id,
-        "assigned_cleaner_id": data.assigned_cleaner_id,
+        "assigned_cleaner_id": cleaner_ids[0] if cleaner_ids else None,
+        "assigned_cleaner_ids": cleaner_ids,
         "date": data.date,
         "scheduled_time": data.scheduled_time,
         "estimated_duration_minutes": data.estimated_duration_minutes,
+        "guests_count": data.guests_count,
+        "beds_double": data.beds_double or 0,
+        "beds_single": data.beds_single or 0,
+        "beds_sofa": data.beds_sofa or 0,
+        "checkin_today": bool(data.checkin_today),
+        "checkin_time": data.checkin_time,
         "access_notes": data.access_notes,
         "notes": data.notes,
-        "checklist_template_id": data.checklist_template_id,
+        "checklist_template_id": template_id,
         "checklist": checklist_data,
         "photos": [],
+        "media": [],
+        "task_notes": [],
         "issues": [],
+        "history": [{"action": "created", "by": current_user["id"], "by_name": current_user.get("name", ""), "at": now}],
         "status": status,
         "started_at": None,
+        "started_by": None,
+        "finished_at": None,
+        "duration_minutes": None,
         "completed_at": None,
         "created_by": current_user["id"],
         "created_at": now,
@@ -4462,16 +4566,15 @@ async def create_cleaning_task(data: CleaningTaskCreate, current_user: dict = De
     }
     await db.cleaning_tasks.insert_one(task)
     task.pop("_id", None)
-    # Notify assigned cleaner
-    if data.assigned_cleaner_id:
-        enriched = await _enrich_cleaning_task(task)
+    enriched = await _enrich_cleaning_task(task)
+    for cid in cleaner_ids:
         await create_notification(
-            data.assigned_cleaner_id,
+            cid,
             "Nuova pulizia assegnata",
             f"Pulizia per {enriched.get('structure_name', '')} il {data.date}" + (f" alle {data.scheduled_time}" if data.scheduled_time else ""),
             "cleaning_assigned", "normal", "cleaning_task", task["id"]
         )
-    return await _enrich_cleaning_task(task)
+    return enriched
 
 
 @api_router.put("/cleaning-tasks/{task_id}")
@@ -4483,10 +4586,27 @@ async def update_cleaning_task(task_id: str, data: CleaningTaskUpdate, current_u
         raise HTTPException(status_code=404, detail="Task non trovato")
 
     update = {"updated_at": now_iso()}
-    for field in ["assigned_cleaner_id", "date", "scheduled_time", "estimated_duration_minutes", "access_notes", "notes", "status"]:
+    target_structure = data.structure_id if data.structure_id is not None else existing.get("structure_id")
+    beds_check = {
+        "beds_double": data.beds_double if data.beds_double is not None else existing.get("beds_double"),
+        "beds_single": data.beds_single if data.beds_single is not None else existing.get("beds_single"),
+        "beds_sofa": data.beds_sofa if data.beds_sofa is not None else existing.get("beds_sofa"),
+    }
+    if any(getattr(data, f) is not None for f in ("beds_double", "beds_single", "beds_sofa", "structure_id")):
+        await _validate_beds(target_structure, beds_check)
+    for field in ["structure_id", "assigned_cleaner_id", "date", "scheduled_time", "estimated_duration_minutes",
+                  "guests_count", "beds_double", "beds_single", "beds_sofa", "checkin_today", "checkin_time",
+                  "access_notes", "notes", "status"]:
         val = getattr(data, field, None)
         if val is not None:
             update[field] = val
+    new_cleaner_ids = None
+    if data.assigned_cleaner_ids is not None:
+        new_cleaner_ids = list(dict.fromkeys(data.assigned_cleaner_ids))
+        update["assigned_cleaner_ids"] = new_cleaner_ids
+        update["assigned_cleaner_id"] = new_cleaner_ids[0] if new_cleaner_ids else None
+        if new_cleaner_ids and existing.get("status") == CleaningTaskStatus.UNASSIGNED:
+            update["status"] = CleaningTaskStatus.ASSIGNED
     # If assigning a cleaner and status is unassigned, auto-set to assigned
     if data.assigned_cleaner_id and existing.get("status") == CleaningTaskStatus.UNASSIGNED:
         update["status"] = CleaningTaskStatus.ASSIGNED
@@ -4507,21 +4627,26 @@ async def update_cleaning_task(task_id: str, data: CleaningTaskUpdate, current_u
     await db.cleaning_tasks.update_one({"id": task_id}, {"$set": update})
     updated = await db.cleaning_tasks.find_one({"id": task_id}, {"_id": 0})
     # Notify cleaner if newly assigned
-    if data.assigned_cleaner_id and data.assigned_cleaner_id != existing.get("assigned_cleaner_id"):
-        enriched = await _enrich_cleaning_task(updated)
+    prev_ids = set(_cleaner_ids_of(existing))
+    for cid in set(_cleaner_ids_of(updated)) - prev_ids:
+        enriched = await _enrich_cleaning_task(dict(updated))
         await create_notification(
-            data.assigned_cleaner_id,
+            cid,
             "Pulizia assegnata",
             f"Ti e stata assegnata una pulizia per {enriched.get('structure_name', '')} il {updated.get('date', '')}",
             "cleaning_assigned", "normal", "cleaning_task", task_id
         )
     return await _enrich_cleaning_task(updated)
+
+
+@api_router.delete("/cleaning-tasks/{task_id}")
 async def delete_cleaning_task(task_id: str, current_user: dict = Depends(get_current_user)):
     if not is_ops_user(current_user):
         raise HTTPException(status_code=403, detail="Non autorizzato")
     result = await db.cleaning_tasks.delete_one({"id": task_id})
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Task non trovato")
+    await db.cleaning_issues.delete_many({"cleaning_task_id": task_id})
     return {"message": "Task eliminato"}
 
 
@@ -4536,10 +4661,12 @@ async def update_cleaning_task_status(task_id: str, data: CleaningStatusUpdate, 
     task = await db.cleaning_tasks.find_one({"id": task_id}, {"_id": 0})
     if not task:
         raise HTTPException(status_code=404, detail="Task non trovato")
-    if current_user["role"] == UserRole.CLEANER and task.get("assigned_cleaner_id") != current_user["id"]:
+    if current_user["role"] == UserRole.CLEANER and not _cleaner_can_access(task, current_user):
         raise HTTPException(status_code=403, detail="Non autorizzato")
     if data.status not in CLEANING_TASK_STATUSES:
         raise HTTPException(status_code=400, detail="Stato non valido")
+    if current_user["role"] == UserRole.CLEANER and data.status in (CleaningTaskStatus.IN_PROGRESS, CleaningTaskStatus.COMPLETED, CleaningTaskStatus.CANCELLED):
+        raise HTTPException(status_code=400, detail="La pulizia inizia con il video iniziale e si completa con 'Completa pulizia'")
 
     update = {"status": data.status, "updated_at": now_iso()}
     if data.status == CleaningTaskStatus.IN_PROGRESS and not task.get("started_at"):
@@ -4576,7 +4703,7 @@ async def update_checklist_response(task_id: str, data: ChecklistResponseUpdate,
     task = await db.cleaning_tasks.find_one({"id": task_id}, {"_id": 0})
     if not task:
         raise HTTPException(status_code=404, detail="Task non trovato")
-    if current_user["role"] == UserRole.CLEANER and task.get("assigned_cleaner_id") != current_user["id"]:
+    if current_user["role"] == UserRole.CLEANER and not _cleaner_can_access(task, current_user):
         raise HTTPException(status_code=403, detail="Non autorizzato")
     if not task.get("checklist"):
         raise HTTPException(status_code=400, detail="Nessuna checklist associata")
@@ -4604,7 +4731,7 @@ async def upload_cleaning_photo(
     task = await db.cleaning_tasks.find_one({"id": task_id}, {"_id": 0})
     if not task:
         raise HTTPException(status_code=404, detail="Task non trovato")
-    if current_user["role"] == UserRole.CLEANER and task.get("assigned_cleaner_id") != current_user["id"]:
+    if current_user["role"] == UserRole.CLEANER and not _cleaner_can_access(task, current_user):
         raise HTTPException(status_code=403, detail="Non autorizzato")
 
     ext = file.filename.split(".")[-1] if "." in file.filename else "jpg"
@@ -4630,9 +4757,10 @@ async def upload_cleaning_photo(
 # --- Issue Reporting ---
 
 class CleaningIssueCreate(BaseModel):
-    category: str  # broken_item, missing_supplies, damage, maintenance
+    category: str  # missing, damage, malfunction, other (+ legacy)
     note: str = ""
     severity: str = "medium"  # low, medium, high
+    attachment_ids: List[str] = []  # id di media già caricati con media_type=issue
 
 @api_router.post("/cleaning-tasks/{task_id}/issues")
 async def report_cleaning_issue(
@@ -4643,10 +4771,22 @@ async def report_cleaning_issue(
     task = await db.cleaning_tasks.find_one({"id": task_id}, {"_id": 0})
     if not task:
         raise HTTPException(status_code=404, detail="Task non trovato")
-    if current_user["role"] == UserRole.CLEANER and task.get("assigned_cleaner_id") != current_user["id"]:
+    if current_user["role"] == UserRole.CLEANER and not _cleaner_can_access(task, current_user):
         raise HTTPException(status_code=403, detail="Non autorizzato")
     if data.category not in ISSUE_CATEGORIES:
         raise HTTPException(status_code=400, detail="Categoria non valida")
+
+    media_by_id = {m["id"]: m for m in (task.get("media") or [])}
+    attachments = [media_by_id[mid] for mid in data.attachment_ids if mid in media_by_id]
+    if data.category in REPORT_CATEGORIES_REQUIRING_MEDIA and not attachments:
+        label = "Rottura / Danno" if data.category == "damage" else "Malfunzionamento / Manutenzione"
+        raise HTTPException(status_code=400, detail=f"Per una segnalazione '{label}' serve almeno 1 foto o 1 video")
+    if not data.note.strip():
+        raise HTTPException(status_code=400, detail="Inserisci una breve descrizione")
+
+    structure = None
+    if task.get("structure_id"):
+        structure = await db.structures.find_one({"id": task["structure_id"]}, {"_id": 0, "name": 1, "klv_code": 1})
 
     now = now_iso()
     issue = {
@@ -4654,61 +4794,39 @@ async def report_cleaning_issue(
         "cleaning_task_id": task_id,
         "client_id": task.get("client_id"),
         "structure_id": task.get("structure_id"),
+        "structure_name": (structure or {}).get("name"),
+        "klv_code": (structure or {}).get("klv_code"),
         "unit_id": task.get("unit_id"),
+        "date": task.get("date"),
         "category": data.category,
         "note": data.note,
         "severity": data.severity,
-        "photo_path": None,
+        "attachments": [{"id": a["id"], "kind": a.get("kind"), "file_path": a["file_path"]} for a in attachments],
+        "photo_path": attachments[0]["file_path"] if attachments else None,
         "status": "open",
+        "published_to_client": False,
+        "actions": [],
         "reported_by": current_user["id"],
         "reporter_name": current_user.get("name", ""),
         "created_at": now,
     }
-    # Save to dedicated issues collection
     await db.cleaning_issues.insert_one(issue)
     issue.pop("_id", None)
-    # Also embed in task
     await db.cleaning_tasks.update_one(
         {"id": task_id},
-        {"$push": {"issues": {"id": issue["id"], "category": data.category, "note": data.note, "severity": data.severity, "created_at": now}},
+        {"$push": {"issues": {"id": issue["id"], "category": data.category, "note": data.note, "severity": data.severity,
+                              "status": "open", "reporter_name": current_user.get("name", ""),
+                              "attachments_count": len(attachments), "created_at": now}},
          "$set": {"updated_at": now}}
     )
-    # Auto-create maintenance issue linked to cleaning task
-    priority_map = {"low": "low", "medium": "medium", "high": "high"}
-    maint_issue = {
-        "id": str(uuid.uuid4()),
-        "source": "cleaning",
-        "cleaning_task_id": task_id,
-        "cleaning_issue_id": issue["id"],
-        "client_id": task.get("client_id"),
-        "structure_id": task.get("structure_id"),
-        "unit_id": task.get("unit_id"),
-        "category": data.category,
-        "description": data.note,
-        "priority": priority_map.get(data.severity, "medium"),
-        "status": "open",
-        "assigned_to": None,
-        "scheduled_date": None,
-        "internal_notes": "",
-        "resolution_notes": "",
-        "photos": [{"type": "issue", "path": None}] if not issue.get("photo_path") else [{"type": "issue", "path": issue["photo_path"]}],
-        "history": [{"action": "created", "by": current_user["id"], "by_name": current_user.get("name", ""), "at": now, "detail": "Segnalato durante pulizia"}],
-        "reported_by": current_user["id"],
-        "reporter_name": current_user.get("name", ""),
-        "created_at": now,
-        "updated_at": now,
-    }
-    await db.maintenance_issues.insert_one(maint_issue)
-    maint_issue.pop("_id", None)
-
-    # Notify ops about new issue from cleaning
-    enriched_task = await _enrich_cleaning_task(task)
+    # La destinazione (consegna / manutenzione / cliente) la decide Admin, NON l'addetta.
+    enriched_task = await _enrich_cleaning_task(dict(task))
+    cat_labels = {"missing": "Mancanza", "damage": "Rottura/Danno", "malfunction": "Malfunzionamento", "other": "Anomalia"}
     await notify_ops_users(
-        "Problema segnalato durante pulizia",
-        f"{data.category.replace('_', ' ').title()}: {data.note[:60]}" + (f" - {enriched_task.get('structure_name', '')}" if enriched_task.get('structure_name') else ''),
-        "issue_from_cleaning", "important", "maintenance_issue", maint_issue["id"]
+        "Nuova segnalazione da pulizia",
+        f"{cat_labels.get(data.category, data.category)}: {data.note[:60]}" + (f" - {enriched_task.get('structure_name', '')}" if enriched_task.get('structure_name') else ''),
+        "issue_from_cleaning", "important", "cleaning_issue", issue["id"]
     )
-
     return issue
 
 
@@ -4750,6 +4868,440 @@ async def list_cleaning_issues(
         query["structure_id"] = structure_id
     issues = await db.cleaning_issues.find(query, {"_id": 0}).sort("created_at", -1).to_list(500)
     return issues
+
+
+# --- Flusso operativo Pulizie v2: media/video timer, note, completamento, ricorrenze ---
+
+CLEANING_MEDIA_TYPES = ["initial_video", "final_video", "warehouse_photo", "note", "issue", "photo"]
+
+
+@api_router.post("/cleaning-tasks/{task_id}/media")
+async def upload_cleaning_media(
+    task_id: str,
+    media_type: str = Query(...),
+    note_id: Optional[str] = Query(None),
+    file: UploadFile = File(...),
+    current_user: dict = Depends(get_current_user),
+):
+    task = await db.cleaning_tasks.find_one({"id": task_id}, {"_id": 0})
+    if not task:
+        raise HTTPException(status_code=404, detail="Task non trovato")
+    if current_user["role"] == UserRole.CLEANER and not _cleaner_can_access(task, current_user):
+        raise HTTPException(status_code=403, detail="Non autorizzato")
+    if media_type not in CLEANING_MEDIA_TYPES:
+        raise HTTPException(status_code=400, detail="Tipo media non valido")
+    if task.get("status") in (CleaningTaskStatus.COMPLETED, CleaningTaskStatus.CANCELLED):
+        raise HTTPException(status_code=400, detail="La pulizia è già chiusa")
+
+    content_type = file.content_type or "application/octet-stream"
+    kind = "video" if content_type.startswith("video") else "image"
+    if media_type in ("initial_video", "final_video") and kind != "video":
+        raise HTTPException(status_code=400, detail="È richiesto un video (non una foto)")
+    if media_type == "warehouse_photo" and kind != "image":
+        raise HTTPException(status_code=400, detail="È richiesta una foto del magazzino")
+    if media_type == "final_video" and not task.get("started_at"):
+        raise HTTPException(status_code=400, detail="Carica prima il video iniziale dell'appartamento")
+
+    ext = file.filename.split(".")[-1] if "." in (file.filename or "") else ("mp4" if kind == "video" else "jpg")
+    path = f"{APP_NAME}/cleaning/{task_id}/{media_type}_{uuid.uuid4()}.{ext}"
+    file_data = await file.read()
+    result = put_object(path, file_data, content_type)
+
+    now = now_iso()
+    entry = {
+        "id": str(uuid.uuid4()),
+        "media_type": media_type,
+        "kind": kind,
+        "file_path": result["path"],
+        "structure_id": task.get("structure_id"),
+        "date": task.get("date"),
+        "uploaded_by": current_user["id"],
+        "uploaded_by_name": current_user.get("name", ""),
+        "uploaded_at": now,
+    }
+    update_set = {"updated_at": now}
+    history_entry = None
+    timer = {}
+    if media_type == "initial_video" and not task.get("started_at"):
+        update_set.update({
+            "started_at": now,
+            "started_by": current_user["id"],
+            "started_by_name": current_user.get("name", ""),
+            "status": CleaningTaskStatus.IN_PROGRESS,
+        })
+        history_entry = {"action": "started_via_initial_video", "by": current_user["id"], "by_name": current_user.get("name", ""), "at": now}
+        timer = {"started_at": now, "status": CleaningTaskStatus.IN_PROGRESS}
+    elif media_type == "final_video":
+        started = task.get("started_at")
+        duration = None
+        try:
+            duration = int((datetime.fromisoformat(now) - datetime.fromisoformat(started)).total_seconds() / 60)
+        except (TypeError, ValueError):
+            pass
+        update_set.update({"finished_at": now, "duration_minutes": duration,
+                           "finished_by": current_user["id"], "finished_by_name": current_user.get("name", "")})
+        history_entry = {"action": "timer_stopped_via_final_video", "by": current_user["id"], "by_name": current_user.get("name", ""), "at": now}
+        timer = {"finished_at": now, "duration_minutes": duration}
+
+    push = {"media": entry}
+    if history_entry:
+        push["history"] = history_entry
+    await db.cleaning_tasks.update_one({"id": task_id}, {"$push": push, "$set": update_set})
+    if note_id:
+        await db.cleaning_tasks.update_one(
+            {"id": task_id},
+            {"$push": {"task_notes.$[n].media": {"id": entry["id"], "kind": kind, "file_path": entry["file_path"]}}},
+            array_filters=[{"n.id": note_id}],
+        )
+    return {**entry, **timer}
+
+
+class CleaningNoteCreate(BaseModel):
+    text: str = ""
+
+
+@api_router.post("/cleaning-tasks/{task_id}/notes")
+async def add_cleaning_note(task_id: str, data: CleaningNoteCreate, current_user: dict = Depends(get_current_user)):
+    task = await db.cleaning_tasks.find_one({"id": task_id}, {"_id": 0})
+    if not task:
+        raise HTTPException(status_code=404, detail="Task non trovato")
+    if current_user["role"] == UserRole.CLEANER and not _cleaner_can_access(task, current_user):
+        raise HTTPException(status_code=403, detail="Non autorizzato")
+    note = {
+        "id": str(uuid.uuid4()),
+        "text": data.text,
+        "media": [],
+        "by": current_user["id"],
+        "by_name": current_user.get("name", ""),
+        "at": now_iso(),
+    }
+    await db.cleaning_tasks.update_one({"id": task_id}, {"$push": {"task_notes": note}, "$set": {"updated_at": note["at"]}})
+    return note
+
+
+def _checklist_missing_required(task: dict) -> int:
+    checklist = task.get("checklist")
+    if not checklist:
+        return 0
+    responses = checklist.get("responses", {})
+    missing = 0
+    for section in checklist.get("sections", []):
+        for item in section.get("items", []):
+            if item.get("required"):
+                key = f"{section['name']}|{item['label']}"
+                resp = responses.get(key)
+                if resp is None or resp == "" or resp is False:
+                    missing += 1
+    return missing
+
+
+@api_router.post("/cleaning-tasks/{task_id}/complete")
+async def complete_cleaning_task(task_id: str, current_user: dict = Depends(get_current_user)):
+    task = await db.cleaning_tasks.find_one({"id": task_id}, {"_id": 0})
+    if not task:
+        raise HTTPException(status_code=404, detail="Task non trovato")
+    if current_user["role"] == UserRole.CLEANER and not _cleaner_can_access(task, current_user):
+        raise HTTPException(status_code=403, detail="Non autorizzato")
+    if task.get("status") == CleaningTaskStatus.COMPLETED:
+        return await _enrich_cleaning_task(task)
+
+    media = task.get("media") or []
+    has = lambda t: any(m.get("media_type") == t for m in media)  # noqa: E731
+    missing = []
+    if not has("initial_video"):
+        missing.append("il video iniziale dell'appartamento")
+    checklist_missing = _checklist_missing_required(task)
+    if checklist_missing:
+        missing.append(f"la checklist ({checklist_missing} voci obbligatorie da completare)")
+    if not has("warehouse_photo"):
+        missing.append("la foto del Magazzino Struttura")
+    if not has("final_video"):
+        missing.append("il video finale dell'appartamento")
+    if missing:
+        raise HTTPException(status_code=400, detail="Non puoi completare la pulizia: manca " + "; ".join(missing))
+
+    now = now_iso()
+    await db.cleaning_tasks.update_one({"id": task_id}, {
+        "$set": {"status": CleaningTaskStatus.COMPLETED, "completed_at": now, "updated_at": now,
+                 "completed_by": current_user["id"], "completed_by_name": current_user.get("name", "")},
+        "$push": {"history": {"action": "completed", "by": current_user["id"], "by_name": current_user.get("name", ""), "at": now}},
+    })
+    updated = await db.cleaning_tasks.find_one({"id": task_id}, {"_id": 0})
+    return await _enrich_cleaning_task(updated)
+
+
+def _copy_task_for_date(source: dict, date: str, user: dict) -> dict:
+    now = now_iso()
+    checklist = None
+    if source.get("checklist"):
+        checklist = {**source["checklist"], "responses": {}}
+    return {
+        "id": str(uuid.uuid4()),
+        "client_id": source.get("client_id"),
+        "structure_id": source.get("structure_id"),
+        "unit_id": source.get("unit_id"),
+        "assigned_cleaner_id": source.get("assigned_cleaner_id"),
+        "assigned_cleaner_ids": source.get("assigned_cleaner_ids") or [],
+        "date": date,
+        "scheduled_time": source.get("scheduled_time"),
+        "estimated_duration_minutes": source.get("estimated_duration_minutes"),
+        "guests_count": source.get("guests_count"),
+        "beds_double": source.get("beds_double") or 0,
+        "beds_single": source.get("beds_single") or 0,
+        "beds_sofa": source.get("beds_sofa") or 0,
+        "checkin_today": source.get("checkin_today", False),
+        "checkin_time": source.get("checkin_time"),
+        "access_notes": source.get("access_notes"),
+        "notes": source.get("notes"),
+        "checklist_template_id": source.get("checklist_template_id"),
+        "checklist": checklist,
+        "photos": [], "media": [], "task_notes": [], "issues": [],
+        "history": [{"action": "created", "by": user["id"], "by_name": user.get("name", ""), "at": now}],
+        "status": CleaningTaskStatus.ASSIGNED if _cleaner_ids_of(source) else CleaningTaskStatus.UNASSIGNED,
+        "started_at": None, "started_by": None, "finished_at": None,
+        "duration_minutes": None, "completed_at": None,
+        "created_by": user["id"], "created_at": now, "updated_at": now,
+    }
+
+
+class DuplicateTaskRequest(BaseModel):
+    date: str
+
+
+@api_router.post("/cleaning-tasks/{task_id}/duplicate")
+async def duplicate_cleaning_task(task_id: str, data: DuplicateTaskRequest, current_user: dict = Depends(get_current_user)):
+    if not is_ops_user(current_user):
+        raise HTTPException(status_code=403, detail="Non autorizzato")
+    source = await db.cleaning_tasks.find_one({"id": task_id}, {"_id": 0})
+    if not source:
+        raise HTTPException(status_code=404, detail="Task non trovato")
+    copy = _copy_task_for_date(source, data.date, current_user)
+    await db.cleaning_tasks.insert_one(copy)
+    copy.pop("_id", None)
+    return await _enrich_cleaning_task(copy)
+
+
+class RecurrenceRequest(BaseModel):
+    mode: str  # weekly_days | every_n_days
+    weekdays: List[int] = []  # 0 = lunedì ... 6 = domenica
+    interval_days: int = 7
+    until_date: Optional[str] = None
+    occurrences: Optional[int] = None
+
+
+@api_router.post("/cleaning-tasks/{task_id}/recurrence")
+async def create_cleaning_recurrence(task_id: str, data: RecurrenceRequest, current_user: dict = Depends(get_current_user)):
+    if not is_ops_user(current_user):
+        raise HTTPException(status_code=403, detail="Non autorizzato")
+    source = await db.cleaning_tasks.find_one({"id": task_id}, {"_id": 0})
+    if not source:
+        raise HTTPException(status_code=404, detail="Task non trovato")
+    if source.get("recurrence_series_id"):
+        raise HTTPException(status_code=400, detail="Questa pulizia fa già parte di una serie ricorrente: non puoi creare una seconda serie")
+    if data.mode not in ("weekly_days", "every_n_days"):
+        raise HTTPException(status_code=400, detail="Modalità ricorrenza non valida")
+    if not data.until_date and not data.occurrences:
+        raise HTTPException(status_code=400, detail="Indica una data di fine oppure il numero di occorrenze")
+
+    start = datetime.fromisoformat(source["date"]).date()
+    limit_date = datetime.fromisoformat(data.until_date).date() if data.until_date else start + timedelta(days=365)
+    max_occ = min(int(data.occurrences or 60), 60)
+    dates = []
+    if data.mode == "every_n_days":
+        step = max(1, int(data.interval_days or 7))
+        d = start + timedelta(days=step)
+        while d <= limit_date and len(dates) < max_occ:
+            dates.append(d.isoformat())
+            d += timedelta(days=step)
+    else:
+        weekdays = sorted(set(data.weekdays)) or [start.weekday()]
+        d = start + timedelta(days=1)
+        while d <= limit_date and len(dates) < max_occ:
+            if d.weekday() in weekdays:
+                dates.append(d.isoformat())
+            d += timedelta(days=1)
+
+    series_id = str(uuid.uuid4())
+    created = []
+    for date_str in dates:
+        copy = _copy_task_for_date(source, date_str, current_user)
+        copy["recurrence_of"] = task_id
+        copy["recurrence_series_id"] = series_id
+        await db.cleaning_tasks.insert_one(copy)
+        created.append(date_str)
+    recurrence_info = {
+        "series_id": series_id,
+        "mode": data.mode,
+        "weekdays": sorted(set(data.weekdays)) if data.mode == "weekly_days" else [],
+        "interval_days": int(data.interval_days or 7) if data.mode == "every_n_days" else None,
+        "until_date": data.until_date,
+        "occurrences": data.occurrences,
+        "start_date": source["date"],
+        "dates": created,
+        "created_by": current_user["id"],
+        "created_at": now_iso(),
+    }
+    await db.cleaning_tasks.update_one(
+        {"id": task_id},
+        {"$set": {"recurrence_series_id": series_id, "recurrence_info": recurrence_info, "updated_at": now_iso()}}
+    )
+    return {"created": len(created), "dates": created, "series_id": series_id}
+
+
+@api_router.get("/cleaning-tasks/{task_id}/series")
+async def cleaning_task_series(task_id: str, current_user: dict = Depends(get_current_user)):
+    """Info della serie ricorrente a cui appartiene la pulizia."""
+    if not is_ops_user(current_user):
+        raise HTTPException(status_code=403, detail="Non autorizzato")
+    task = await db.cleaning_tasks.find_one({"id": task_id}, {"_id": 0, "recurrence_series_id": 1})
+    if not task or not task.get("recurrence_series_id"):
+        raise HTTPException(status_code=404, detail="Questa pulizia non appartiene a una serie ricorrente")
+    sid = task["recurrence_series_id"]
+    origin = await db.cleaning_tasks.find_one(
+        {"recurrence_series_id": sid, "recurrence_info": {"$exists": True}}, {"_id": 0, "recurrence_info": 1, "date": 1}
+    )
+    tasks = await db.cleaning_tasks.find(
+        {"recurrence_series_id": sid},
+        {"_id": 0, "id": 1, "date": 1, "status": 1, "scheduled_time": 1, "structure_id": 1}
+    ).sort("date", 1).to_list(100)
+    return {"series_id": sid, "info": (origin or {}).get("recurrence_info"), "tasks": tasks}
+
+
+@api_router.get("/cleaning-tasks/{task_id}/operational")
+async def cleaning_task_operational(task_id: str, current_user: dict = Depends(get_current_user)):
+    """Info operative per l'addetta: dove andare, come arrivare, come entrare, magazzino."""
+    task = await db.cleaning_tasks.find_one({"id": task_id}, {"_id": 0})
+    if not task:
+        raise HTTPException(status_code=404, detail="Task non trovato")
+    if current_user["role"] == UserRole.CLEANER and not _cleaner_can_access(task, current_user):
+        raise HTTPException(status_code=403, detail="Non autorizzato")
+    if current_user["role"] not in (UserRole.CLEANER,) and not is_ops_user(current_user):
+        raise HTTPException(status_code=403, detail="Non autorizzato")
+    result = {"structure": None, "media": {"arrive": [], "enter": [], "warehouse": []}}
+    sid = task.get("structure_id")
+    if not sid:
+        return result
+    s = await db.structures.find_one({"id": sid}, {"_id": 0})
+    if not s:
+        return result
+    ai = s.get("access_info") or {}
+    result["structure"] = {
+        "id": s["id"],
+        "name": s.get("name"),
+        "klv_code": s.get("klv_code"),
+        "address": s.get("address"),
+        "floor": s.get("floor"),
+        "access_type": s.get("access_type"),
+        "access_details": s.get("access_details"),
+        "door_code": ai.get("door_code"),
+        "keybox_code": ai.get("keybox_code"),
+        "keybox_location": ai.get("keybox_location"),
+        "key_boxes": ai.get("key_boxes"),
+        "kilolava_has_keys": ai.get("kilolava_has_keys"),
+        "warehouse_info": s.get("warehouse_info") or {},
+    }
+    media = await db.structure_media.find(
+        {"structure_id": sid, "category": {"$in": ["arrive", "enter", "warehouse"]}}, {"_id": 0}
+    ).sort([("category", 1), ("order", 1)]).to_list(300)
+    for m in media:
+        result["media"].setdefault(m.get("category", "arrive"), []).append(m)
+    return result
+
+
+class IssueActionRequest(BaseModel):
+    action: str  # add_to_delivery | create_maintenance | publish_client | close
+    note: Optional[str] = None
+
+
+@api_router.post("/cleaning-issues/{issue_id}/action")
+async def cleaning_issue_action(issue_id: str, data: IssueActionRequest, current_user: dict = Depends(get_current_user)):
+    if not is_ops_user(current_user):
+        raise HTTPException(status_code=403, detail="Non autorizzato")
+    issue = await db.cleaning_issues.find_one({"id": issue_id}, {"_id": 0})
+    if not issue:
+        raise HTTPException(status_code=404, detail="Segnalazione non trovata")
+    now = now_iso()
+    action_entry = {"action": data.action, "by": current_user["id"], "by_name": current_user.get("name", ""), "at": now, "note": data.note}
+    updates = {}
+    if data.action == "add_to_delivery":
+        updates["status"] = "to_delivery"
+    elif data.action == "create_maintenance":
+        maint = {
+            "id": str(uuid.uuid4()),
+            "source": "cleaning",
+            "cleaning_task_id": issue.get("cleaning_task_id"),
+            "cleaning_issue_id": issue_id,
+            "client_id": issue.get("client_id"),
+            "structure_id": issue.get("structure_id"),
+            "unit_id": issue.get("unit_id"),
+            "category": "maintenance" if issue.get("category") in ("malfunction",) else "damage" if issue.get("category") == "damage" else "other",
+            "description": issue.get("note", ""),
+            "priority": {"low": "low", "medium": "medium", "high": "high"}.get(issue.get("severity"), "medium"),
+            "status": "open",
+            "assigned_to": None, "scheduled_date": None,
+            "internal_notes": data.note or "", "resolution_notes": "",
+            "photos": [{"type": "issue", "path": a.get("file_path")} for a in (issue.get("attachments") or [])],
+            "history": [{"action": "created", "by": current_user["id"], "by_name": current_user.get("name", ""), "at": now, "detail": "Creata da segnalazione pulizia"}],
+            "reported_by": issue.get("reported_by"),
+            "reporter_name": issue.get("reporter_name", ""),
+            "created_at": now, "updated_at": now,
+        }
+        await db.maintenance_issues.insert_one(maint)
+        updates["status"] = "maintenance_created"
+        updates["maintenance_issue_id"] = maint["id"]
+    elif data.action == "publish_client":
+        updates["published_to_client"] = True
+        if issue.get("client_id"):
+            client_users = await db.users.find({"client_id": issue["client_id"], "role": UserRole.CLIENT, "is_active": True}, {"_id": 0, "id": 1}).to_list(10)
+            for cu in client_users:
+                await create_notification(
+                    cu["id"],
+                    "Segnalazione dalla tua struttura",
+                    f"{issue.get('structure_name') or ''}: {issue.get('note', '')[:80]}",
+                    "issue_published", "normal", "cleaning_issue", issue_id
+                )
+    elif data.action == "close":
+        updates["status"] = "closed"
+        updates["closed_at"] = now
+    else:
+        raise HTTPException(status_code=400, detail="Azione non valida")
+    await db.cleaning_issues.update_one({"id": issue_id}, {"$set": updates, "$push": {"actions": action_entry}})
+    if "status" in updates and issue.get("cleaning_task_id"):
+        await db.cleaning_tasks.update_one(
+            {"id": issue["cleaning_task_id"], "issues.id": issue_id},
+            {"$set": {"issues.$.status": updates["status"]}}
+        )
+    updated = await db.cleaning_issues.find_one({"id": issue_id}, {"_id": 0})
+    return updated
+
+
+@api_router.get("/portal/my-structures-today")
+async def portal_my_structures_today(current_user: dict = Depends(get_current_user)):
+    """Vista Cliente minimale: stato pulizia odierna per struttura (nessun dato interno)."""
+    if current_user.get("role") != UserRole.CLIENT or not current_user.get("client_id"):
+        raise HTTPException(status_code=403, detail="Non autorizzato")
+    today = local_today()
+    structures = await db.structures.find({"client_id": current_user["client_id"]}, {"_id": 0, "id": 1, "name": 1, "address": 1}).to_list(100)
+    out = []
+    for s in structures:
+        tasks = await db.cleaning_tasks.find(
+            {"structure_id": s["id"], "date": today, "status": {"$ne": CleaningTaskStatus.CANCELLED}},
+            {"_id": 0, "status": 1, "guests_count": 1, "completed_at": 1}
+        ).to_list(20)
+        status = None
+        guests = None
+        if any(t.get("status") == CleaningTaskStatus.IN_PROGRESS for t in tasks):
+            status = "in_cleaning"
+        elif any(t.get("status") in (CleaningTaskStatus.ASSIGNED, CleaningTaskStatus.UNASSIGNED, CleaningTaskStatus.NEEDS_REVIEW, CleaningTaskStatus.ISSUE_REPORTED) for t in tasks):
+            status = "to_clean"
+        else:
+            completed = [t for t in tasks if t.get("status") == CleaningTaskStatus.COMPLETED]
+            if completed:
+                status = "ready"
+                guests = completed[-1].get("guests_count")
+        out.append({"structure_id": s["id"], "name": s.get("name"), "address": s.get("address"),
+                    "cleaning_status": status, "guests_count": guests})
+    return out
 
 
 @api_router.put("/cleaning-issues/{issue_id}")
@@ -6202,5 +6754,62 @@ async def startup_event():
         )
     except Exception as e:
         logger.warning(f"CM index creation: {e}")
+    # Seed checklist standard Kilolava (idempotente)
+    try:
+        if not await db.checklist_templates.find_one({"key": "standard_kilolava"}):
+            def _sec(name, order, items):
+                return {"name": name, "order": order, "items": [
+                    {"label": lbl, "item_type": "checkbox", "required": req, "order": i, "condition_parent": None, "condition_value": None}
+                    for i, (lbl, req) in enumerate(items)
+                ]}
+            await db.checklist_templates.insert_one({
+                "id": str(uuid.uuid4()),
+                "key": "standard_kilolava",
+                "name": "Checklist Standard Kilolava",
+                "description": "Template standard pulizie — adattabile per struttura",
+                "structure_id": None,
+                "unit_id": None,
+                "sections": [
+                    _sec("1 — Cucina", 0, [
+                        ("Elettrodomestici puliti", True),
+                        ("Forno e forno a microonde puliti", True),
+                        ("Fornelli puliti e lucidati", True),
+                        ("Frigo e freezer puliti", True),
+                        ("Banco pulito", True),
+                        ("Cestini sostituiti", True),
+                        ("Inserire eventuali ricariche (caffè, scottex...)", False),
+                    ]),
+                    _sec("2 — Polvere e superfici", 1, [
+                        ("Mobili", True), ("Tavoli", True), ("Comodini", True), ("Mensole", True),
+                        ("Davanzali", True), ("Televisione", True), ("Telecomandi", True),
+                    ]),
+                    _sec("3 — Bagno", 2, [
+                        ("WC", True), ("Bidet + scarico", True), ("Lavandino + scarico", True),
+                        ("Rubinetteria pulita e lucidata", True), ("Specchio", True), ("Doccia + scarico", True),
+                        ("Carta igienica", True), ("Cestino sostituito", True),
+                    ]),
+                    _sec("4 — Biancheria e letti", 3, [
+                        ("Controllo numero e tipologia", True),
+                        ("Letto ordinato senza pieghe", True),
+                        ("Segnalazioni eventuali storni", False),
+                        ("Sacco biancheria sporca in magazzino", True),
+                        ("Tappetino del bagno", True),
+                    ]),
+                    _sec("5 — Pavimenti", 4, [
+                        ("Controllare capelli rimasti", True),
+                        ("Controllare macchie rimaste", True),
+                    ]),
+                    _sec("6 — Controllo finale", 5, [
+                        ("Spegnere aria condizionata", True),
+                        ("Spegnere luci", True),
+                        ("Chiudere finestre", True),
+                        ("Riporre chiavi nella keybox", True),
+                    ]),
+                ],
+                "created_at": now_iso(),
+            })
+            logger.info("Checklist standard Kilolava creata")
+    except Exception as e:
+        logger.warning(f"Checklist seed: {e}")
 
 

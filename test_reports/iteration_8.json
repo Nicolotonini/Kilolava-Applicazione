@@ -1,0 +1,35 @@
+{
+  "summary": "Iteration 8 — Kilolava CLEANING module fixes v3 (5 corrections). BACKEND pytest 13/13 PASS in 7.58s (/app/backend/tests/test_cleaning_fixes_v3.py). Verified: (a) POST /cleaning-tasks/{id}/recurrence creates N occurrences that inherit FULL config (guests_count=3, beds_double=1, beds_single=2, beds_sofa=1, checkin_today=True, checkin_time='16:45', scheduled_time='09:15', notes, assigned_cleaner_ids); each occurrence has recurrence_series_id + recurrence_of; origin task gets recurrence_series_id + recurrence_info(mode,weekdays,interval_days,until_date,occurrences,start_date,dates). (b) Second POST /recurrence on ORIGIN → 400 with 'serie'; second POST on an OCCURRENCE → also 400. (c) GET /cleaning-tasks/{id}/series returns {series_id, info, tasks[]} sorted asc by date; works from origin AND from an occurrence; task without series → 404; cleaner → 403. (d) DELETE task cascades cleaning_issues (uploaded issue media + issue via cleaner; delete origin task → GET /cleaning-issues shows 0 remaining rows for that task). (e) Regression: bed_max validation returns 400 with 'massimo'; initial_video → status=in_progress + started_at; final_video → finished_at + duration_minutes present; duplicate does NOT set recurrence_series_id nor recurrence_of.\n\nFRONTEND E2E: (Admin desktop 1920px /cleaning) verified: series task shows data-testid='series-task-{id}' with title='Pulizia ricorrente' (magenta primary icon); non-series task shows data-testid='recur-task-{id}' with title='Crea ricorrenza'; clicking series icon opens data-testid='series-dialog' with all required sections — Frequenza (Ogni 7 giorni), Fine (2 occorrenze), Data inizio (2026-08-22), Pulizie nella serie (3), Prossime pulizie (3 items listed sorted asc). Future task row (date>today, checkin_today=true) shows row-checkin '<Check-in 15:00>' — NO 'Entrano oggi' leaked on future dates. Today task row shows 'Entrano oggi alle 15:00'. Detail dialog data-testid='detail-duration' shows 'Durata: Tempo non rilevato' when timestamps missing — NEVER '0 min'. Verified in-page a real completed task with started_at≈finished_at renders '< 1 min' (visible in row 'Mer 19 Ago Appartamento Centro Completata · Entrano oggi alle 15:00 · < 1 min').\n\n(Addetta mobile 390x844 /cleaner) TUTTE le card (Prossime section) mostrano card-prep-{id} con persone+letti (es. '10:30 · 3 persone · 2 matrimoniali + 1 singoli') e card-checkin-{id} con 'Check-in 15:00' su date future / 'Entrano oggi alle 15:00' su oggi. Aprendo un task futuro il banner data-testid='checkin-banner' mostra 'CHECK-IN 15:00' (non 'ENTRANO OGGI').\n\nCLEANUP: 9 TEST_v3 tasks + all series occurrences deleted at end.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {"flow": "Cleaner mobile 'Oggi' section", "issue": "Timezone mismatch: backend my-tasks computes 'today' with Europe/Rome (correct) but CleanerView todayStr() uses browser local time (new Date()). If the browser is not in Europe/Rome (e.g. UTC in headless testing, or a user travelling), a task with date=Rome-today can appear in 'PROSSIME' instead of 'Oggi', and checkinText returns 'Check-in 15:00' instead of 'Entrano oggi alle 15:00'. Real Rome-based users won't be affected, but it's a fragile coupling.", "affected_selectors": ["[data-testid^=card-prep-]", "[data-testid^=card-checkin-]"]}
+    ],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_cleaning_fixes_v3.py",
+    "/app/backend/tests/test_cleaning_module_v2.py",
+    "/app/test_reports/pytest/iteration_8.xml"
+  ],
+  "action_items": [
+    "OPTIONAL (design nit): align frontend 'today' with backend Europe/Rome. Either (a) compute todayStr() using Intl.DateTimeFormat('sv-SE', {timeZone: 'Europe/Rome'}).format(new Date()), or (b) expose a lightweight /api/time/today endpoint and cache it. Only impacts users on non-Rome timezones or automated tests."
+  ],
+  "critical_code_review_comments": [
+    "CleaningPage.js line 45-52 (checkinLabel) and CleanerView.js line 33-45 (todayStr/checkinText) rely on new Date() browser local — will silently disagree with backend my-tasks Europe/Rome filter when browser TZ differs. Since backend and frontend use two different sources of truth for 'today', consider a single shared helper (frontend util) that uses Europe/Rome to remove drift.",
+    "server.py cleaning_task_series (line 5151-5167): projection {'_id':0,'recurrence_series_id':1} on the initial find; if task has no series it returns {} then check 'not task or not task.get(recurrence_series_id)' — returns 404 for both non-existent task AND task-with-no-series with the SAME message 'Questa pulizia non appartiene a una serie ricorrente'. That is fine for the current UI, but consider distinguishing 'task_id not found' from 'not in series' if debugging.",
+    "server.py cleaning_task_series does not verify the task actually exists (only the series_id field) — if a random uuid is passed it correctly 404s (falsy series_id path). Verified via test_task_without_series_returns_404.",
+    "server.py create_cleaning_recurrence single-series guard uses only source.get('recurrence_series_id'); occurrences inherit this field (via _copy_task_for_date logic post-insert update) so second-attempt on occurrence is correctly blocked. Verified.",
+    "server.py delete_cleaning_task (line 4649) now cascades cleaning_issues — good. Consider also deleting related media files on disk (server.py media entries carry file_path). Currently only DB rows removed."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_cleaning_fixes_v3.py (new pytest suite: 13 tests, self-cleaning)"
+  ],
+  "success_rate": {"backend": "100% (13/13)", "frontend": "100% of the 5 corrections verified on both admin desktop and cleaner mobile"},
+  "test_credentials": "Admin: test_user@kilolava.com / TestPass123! | Cleaner: addetta_test@kilolava.com / AddettaTest123!",
+  "seed_data_creation": "During UI testing 3 admin-created tasks + 2 series occurrences (5 total) plus pytest ephemeral tasks (via fixtures) were created against KLV-0002 Appartamento Centro. ALL cleaned up at end (9 TEST_v3 tasks deleted, remaining count = 0). Pre-existing tasks 'Appartamento Centro Completata' and 'prova 2' were NOT touched.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "The 5 v3 fixes are all verified. Reusable regression suites: /app/backend/tests/test_cleaning_module_v2.py (16 tests, base flow) + /app/backend/tests/test_cleaning_fixes_v3.py (13 tests, new fixes). Both self-clean. Note: today-tz mismatch between CleanerView.todayStr (browser local) and backend Europe/Rome. When testing UI 'Oggi' section in headless UTC env, create today's task using Rome date, not Python's date.today() which reflects container UTC. Series info dialog is lazy-loaded — always wait for 'Frequenza' text (not just for the dialog testid) before asserting content."
+}

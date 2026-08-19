@@ -1,583 +1,602 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
+import api, { fileUrl } from '../lib/api';
 import { useAuth } from '../contexts/AuthContext';
-import { useTheme } from '../contexts/ThemeContext';
-import api, { API_BASE } from '../lib/api';
-import { NotificationBell } from '../components/NotificationBell';
 import { Card, CardContent } from '../components/ui/card';
 import { Button } from '../components/ui/button';
-import { Input } from '../components/ui/input';
-import { Label } from '../components/ui/label';
 import { Textarea } from '../components/ui/textarea';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
-import { Switch } from '../components/ui/switch';
-import { toast } from 'sonner';
+import { Badge } from '../components/ui/badge';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '../components/ui/dialog';
 import {
-  ChevronLeft, ChevronRight, LogOut, Moon, Sun, Clock, MapPin, Key,
-  CheckCircle2, Circle, Play, Check, Camera, AlertTriangle, Send,
-  ArrowLeft, Image, X, Loader2, CheckSquare, ToggleLeft, Type, Hash, ClipboardList
+  MapPin, Clock, Users, BedDouble, ChevronLeft, AlertTriangle, Video, Camera,
+  Package, KeyRound, CheckCircle2, Loader2, Navigation, DoorOpen, StickyNote, Sparkles,
 } from 'lucide-react';
 import { cn } from '../lib/utils';
+import { toast } from 'sonner';
 
-const STATUS_BADGE = {
-  unassigned: { label: 'Non assegnato', cls: 'bg-gray-100 text-gray-700' },
-  assigned: { label: 'Assegnato', cls: 'bg-blue-100 text-blue-700' },
+const STATUS_META = {
+  unassigned: { label: 'Da fare', cls: 'bg-sky-100 text-sky-700' },
+  assigned: { label: 'Da fare', cls: 'bg-sky-100 text-sky-700' },
   in_progress: { label: 'In corso', cls: 'bg-amber-100 text-amber-700' },
-  completed: { label: 'Completato', cls: 'bg-green-100 text-green-700' },
+  completed: { label: 'Completata', cls: 'bg-emerald-100 text-emerald-700' },
   issue_reported: { label: 'Problema', cls: 'bg-red-100 text-red-700' },
-  needs_review: { label: 'Da verificare', cls: 'bg-purple-100 text-purple-700' },
+  needs_review: { label: 'Problema', cls: 'bg-red-100 text-red-700' },
+  cancelled: { label: 'Annullata', cls: 'bg-muted text-muted-foreground' },
 };
 
 const ISSUE_CATEGORIES = [
-  { value: 'broken_item', label: 'Oggetto rotto' },
-  { value: 'missing_supplies', label: 'Materiale mancante' },
-  { value: 'damage', label: 'Danno' },
-  { value: 'maintenance', label: 'Manutenzione necessaria' },
+  { key: 'missing', label: 'Mancanza', desc: 'Manca qualcosa (carta, caffè, asciugamani...)', requireMedia: false },
+  { key: 'damage', label: 'Rottura / Danno', desc: 'Qualcosa è rotto o danneggiato', requireMedia: true },
+  { key: 'malfunction', label: 'Malfunzionamento', desc: 'Qualcosa non funziona (luce, scarico, clima...)', requireMedia: true },
+  { key: 'other', label: 'Anomalia / Altro', desc: 'Situazione da far vedere al responsabile', requireMedia: false },
 ];
 
-// ===== PHOTO UPLOAD COMPONENT =====
-const PhotoUploader = ({ taskId, photoType, label, photos, onUploaded }) => {
-  const fileRef = useRef(null);
-  const [uploading, setUploading] = useState(false);
-  const existing = photos.filter(p => p.photo_type === photoType);
+const todayStr = () => new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Rome' }).format(new Date());
 
-  const handleUpload = async (e) => {
-    const file = e.target.files?.[0];
+const checkinText = (task) => {
+  const isToday = task.date === todayStr();
+  if (task.checkin_today) {
+    if (isToday) return `⚠ Entrano oggi${task.checkin_time ? ` alle ${task.checkin_time}` : ''}`;
+    return `Check-in${task.checkin_time ? ` ${task.checkin_time}` : ' lo stesso giorno'}`;
+  }
+  return isToday ? 'Oggi non entrano ospiti' : 'Nessun check-in';
+};
+
+export default function CleanerView() {
+  const { user } = useAuth();
+  const [tasks, setTasks] = useState(null);
+  const [activeTask, setActiveTask] = useState(null);
+
+  const load = useCallback(() => {
+    api.get('/cleaning-tasks/my-tasks').then(r => setTasks(r.data)).catch(() => setTasks([]));
+  }, []);
+  useEffect(() => { load(); }, [load]);
+
+  if (activeTask) {
+    return <TaskWorkScreen taskId={activeTask} onBack={() => { setActiveTask(null); load(); }} />;
+  }
+
+  const today = (tasks || []).filter(t => t.date === todayStr() && t.status !== 'cancelled');
+  const upcoming = (tasks || []).filter(t => t.date > todayStr() && t.status !== 'cancelled').slice(0, 10);
+
+  return (
+    <div className="p-4 pb-24 space-y-5 max-w-lg mx-auto" data-testid="cleaner-view">
+      <div>
+        <h1 className="text-xl font-heading font-semibold">Ciao {user?.name?.split(' ')[0] || ''}</h1>
+        <p className="text-sm text-muted-foreground">Le mie pulizie di oggi</p>
+      </div>
+      {tasks === null ? (
+        <p className="text-center py-10 text-muted-foreground">Caricamento...</p>
+      ) : today.length === 0 ? (
+        <div className="text-center py-14 border border-dashed border-border rounded-xl" data-testid="cleaner-empty-today">
+          <Sparkles className="h-8 w-8 mx-auto text-muted-foreground/30 mb-3" />
+          <p className="text-sm text-muted-foreground">Nessuna pulizia per oggi.</p>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {today.map(t => <CleanerTaskCard key={t.id} task={t} onOpen={() => setActiveTask(t.id)} />)}
+        </div>
+      )}
+      {upcoming.length > 0 && (
+        <div className="space-y-3">
+          <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Prossime</p>
+          {upcoming.map(t => <CleanerTaskCard key={t.id} task={t} onOpen={() => setActiveTask(t.id)} compact />)}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function CleanerTaskCard({ task, onOpen, compact }) {
+  const sm = STATUS_META[task.status] || STATUS_META.assigned;
+  const beds = [];
+  if (task.beds_double) beds.push(`${task.beds_double} matrimoniali`);
+  if (task.beds_single) beds.push(`${task.beds_single} singoli`);
+  if (task.beds_sofa) beds.push(`${task.beds_sofa} divani letto`);
+  return (
+    <Card onClick={onOpen} className="border shadow-none cursor-pointer active:scale-[0.99] transition-transform" data-testid={`cleaner-task-${task.id}`}>
+      <CardContent className="p-4 space-y-2">
+        <div className="flex items-center justify-between gap-2">
+          <p className="font-semibold text-base">{task.structure_name}</p>
+          <Badge className={cn('text-[10px] border-0 shrink-0', sm.cls)}>{sm.label}</Badge>
+        </div>
+        {task.structure_address && (
+          <p className="flex items-center gap-1.5 text-sm text-muted-foreground"><MapPin className="h-4 w-4 shrink-0" />{task.structure_address}</p>
+        )}
+        <div className="flex items-center gap-3 flex-wrap text-sm" data-testid={`card-prep-${task.id}`}>
+          {task.scheduled_time && <span className="flex items-center gap-1 font-medium"><Clock className="h-4 w-4" />{task.scheduled_time}</span>}
+          {task.guests_count ? <span className="flex items-center gap-1"><Users className="h-4 w-4" />{task.guests_count} persone</span> : null}
+          {beds.length > 0 && <span className="flex items-center gap-1"><BedDouble className="h-4 w-4" />{beds.join(' + ')}</span>}
+        </div>
+        <p className={cn('text-sm font-semibold', task.checkin_today ? 'text-amber-600' : 'text-muted-foreground')} data-testid={`card-checkin-${task.id}`}>
+          {checkinText(task)}
+        </p>
+        {compact && <p className="text-xs text-muted-foreground capitalize">{new Date(task.date + 'T00:00:00').toLocaleDateString('it-IT', { weekday: 'long', day: 'numeric', month: 'long' })}</p>}
+      </CardContent>
+    </Card>
+  );
+}
+
+function TaskWorkScreen({ taskId, onBack }) {
+  const [task, setTask] = useState(null);
+  const [ops, setOps] = useState(null);
+  const [issueOpen, setIssueOpen] = useState(false);
+
+  const reload = useCallback(() => {
+    api.get(`/cleaning-tasks/${taskId}`).then(r => setTask(r.data)).catch(() => {});
+  }, [taskId]);
+
+  useEffect(() => {
+    reload();
+    api.get(`/cleaning-tasks/${taskId}/operational`).then(r => setOps(r.data)).catch(() => setOps({}));
+  }, [taskId, reload]);
+
+  if (!task) return <p className="text-center py-10 text-muted-foreground">Caricamento...</p>;
+
+  const media = task.media || [];
+  const hasInitial = media.some(m => m.media_type === 'initial_video');
+  const hasFinal = media.some(m => m.media_type === 'final_video');
+  const hasWarehouse = media.some(m => m.media_type === 'warehouse_photo');
+  const started = !!task.started_at;
+  const completed = task.status === 'completed';
+  const s = ops?.structure;
+
+  return (
+    <div className="p-4 pb-28 space-y-4 max-w-lg mx-auto" data-testid="cleaner-work-screen">
+      <div className="flex items-center gap-2">
+        <Button variant="ghost" size="icon" onClick={onBack} className="h-9 w-9" data-testid="cleaner-back-btn"><ChevronLeft className="h-5 w-5" /></Button>
+        <div className="min-w-0">
+          <p className="font-semibold text-base truncate">{task.structure_name}</p>
+          <Badge className={cn('text-[10px] border-0', (STATUS_META[task.status] || STATUS_META.assigned).cls)}>
+            {(STATUS_META[task.status] || STATUS_META.assigned).label}
+          </Badge>
+        </div>
+      </div>
+
+      {completed ? (
+        <div className="text-center py-10 space-y-3" data-testid="cleaning-completed-banner">
+          <CheckCircle2 className="h-14 w-14 mx-auto text-emerald-500" />
+          <p className="text-lg font-semibold">Pulizia completata!</p>
+          <p className="text-sm text-muted-foreground">Grazie, tutto è stato registrato.</p>
+        </div>
+      ) : (
+        <>
+          {/* Preparazione — sempre visibile */}
+          <PrepCard task={task} />
+
+          {!started && (
+            <>
+              <Section icon={Navigation} title="Dove devo andare" testId="section-where">
+                <p className="font-medium">{s?.name}</p>
+                {s?.address && <p className="text-sm text-muted-foreground">{s.address}{s.floor ? `, piano ${s.floor}` : ''}</p>}
+                {s?.address && (
+                  <Button
+                    className="w-full h-11 mt-2 bg-primary text-primary-foreground text-base"
+                    onClick={() => window.open(`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(s.address)}`, '_blank')}
+                    data-testid="open-maps-btn"
+                  >
+                    <MapPin className="h-5 w-5 mr-2" />Apri Maps
+                  </Button>
+                )}
+              </Section>
+
+              <Section icon={Navigation} title="Come arrivare" testId="section-arrive">
+                {s?.access_details && <p className="text-sm whitespace-pre-wrap">{s.access_details}</p>}
+                <MediaGallery items={ops?.media?.arrive || []} empty="Nessuna indicazione caricata" />
+              </Section>
+
+              <Section icon={DoorOpen} title="Come entrare" testId="section-enter">
+                <div className="space-y-1.5 text-sm">
+                  {s?.door_code && <InfoRow icon={KeyRound} label="Codice portone" value={s.door_code} />}
+                  {s?.keybox_code && <InfoRow icon={KeyRound} label="Codice keybox" value={s.keybox_code} />}
+                  {s?.keybox_location && <InfoRow icon={MapPin} label="Posizione keybox" value={s.keybox_location} />}
+                  {s?.kilolava_has_keys && <p className="text-xs text-muted-foreground">Le chiavi sono nel sistema box Kilolava{s.klv_code ? ` (portachiavi ${s.klv_code})` : ''}</p>}
+                </div>
+                <MediaGallery items={ops?.media?.enter || []} empty="Nessuna istruzione caricata" />
+              </Section>
+            </>
+          )}
+
+          <Section icon={Package} title="Magazzino Struttura" testId="section-warehouse">
+            <div className="space-y-1.5 text-sm">
+              {s?.warehouse_info?.location && <InfoRow icon={MapPin} label="Dove si trova" value={s.warehouse_info.location} />}
+              {s?.warehouse_info?.code && <InfoRow icon={KeyRound} label="Codice" value={s.warehouse_info.code} />}
+            </div>
+            <MediaGallery items={ops?.media?.warehouse || []} empty="Nessuna foto/istruzione caricata" />
+            {started && (
+              <UploadButton
+                taskId={task.id}
+                mediaType="warehouse_photo"
+                accept="image/*"
+                label={hasWarehouse ? 'Foto magazzino caricata ✓ (aggiungi altra)' : '📦 Carica foto Magazzino (obbligatoria)'}
+                variant={hasWarehouse ? 'done' : 'required'}
+                onDone={reload}
+                testId="upload-warehouse-photo"
+              />
+            )}
+          </Section>
+
+          {!started ? (
+            <div className="space-y-2 pt-2">
+              <p className="text-sm text-center text-muted-foreground">
+                La pulizia inizia quando carichi il <b>video iniziale</b> dell'intero appartamento.
+              </p>
+              <UploadButton
+                taskId={task.id}
+                mediaType="initial_video"
+                accept="video/*"
+                label="🎥 Carica VIDEO INIZIALE e inizia"
+                variant="primary"
+                onDone={reload}
+                testId="upload-initial-video"
+              />
+            </div>
+          ) : (
+            <>
+              <ChecklistSectionUI task={task} onSaved={reload} />
+              <NotesSection task={task} onSaved={reload} />
+              <Section icon={Video} title="Video finale" testId="section-final-video">
+                <p className="text-sm text-muted-foreground">A lavoro finito carica il video dell'intero appartamento: ferma il tempo della pulizia.</p>
+                <UploadButton
+                  taskId={task.id}
+                  mediaType="final_video"
+                  accept="video/*"
+                  label={hasFinal ? 'Video finale caricato ✓' : '🎥 Carica VIDEO FINALE'}
+                  variant={hasFinal ? 'done' : 'required'}
+                  disabled={hasFinal}
+                  onDone={reload}
+                  testId="upload-final-video"
+                />
+              </Section>
+              <CompleteButton task={task} hasInitial={hasInitial} hasFinal={hasFinal} hasWarehouse={hasWarehouse} onDone={reload} />
+            </>
+          )}
+        </>
+      )}
+
+      {/* Segnalazione — SEMPRE disponibile */}
+      {!completed && (
+        <button
+          onClick={() => setIssueOpen(true)}
+          className="fixed bottom-5 right-4 z-40 flex items-center gap-2 px-4 py-3 rounded-full bg-red-600 text-white font-semibold text-sm shadow-lg active:scale-95 transition-transform"
+          data-testid="create-issue-fab"
+        >
+          <AlertTriangle className="h-5 w-5" />Segnalazione
+        </button>
+      )}
+      {issueOpen && <IssueDialog task={task} onClose={() => setIssueOpen(false)} onDone={() => { setIssueOpen(false); reload(); }} />}
+    </div>
+  );
+}
+
+function PrepCard({ task }) {
+  return (
+    <Card className="border-primary/30 shadow-none" data-testid="prep-card">
+      <CardContent className="p-4">
+        <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">Preparazione</p>
+        <div className="grid grid-cols-2 gap-2">
+          <BigStat label="Persone" value={task.guests_count ?? '—'} />
+          <BigStat label="Matrimoniali" value={task.beds_double || 0} />
+          <BigStat label="Singoli" value={task.beds_single || 0} />
+          <BigStat label="Divani letto" value={task.beds_sofa || 0} />
+        </div>
+        <p className={cn('mt-3 text-center text-base font-bold rounded-lg py-2',
+          task.checkin_today ? 'bg-amber-100 text-amber-700' : 'bg-muted text-muted-foreground')} data-testid="checkin-banner">
+          {task.checkin_today
+            ? (task.date === todayStr()
+                ? `ENTRANO OGGI${task.checkin_time ? ` · CHECK-IN ${task.checkin_time}` : ''}`
+                : `CHECK-IN${task.checkin_time ? ` ${task.checkin_time}` : ' LO STESSO GIORNO'}`)
+            : (task.date === todayStr() ? 'Oggi non entrano ospiti' : 'Nessun check-in')}
+        </p>
+        {task.notes && <p className="mt-2 text-sm bg-muted/50 rounded-lg p-2.5 whitespace-pre-wrap">{task.notes}</p>}
+      </CardContent>
+    </Card>
+  );
+}
+
+function BigStat({ label, value }) {
+  return (
+    <div className="rounded-lg bg-muted/40 p-2.5 text-center">
+      <p className="text-2xl font-bold tabular-nums">{value}</p>
+      <p className="text-[11px] uppercase tracking-wide text-muted-foreground">{label}</p>
+    </div>
+  );
+}
+
+function Section({ icon: Icon, title, children, testId }) {
+  return (
+    <Card className="border shadow-none" data-testid={testId}>
+      <CardContent className="p-4 space-y-2">
+        <p className="flex items-center gap-2 text-sm font-semibold"><Icon className="h-4 w-4 text-primary" />{title}</p>
+        {children}
+      </CardContent>
+    </Card>
+  );
+}
+
+function InfoRow({ icon: Icon, label, value }) {
+  return (
+    <p className="flex items-center gap-2">
+      <Icon className="h-4 w-4 text-muted-foreground shrink-0" />
+      <span className="text-muted-foreground">{label}:</span>
+      <span className="font-semibold">{value}</span>
+    </p>
+  );
+}
+
+function MediaGallery({ items, empty }) {
+  if (!items || items.length === 0) return <p className="text-xs text-muted-foreground">{empty}</p>;
+  return (
+    <div className="space-y-2">
+      <div className="grid grid-cols-3 gap-2">
+        {items.map(m => (
+          <a key={m.id} href={fileUrl(m.file_path)} target="_blank" rel="noreferrer" className="block">
+            {m.media_type === 'video' || m.kind === 'video' || (m.content_type || '').startsWith('video') ? (
+              <span className="flex flex-col items-center justify-center h-20 rounded-lg bg-muted text-muted-foreground text-xs gap-1"><Video className="h-5 w-5" />Video</span>
+            ) : m.file_path ? (
+              <img src={fileUrl(m.file_path)} alt={m.title || ''} className="w-full h-20 object-cover rounded-lg border border-border" />
+            ) : (
+              <span className="flex items-center justify-center h-20 rounded-lg bg-muted text-xs text-muted-foreground p-1 text-center">{m.title || 'Nota'}</span>
+            )}
+          </a>
+        ))}
+      </div>
+      {items.filter(m => m.description || (m.media_type === 'note' && m.title)).map(m => (
+        <p key={`d-${m.id}`} className="text-xs bg-muted/40 rounded-lg p-2">{m.title ? <b>{m.title}: </b> : null}{m.description}</p>
+      ))}
+    </div>
+  );
+}
+
+function UploadButton({ taskId, mediaType, accept, label, variant, disabled, onDone, testId, noteId }) {
+  const inputRef = useRef(null);
+  const [uploading, setUploading] = useState(false);
+  const upload = async (file) => {
     if (!file) return;
     setUploading(true);
     try {
-      const formData = new FormData();
-      formData.append('file', file);
-      await api.post(`/cleaning-tasks/${taskId}/photos?photo_type=${photoType}`, formData, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-      });
-      toast.success('Foto caricata');
-      onUploaded();
-    } catch (e) { toast.error('Errore caricamento foto'); }
-    finally { setUploading(false); if (fileRef.current) fileRef.current.value = ''; }
+      const fd = new FormData();
+      fd.append('file', file);
+      const params = new URLSearchParams({ media_type: mediaType });
+      if (noteId) params.set('note_id', noteId);
+      await api.post(`/cleaning-tasks/${taskId}/media?${params}`, fd, { headers: { 'Content-Type': 'multipart/form-data' } });
+      if (mediaType === 'initial_video') toast.success('Video iniziale caricato — pulizia iniziata!');
+      else if (mediaType === 'final_video') toast.success('Video finale caricato — tempo fermato');
+      else toast.success('Caricato');
+      onDone && onDone();
+    } catch (e) {
+      toast.error(e.response?.data?.detail || 'Errore durante il caricamento');
+    } finally { setUploading(false); }
   };
-
   return (
-    <div className="space-y-2">
-      <div className="flex items-center justify-between">
-        <span className="text-xs font-medium">{label}</span>
-        {existing.length > 0 && <span className="text-[10px] text-green-600 flex items-center gap-1"><CheckCircle2 className="h-3 w-3" />{existing.length}</span>}
-      </div>
-      {existing.length > 0 && (
-        <div className="flex gap-2 overflow-x-auto">
-          {existing.map(p => (
-            <div key={p.id} className="w-16 h-16 rounded-lg bg-muted border border-border overflow-hidden flex-shrink-0">
-              <img src={`${API_BASE}/files/${p.file_path}?auth=${localStorage.getItem('kilolava_token')}`} alt="" className="w-full h-full object-cover" />
-            </div>
-          ))}
-        </div>
-      )}
-      <input ref={fileRef} type="file" accept="image/*" capture="environment" onChange={handleUpload} className="hidden" />
-      <Button variant="outline" size="sm" onClick={() => fileRef.current?.click()} disabled={uploading}
-        className="w-full h-10 gap-2 text-sm" data-testid={`upload-${photoType}-photo`}>
-        {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Camera className="h-4 w-4" />}
-        {uploading ? 'Caricamento...' : `Scatta ${label.toLowerCase()}`}
+    <>
+      <input ref={inputRef} type="file" accept={accept} className="hidden" onChange={e => upload(e.target.files?.[0])} data-testid={`${testId}-input`} />
+      <Button
+        onClick={() => inputRef.current?.click()}
+        disabled={uploading || disabled}
+        className={cn('w-full h-12 text-base font-semibold',
+          variant === 'primary' && 'bg-primary text-primary-foreground',
+          variant === 'required' && 'bg-foreground text-background',
+          variant === 'done' && 'bg-emerald-100 text-emerald-700 hover:bg-emerald-100')}
+        data-testid={testId}
+      >
+        {uploading ? <><Loader2 className="h-5 w-5 mr-2 animate-spin" />Caricamento...</> : label}
       </Button>
-    </div>
+    </>
   );
-};
+}
 
-// ===== CHECKLIST ITEM RENDERER =====
-const ChecklistItem = ({ item, sectionName, value, onChange, taskId, onPhotoUploaded, photos }) => {
-  const key = `${sectionName}|${item.label}`;
+function ChecklistSectionUI({ task, onSaved }) {
+  const [responses, setResponses] = useState(task.checklist?.responses || {});
+  const [saving, setSaving] = useState(false);
+  useEffect(() => { setResponses(task.checklist?.responses || {}); }, [task.checklist]);
+  const cl = task.checklist;
+  if (!cl) return null;
 
-  switch (item.item_type) {
-    case 'checkbox':
-      return (
-        <button className="flex items-center gap-3 w-full text-left p-3 rounded-lg bg-muted/30 hover:bg-muted/50 transition-colors"
-          onClick={() => onChange(key, !value)} data-testid={`checklist-item-${item.order}`}>
-          {value ? <CheckCircle2 className="h-5 w-5 text-green-500 shrink-0" /> : <Circle className="h-5 w-5 text-muted-foreground/40 shrink-0" />}
-          <span className={cn("text-sm", value && "line-through text-muted-foreground")}>{item.label}</span>
-          {item.required && !value && <span className="ml-auto text-[10px] text-red-400">Obb.</span>}
-        </button>
-      );
-    case 'yesno':
-      return (
-        <div className="flex items-center justify-between p-3 rounded-lg bg-muted/30">
-          <div className="flex items-center gap-2">
-            <ToggleLeft className="h-4 w-4 text-green-600 shrink-0" />
-            <span className="text-sm">{item.label}</span>
-            {item.required && value === undefined && <span className="text-[10px] text-red-400">Obb.</span>}
-          </div>
-          <div className="flex gap-1">
-            <Button variant={value === true ? "default" : "outline"} size="sm" className="h-8 px-3 text-xs"
-              onClick={() => onChange(key, true)}>Si</Button>
-            <Button variant={value === false ? "destructive" : "outline"} size="sm" className="h-8 px-3 text-xs"
-              onClick={() => onChange(key, false)}>No</Button>
-          </div>
-        </div>
-      );
-    case 'text':
-      return (
-        <div className="p-3 rounded-lg bg-muted/30 space-y-2">
-          <div className="flex items-center gap-2">
-            <Type className="h-4 w-4 text-purple-600 shrink-0" />
-            <span className="text-sm">{item.label}</span>
-            {item.required && !value && <span className="text-[10px] text-red-400">Obb.</span>}
-          </div>
-          <Input value={value || ''} onChange={e => onChange(key, e.target.value)} placeholder="Inserisci nota..." className="h-9" />
-        </div>
-      );
-    case 'number':
-      return (
-        <div className="p-3 rounded-lg bg-muted/30 space-y-2">
-          <div className="flex items-center gap-2">
-            <Hash className="h-4 w-4 text-amber-600 shrink-0" />
-            <span className="text-sm">{item.label}</span>
-          </div>
-          <Input type="number" value={value || ''} onChange={e => onChange(key, e.target.value)} placeholder="0" className="h-9 w-24" />
-        </div>
-      );
-    case 'photo':
-      return (
-        <div className="p-3 rounded-lg bg-muted/30">
-          <PhotoUploader taskId={taskId} photoType={`checklist_${sectionName}_${item.order}`}
-            label={item.label} photos={photos} onUploaded={onPhotoUploaded} />
-        </div>
-      );
-    default:
-      return (
-        <button className="flex items-center gap-3 w-full text-left p-3 rounded-lg bg-muted/30 hover:bg-muted/50"
-          onClick={() => onChange(key, !value)}>
-          {value ? <CheckCircle2 className="h-5 w-5 text-green-500" /> : <Circle className="h-5 w-5 text-muted-foreground/40" />}
-          <span className="text-sm">{item.label}</span>
-        </button>
-      );
-  }
-};
-
-// ===== ISSUE REPORT FORM =====
-const IssueReportForm = ({ taskId, onReported }) => {
-  const [category, setCategory] = useState('broken_item');
-  const [note, setNote] = useState('');
-  const [severity, setSeverity] = useState('medium');
-  const [submitting, setSubmitting] = useState(false);
-
-  const handleSubmit = async () => {
-    if (!note.trim()) { toast.error('Descrizione richiesta'); return; }
-    setSubmitting(true);
+  const toggle = async (key) => {
+    const next = { ...responses, [key]: !responses[key] };
+    setResponses(next);
+    setSaving(true);
     try {
-      await api.post(`/cleaning-tasks/${taskId}/issues`, { category, note, severity });
-      toast.success('Problema segnalato');
-      setNote('');
-      onReported();
-    } catch (e) { toast.error('Errore'); }
-    finally { setSubmitting(false); }
+      await api.put(`/cleaning-tasks/${task.id}/checklist`, { responses: next });
+    } catch (e) { toast.error('Errore salvataggio checklist'); }
+    finally { setSaving(false); onSaved && onSaved(); }
   };
 
+  let done = 0, total = 0;
+  (cl.sections || []).forEach(sec => (sec.items || []).forEach(i => {
+    if (!i.required) return;
+    total += 1;
+    if (responses[`${sec.name}|${i.label}`]) done += 1;
+  }));
+
   return (
-    <div className="space-y-3 p-4 bg-red-50 dark:bg-red-950/20 rounded-lg border border-red-200 dark:border-red-900/30">
-      <h3 className="text-sm font-semibold flex items-center gap-2 text-red-700 dark:text-red-400">
-        <AlertTriangle className="h-4 w-4" />Segnala Problema
-      </h3>
-      <Select value={category} onValueChange={setCategory}>
-        <SelectTrigger className="h-10" data-testid="issue-category"><SelectValue /></SelectTrigger>
-        <SelectContent>
-          {ISSUE_CATEGORIES.map(c => <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>)}
-        </SelectContent>
-      </Select>
-      <div className="flex gap-2">
-        {['low', 'medium', 'high'].map(s => (
-          <Button key={s} variant={severity === s ? 'default' : 'outline'} size="sm" className="flex-1 h-9 text-xs"
-            onClick={() => setSeverity(s)}>{s === 'low' ? 'Bassa' : s === 'medium' ? 'Media' : 'Alta'}</Button>
+    <Card className="border shadow-none" data-testid="cleaner-checklist">
+      <CardContent className="p-4 space-y-3">
+        <div className="flex items-center justify-between">
+          <p className="flex items-center gap-2 text-sm font-semibold"><CheckCircle2 className="h-4 w-4 text-primary" />Checklist</p>
+          <span className={cn('text-xs font-bold', done === total ? 'text-emerald-600' : 'text-muted-foreground')}>{done}/{total}</span>
+        </div>
+        {(cl.sections || []).map(sec => (
+          <div key={sec.name}>
+            <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1.5">{sec.name}</p>
+            <div className="space-y-1">
+              {(sec.items || []).map(item => {
+                const key = `${sec.name}|${item.label}`;
+                const checked = !!responses[key];
+                return (
+                  <button
+                    key={key}
+                    onClick={() => toggle(key)}
+                    disabled={saving}
+                    className={cn('w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left text-sm transition-colors',
+                      checked ? 'bg-emerald-50 dark:bg-emerald-900/20 text-emerald-800 dark:text-emerald-300' : 'bg-muted/40 hover:bg-muted')}
+                    data-testid={`check-item-${sec.name}-${item.label}`.replace(/[^a-zA-Z0-9-]/g, '_')}
+                  >
+                    <span className={cn('w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0',
+                      checked ? 'border-emerald-500 bg-emerald-500 text-white' : 'border-muted-foreground/40')}>
+                      {checked && <CheckCircle2 className="h-4 w-4" />}
+                    </span>
+                    <span className={cn(checked && 'line-through opacity-70')}>{item.label}{item.required ? '' : ' (facoltativo)'}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
         ))}
+      </CardContent>
+    </Card>
+  );
+}
+
+function NotesSection({ task, onSaved }) {
+  const [text, setText] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [lastNoteId, setLastNoteId] = useState(null);
+
+  const addNote = async () => {
+    if (!text.trim()) { toast.error('Scrivi la nota'); return; }
+    setSaving(true);
+    try {
+      const res = await api.post(`/cleaning-tasks/${task.id}/notes`, { text });
+      setLastNoteId(res.data.id);
+      setText('');
+      toast.success('Nota salvata — ora puoi allegare foto/video');
+      onSaved && onSaved();
+    } catch (e) { toast.error('Errore'); }
+    finally { setSaving(false); }
+  };
+
+  return (
+    <Section icon={StickyNote} title="Note (con foto/video)" testId="section-notes">
+      {(task.task_notes || []).map(n => (
+        <div key={n.id} className="rounded-lg bg-muted/40 p-2.5 text-sm">
+          <p>{n.text}</p>
+          {(n.media || []).length > 0 && (
+            <div className="flex gap-1.5 mt-1.5 flex-wrap">
+              {n.media.map(m => m.kind === 'video' ? (
+                <a key={m.id} href={fileUrl(m.file_path)} target="_blank" rel="noreferrer" className="flex items-center gap-1 text-xs px-2 py-1 rounded bg-background"><Video className="h-3 w-3" />Video</a>
+              ) : (
+                <a key={m.id} href={fileUrl(m.file_path)} target="_blank" rel="noreferrer">
+                  <img src={fileUrl(m.file_path)} alt="" className="w-12 h-12 object-cover rounded border border-border" />
+                </a>
+              ))}
+            </div>
+          )}
+        </div>
+      ))}
+      <Textarea value={text} onChange={e => setText(e.target.value)} rows={2} placeholder="Scrivi una nota..." data-testid="note-text-input" />
+      <div className="flex gap-2">
+        <Button variant="outline" className="flex-1 h-10" onClick={addNote} disabled={saving} data-testid="add-note-btn">Salva nota</Button>
+        {lastNoteId && (
+          <div className="flex-1">
+            <UploadButton taskId={task.id} mediaType="note" accept="image/*,video/*" label="+ Foto/Video" variant="done" noteId={lastNoteId} onDone={onSaved} testId="note-media-upload" />
+          </div>
+        )}
       </div>
-      <Textarea value={note} onChange={e => setNote(e.target.value)} placeholder="Descrivi il problema..."
-        rows={3} className="resize-none" data-testid="issue-note" />
-      <Button onClick={handleSubmit} disabled={submitting} className="w-full h-11 bg-red-600 hover:bg-red-700 text-white gap-2" data-testid="submit-issue">
-        {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-        Invia segnalazione
+    </Section>
+  );
+}
+
+function CompleteButton({ task, hasInitial, hasFinal, hasWarehouse, onDone }) {
+  const [busy, setBusy] = useState(false);
+  const complete = async () => {
+    setBusy(true);
+    try {
+      await api.post(`/cleaning-tasks/${task.id}/complete`);
+      toast.success('Pulizia completata!');
+      onDone && onDone();
+    } catch (e) {
+      toast.error(e.response?.data?.detail || 'Impossibile completare');
+    } finally { setBusy(false); }
+  };
+  const missing = [];
+  if (!hasInitial) missing.push('video iniziale');
+  if (!hasWarehouse) missing.push('foto magazzino');
+  if (!hasFinal) missing.push('video finale');
+  return (
+    <div className="space-y-2 pt-1">
+      {missing.length > 0 && (
+        <p className="text-xs text-center text-muted-foreground" data-testid="complete-missing-hint">Manca: {missing.join(', ')} (e checklist completa)</p>
+      )}
+      <Button
+        onClick={complete}
+        disabled={busy}
+        className="w-full h-13 py-3.5 text-base font-bold bg-emerald-600 hover:bg-emerald-700 text-white"
+        data-testid="complete-cleaning-btn"
+      >
+        {busy ? <Loader2 className="h-5 w-5 mr-2 animate-spin" /> : <CheckCircle2 className="h-5 w-5 mr-2" />}
+        Completa pulizia
       </Button>
     </div>
   );
-};
+}
 
-// ===== TASK DETAIL VIEW =====
-const TaskDetail = ({ task, onBack, onRefresh }) => {
-  const [checklistResponses, setChecklistResponses] = useState(task.checklist?.responses || {});
-  const [savingChecklist, setSavingChecklist] = useState(false);
-  const [showIssueForm, setShowIssueForm] = useState(false);
-  const [activeSection, setActiveSection] = useState(0);
-  const sb = STATUS_BADGE[task.status] || STATUS_BADGE.assigned;
+function IssueDialog({ task, onClose, onDone }) {
+  const [category, setCategory] = useState(null);
+  const [note, setNote] = useState('');
+  const [files, setFiles] = useState([]);
+  const [saving, setSaving] = useState(false);
+  const inputRef = useRef(null);
 
-  const checklist = task.checklist;
-  const sections = checklist?.sections || [];
-  const currentSection = sections[activeSection];
+  const catMeta = ISSUE_CATEGORIES.find(c => c.key === category);
 
-  // Calculate progress
-  const totalRequired = sections.reduce((sum, s) => sum + (s.items || []).filter(i => i.required).length, 0);
-  const completedRequired = sections.reduce((sum, s) => {
-    return sum + (s.items || []).filter(i => {
-      if (!i.required) return false;
-      const key = `${s.name}|${i.label}`;
-      const val = checklistResponses[key];
-      return val !== undefined && val !== '' && val !== false && val !== null;
-    }).length;
-  }, 0);
-  const progress = totalRequired > 0 ? Math.round((completedRequired / totalRequired) * 100) : 0;
-
-  const handleChecklistChange = (key, value) => {
-    setChecklistResponses(prev => ({ ...prev, [key]: value }));
-  };
-
-  const saveChecklist = async () => {
-    setSavingChecklist(true);
+  const submit = async () => {
+    if (!category) { toast.error('Scegli il tipo di segnalazione'); return; }
+    if (!note.trim()) { toast.error('Scrivi una breve descrizione'); return; }
+    if (catMeta?.requireMedia && files.length === 0) { toast.error(`Per "${catMeta.label}" serve almeno 1 foto o video`); return; }
+    setSaving(true);
     try {
-      await api.put(`/cleaning-tasks/${task.id}/checklist`, { responses: checklistResponses });
-      toast.success('Checklist salvata');
-    } catch (e) { toast.error('Errore salvataggio'); }
-    finally { setSavingChecklist(false); }
-  };
-
-  const updateStatus = async (newStatus) => {
-    try {
-      // Save checklist first if there are changes
-      if (checklist) {
-        await api.put(`/cleaning-tasks/${task.id}/checklist`, { responses: checklistResponses });
+      const attachmentIds = [];
+      for (const f of files) {
+        const fd = new FormData();
+        fd.append('file', f);
+        const res = await api.post(`/cleaning-tasks/${task.id}/media?media_type=issue`, fd, { headers: { 'Content-Type': 'multipart/form-data' } });
+        attachmentIds.push(res.data.id);
       }
-      await api.put(`/cleaning-tasks/${task.id}/status`, { status: newStatus });
-      toast.success(newStatus === 'completed' ? 'Task completato!' : 'Stato aggiornato');
-      onRefresh();
-    } catch (e) { toast.error(e.response?.data?.detail || 'Errore'); }
+      await api.post(`/cleaning-tasks/${task.id}/issues`, { category, note, attachment_ids: attachmentIds });
+      toast.success('Segnalazione inviata al responsabile');
+      onDone();
+    } catch (e) {
+      toast.error(e.response?.data?.detail || 'Errore durante l\'invio');
+    } finally { setSaving(false); }
   };
 
   return (
-    <div className="min-h-screen bg-background pb-32" data-testid="task-detail-view">
-      {/* Header */}
-      <div className="sticky top-0 z-40 bg-card border-b border-border px-4 py-3">
-        <div className="flex items-center gap-3">
-          <Button variant="ghost" size="icon" className="h-9 w-9" onClick={onBack} data-testid="back-to-list">
-            <ArrowLeft className="h-5 w-5" />
+    <Dialog open onOpenChange={v => !v && onClose()}>
+      <DialogContent className="max-w-md max-h-[92vh] overflow-y-auto" data-testid="issue-dialog">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2"><AlertTriangle className="h-5 w-5 text-red-600" />Crea segnalazione</DialogTitle>
+          <DialogDescription>Segnala e basta: a chi spetta risolvere ci pensa il responsabile.</DialogDescription>
+        </DialogHeader>
+        <div className="space-y-3">
+          <div className="grid grid-cols-1 gap-2">
+            {ISSUE_CATEGORIES.map(c => (
+              <button
+                key={c.key}
+                onClick={() => setCategory(c.key)}
+                className={cn('text-left px-3.5 py-3 rounded-xl border-2 transition-colors',
+                  category === c.key ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/40')}
+                data-testid={`issue-cat-${c.key}`}
+              >
+                <p className="font-semibold text-sm">{c.label}{c.requireMedia && <span className="text-red-600"> *</span>}</p>
+                <p className="text-xs text-muted-foreground">{c.desc}</p>
+              </button>
+            ))}
+          </div>
+          <Textarea value={note} onChange={e => setNote(e.target.value)} rows={3} placeholder="Breve descrizione..." data-testid="issue-note-input" />
+          <input ref={inputRef} type="file" accept="image/*,video/*" multiple className="hidden" onChange={e => setFiles(prev => [...prev, ...Array.from(e.target.files || [])])} data-testid="issue-files-input" />
+          <Button variant="outline" className="w-full h-11" onClick={() => inputRef.current?.click()} data-testid="issue-add-media-btn">
+            <Camera className="h-4 w-4 mr-2" />Aggiungi foto / video {catMeta?.requireMedia ? '(obbligatorio)' : '(facoltativo)'}
           </Button>
-          <div className="flex-1 min-w-0">
-            <p className="text-sm font-semibold truncate">{task.structure_name || 'Task Pulizia'}</p>
-            {task.unit_name && <p className="text-[11px] text-muted-foreground">{task.unit_name}</p>}
-          </div>
-          <span className={cn("text-[10px] px-2 py-1 rounded-full font-medium", sb.cls)}>{sb.label}</span>
-        </div>
-      </div>
-
-      <div className="px-4 py-4 space-y-4">
-        {/* Task Info */}
-        <Card className="border">
-          <CardContent className="p-4 space-y-2">
-            {task.client_name && <div className="flex items-center gap-2 text-sm"><span className="text-muted-foreground w-20">Cliente:</span><span className="font-medium">{task.client_name}</span></div>}
-            {task.scheduled_time && <div className="flex items-center gap-2 text-sm"><Clock className="h-4 w-4 text-muted-foreground" /><span>{task.scheduled_time}{task.estimated_duration_minutes ? ` (${task.estimated_duration_minutes} min)` : ''}</span></div>}
-            {task.structure_address && <div className="flex items-center gap-2 text-sm"><MapPin className="h-4 w-4 text-muted-foreground" /><span>{task.structure_address}</span></div>}
-            {task.access_notes && <div className="flex items-center gap-2 text-sm bg-amber-50 dark:bg-amber-950/20 p-2 rounded-lg"><Key className="h-4 w-4 text-amber-600 shrink-0" /><span className="text-amber-800 dark:text-amber-300">{task.access_notes}</span></div>}
-            {task.notes && <p className="text-sm text-muted-foreground mt-2">{task.notes}</p>}
-          </CardContent>
-        </Card>
-
-        {/* Photos Section */}
-        <Card className="border">
-          <CardContent className="p-4 space-y-3">
-            <h3 className="text-sm font-semibold">Foto</h3>
-            <div className="grid grid-cols-2 gap-3">
-              <PhotoUploader taskId={task.id} photoType="initial" label="Foto Iniziale" photos={task.photos || []} onUploaded={onRefresh} />
-              <PhotoUploader taskId={task.id} photoType="final" label="Foto Finale" photos={task.photos || []} onUploaded={onRefresh} />
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Checklist */}
-        {checklist && sections.length > 0 && (
-          <Card className="border">
-            <CardContent className="p-4 space-y-3">
-              <div className="flex items-center justify-between">
-                <h3 className="text-sm font-semibold">{checklist.template_name}</h3>
-                <span className="text-xs font-medium text-[#F24E75]">{progress}%</span>
-              </div>
-              {/* Progress bar */}
-              <div className="h-2 bg-muted rounded-full overflow-hidden">
-                <div className="h-full bg-[#F24E75] rounded-full transition-all duration-300" style={{ width: `${progress}%` }} />
-              </div>
-
-              {/* Section tabs */}
-              <div className="flex gap-1 overflow-x-auto pb-1">
-                {sections.map((s, i) => {
-                  const sectionDone = (s.items || []).filter(it => it.required).every(it => {
-                    const v = checklistResponses[`${s.name}|${it.label}`];
-                    return v !== undefined && v !== '' && v !== false && v !== null;
-                  });
-                  return (
-                    <button key={i} className={cn(
-                      "text-xs px-3 py-1.5 rounded-full font-medium transition-colors border shrink-0 flex items-center gap-1",
-                      activeSection === i ? "border-[#F24E75] bg-[#F24E75]/10 text-[#F24E75]" : "border-border text-muted-foreground"
-                    )} onClick={() => setActiveSection(i)} data-testid={`section-tab-${i}`}>
-                      {sectionDone && <CheckCircle2 className="h-3 w-3 text-green-500" />}
-                      {s.name}
-                    </button>
-                  );
-                })}
-              </div>
-
-              {/* Current section items */}
-              {currentSection && (
-                <div className="space-y-2" data-testid="checklist-section-items">
-                  {(currentSection.items || []).sort((a, b) => a.order - b.order).map((item, idx) => (
-                    <ChecklistItem key={idx} item={item} sectionName={currentSection.name}
-                      value={checklistResponses[`${currentSection.name}|${item.label}`]}
-                      onChange={handleChecklistChange} taskId={task.id}
-                      onPhotoUploaded={onRefresh} photos={task.photos || []} />
-                  ))}
-                </div>
-              )}
-
-              {/* Section navigation */}
-              <div className="flex gap-2 pt-2">
-                {activeSection > 0 && (
-                  <Button variant="outline" size="sm" className="flex-1 h-10" onClick={() => setActiveSection(activeSection - 1)}>
-                    <ChevronLeft className="h-4 w-4 mr-1" />Precedente
-                  </Button>
-                )}
-                {activeSection < sections.length - 1 && (
-                  <Button variant="outline" size="sm" className="flex-1 h-10" onClick={() => { saveChecklist(); setActiveSection(activeSection + 1); }}>
-                    Successivo<ChevronRight className="h-4 w-4 ml-1" />
-                  </Button>
-                )}
-              </div>
-
-              {/* Save checklist */}
-              <Button variant="outline" size="sm" onClick={saveChecklist} disabled={savingChecklist} className="w-full h-10 gap-1" data-testid="save-checklist">
-                {savingChecklist ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckSquare className="h-4 w-4" />}
-                Salva checklist
-              </Button>
-            </CardContent>
-          </Card>
-        )}
-
-        {/* Issue Reporting */}
-        {task.issues && task.issues.length > 0 && (
-          <Card className="border border-red-200 dark:border-red-900/30">
-            <CardContent className="p-4 space-y-2">
-              <h3 className="text-sm font-semibold text-red-700 dark:text-red-400">Problemi segnalati ({task.issues.length})</h3>
-              {task.issues.map((issue, i) => (
-                <div key={i} className="p-2 bg-red-50 dark:bg-red-950/20 rounded-lg text-sm">
-                  <span className="font-medium capitalize">{(ISSUE_CATEGORIES.find(c => c.value === issue.category) || {}).label || issue.category}</span>
-                  {issue.note && <p className="text-xs text-muted-foreground mt-0.5">{issue.note}</p>}
-                </div>
-              ))}
-            </CardContent>
-          </Card>
-        )}
-
-        <Button variant="outline" size="sm" onClick={() => setShowIssueForm(!showIssueForm)}
-          className="w-full h-11 gap-2 text-red-600 border-red-200 hover:bg-red-50" data-testid="toggle-issue-form">
-          <AlertTriangle className="h-4 w-4" />
-          {showIssueForm ? 'Chiudi segnalazione' : 'Segnala un problema'}
-        </Button>
-
-        {showIssueForm && <IssueReportForm taskId={task.id} onReported={() => { setShowIssueForm(false); onRefresh(); }} />}
-      </div>
-
-      {/* Bottom Action Bar */}
-      <div className="fixed bottom-0 left-0 right-0 bg-card border-t border-border p-4 z-40">
-        {task.status === 'assigned' && (
-          <Button className="w-full h-12 text-base font-semibold bg-amber-600 hover:bg-amber-700 text-white gap-2" onClick={() => updateStatus('in_progress')} data-testid="start-task">
-            <Play className="h-5 w-5" />Inizia pulizia
-          </Button>
-        )}
-        {task.status === 'in_progress' && (
-          <Button className="w-full h-12 text-base font-semibold bg-green-600 hover:bg-green-700 text-white gap-2" onClick={() => updateStatus('completed')} data-testid="complete-task">
-            <Check className="h-5 w-5" />Completa task
-          </Button>
-        )}
-        {task.status === 'completed' && (
-          <div className="text-center text-green-600 font-semibold flex items-center justify-center gap-2">
-            <CheckCircle2 className="h-5 w-5" />Task completato
-          </div>
-        )}
-        {task.status === 'issue_reported' && (
-          <div className="text-center text-red-600 font-semibold flex items-center justify-center gap-2">
-            <AlertTriangle className="h-5 w-5" />Problema segnalato - in attesa
-          </div>
-        )}
-      </div>
-    </div>
-  );
-};
-
-// ===== MAIN CLEANER VIEW =====
-const CleanerView = () => {
-  const { user, logout } = useAuth();
-  const { theme, toggleTheme } = useTheme();
-  const [tasks, setTasks] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [selectedDate, setSelectedDate] = useState(() => new Date().toISOString().slice(0, 10));
-  const [selectedTask, setSelectedTask] = useState(null);
-
-  const fetchTasks = useCallback(async () => {
-    setLoading(true);
-    try {
-      const res = await api.get('/cleaning-tasks/my-tasks', { params: { date: selectedDate } });
-      setTasks(res.data || []);
-    } catch (e) { console.error(e); }
-    finally { setLoading(false); }
-  }, [selectedDate]);
-
-  useEffect(() => { fetchTasks(); }, [fetchTasks]);
-
-  const shiftDate = (d) => {
-    const dt = new Date(selectedDate);
-    dt.setDate(dt.getDate() + d);
-    setSelectedDate(dt.toISOString().slice(0, 10));
-  };
-
-  const formatDate = (ds) => {
-    const d = new Date(ds + 'T00:00:00');
-    const today = new Date().toISOString().slice(0, 10);
-    return `${ds === today ? 'Oggi - ' : ''}${d.toLocaleDateString('it-IT', { weekday: 'long', day: 'numeric', month: 'long' })}`;
-  };
-
-  const refreshTask = async () => {
-    if (selectedTask) {
-      try {
-        const res = await api.get(`/cleaning-tasks/${selectedTask.id}`);
-        setSelectedTask(res.data);
-      } catch (e) { console.error(e); }
-    }
-    fetchTasks();
-  };
-
-  // If a task is selected, show detail view
-  if (selectedTask) {
-    return <TaskDetail task={selectedTask} onBack={() => { setSelectedTask(null); fetchTasks(); }} onRefresh={refreshTask} />;
-  }
-
-  const pending = tasks.filter(t => t.status !== 'completed');
-  const done = tasks.filter(t => t.status === 'completed');
-
-  return (
-    <div className="min-h-screen bg-background" data-testid="cleaner-view">
-      <header className="sticky top-0 z-50 bg-card border-b border-border px-4 py-3">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <div className="w-9 h-9 rounded-full bg-teal-500/10 flex items-center justify-center text-sm font-bold text-teal-600">
-              {user?.name?.charAt(0).toUpperCase() || 'C'}
-            </div>
-            <div>
-              <p className="text-sm font-semibold leading-tight">{user?.name}</p>
-              <p className="text-[11px] text-muted-foreground">Addetto Pulizie</p>
-            </div>
-          </div>
-          <div className="flex items-center gap-1">
-            <NotificationBell />
-            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={toggleTheme}>
-              {theme === 'dark' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
-            </Button>
-            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={logout} data-testid="cleaner-logout">
-              <LogOut className="h-4 w-4" />
+          {files.length > 0 && <p className="text-xs text-center text-muted-foreground">{files.length} file selezionati</p>}
+          <div className="flex gap-2">
+            <Button variant="outline" className="flex-1" onClick={onClose}>Annulla</Button>
+            <Button className="flex-1 bg-red-600 hover:bg-red-700 text-white" onClick={submit} disabled={saving} data-testid="issue-submit-btn">
+              {saving && <Loader2 className="h-4 w-4 mr-1 animate-spin" />}Invia
             </Button>
           </div>
         </div>
-      </header>
-
-      <div className="px-4 py-3 space-y-4 pb-20">
-        {/* Date Navigator */}
-        <div className="flex items-center justify-between">
-          <Button variant="ghost" size="icon" className="h-9 w-9" onClick={() => shiftDate(-1)}><ChevronLeft className="h-5 w-5" /></Button>
-          <div className="text-center">
-            <p className="text-sm font-semibold">{formatDate(selectedDate)}</p>
-            <p className="text-xs text-muted-foreground">{tasks.length} pulizie</p>
-          </div>
-          <Button variant="ghost" size="icon" className="h-9 w-9" onClick={() => shiftDate(1)}><ChevronRight className="h-5 w-5" /></Button>
-        </div>
-
-        {/* Progress */}
-        {tasks.length > 0 && (
-          <div className="space-y-1">
-            <div className="flex justify-between text-xs text-muted-foreground">
-              <span>{done.length} di {tasks.length} completate</span>
-              <span>{Math.round((done.length / tasks.length) * 100)}%</span>
-            </div>
-            <div className="h-2.5 bg-muted rounded-full overflow-hidden">
-              <div className="h-full bg-teal-500 rounded-full transition-all" style={{ width: `${(done.length / tasks.length) * 100}%` }} />
-            </div>
-          </div>
-        )}
-
-        {/* Task list */}
-        {loading ? (
-          <div className="text-center py-12 text-muted-foreground">Caricamento...</div>
-        ) : tasks.length === 0 ? (
-          <div className="text-center py-12">
-            <CheckCircle2 className="h-12 w-12 mx-auto mb-3 text-muted-foreground/30" />
-            <p className="text-muted-foreground">Nessuna pulizia programmata</p>
-          </div>
-        ) : (
-          <div className="space-y-3">
-            {pending.map(task => {
-              const sb = STATUS_BADGE[task.status] || STATUS_BADGE.assigned;
-              return (
-                <Card key={task.id} className={cn(
-                  "border-l-4 cursor-pointer transition-all active:scale-[0.98]",
-                  task.status === 'in_progress' ? "border-l-amber-400 bg-amber-50/50 dark:bg-amber-950/20" :
-                  task.status === 'issue_reported' ? "border-l-red-400 bg-red-50/50 dark:bg-red-950/20" :
-                  "border-l-blue-400 bg-blue-50/50 dark:bg-blue-950/20"
-                )} onClick={() => setSelectedTask(task)} data-testid={`cleaner-task-${task.id}`}>
-                  <CardContent className="p-4">
-                    <div className="flex items-start justify-between mb-2">
-                      <div>
-                        <p className="text-base font-semibold">{task.structure_name || 'Pulizia'}</p>
-                        {task.unit_name && <p className="text-xs text-muted-foreground">{task.unit_name}</p>}
-                      </div>
-                      <span className={cn("text-[10px] px-2 py-0.5 rounded-full font-medium", sb.cls)}>{sb.label}</span>
-                    </div>
-                    <div className="flex items-center gap-3 text-xs text-muted-foreground">
-                      {task.scheduled_time && <span className="flex items-center gap-1"><Clock className="h-3 w-3" />{task.scheduled_time}</span>}
-                      {task.estimated_duration_minutes && <span>{task.estimated_duration_minutes} min</span>}
-                      {task.client_name && <span>{task.client_name}</span>}
-                    </div>
-                    {task.checklist && (
-                      <div className="mt-2 flex items-center gap-2">
-                        <div className="h-1.5 flex-1 bg-muted rounded-full overflow-hidden">
-                          <div className="h-full bg-teal-500 rounded-full" style={{ width: `${(() => {
-                            const sections = task.checklist.sections || [];
-                            const responses = task.checklist.responses || {};
-                            const total = sections.reduce((s, sec) => s + (sec.items || []).filter(i => i.required).length, 0);
-                            const done = sections.reduce((s, sec) => s + (sec.items || []).filter(i => i.required && (() => { const v = responses[`${sec.name}|${i.label}`]; return v !== undefined && v !== '' && v !== false; })()).length, 0);
-                            return total > 0 ? (done / total) * 100 : 0;
-                          })()}%` }} />
-                        </div>
-                        <span className="text-[10px] text-teal-600"><ClipboardList className="h-3 w-3 inline" /> Checklist</span>
-                      </div>
-                    )}
-                    {task.issues && task.issues.length > 0 && (
-                      <span className="text-[10px] text-red-600 flex items-center gap-1 mt-1"><AlertTriangle className="h-3 w-3" />{task.issues.length} problemi</span>
-                    )}
-                  </CardContent>
-                </Card>
-              );
-            })}
-
-            {done.length > 0 && (
-              <>
-                <div className="flex items-center gap-2 pt-2"><div className="h-px flex-1 bg-border" /><span className="text-xs text-muted-foreground">Completate ({done.length})</span><div className="h-px flex-1 bg-border" /></div>
-                {done.map(task => (
-                  <Card key={task.id} className="border-l-4 border-l-green-400 opacity-60 cursor-pointer" onClick={() => setSelectedTask(task)} data-testid={`cleaner-task-${task.id}`}>
-                    <CardContent className="p-3">
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <p className="text-sm font-medium">{task.structure_name || 'Pulizia'}</p>
-                          {task.unit_name && <p className="text-xs text-muted-foreground">{task.unit_name}</p>}
-                        </div>
-                        <CheckCircle2 className="h-5 w-5 text-green-500" />
-                      </div>
-                    </CardContent>
-                  </Card>
-                ))}
-              </>
-            )}
-          </div>
-        )}
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
-};
-
-export default CleanerView;
+}

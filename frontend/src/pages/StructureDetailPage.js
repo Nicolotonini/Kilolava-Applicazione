@@ -48,7 +48,7 @@ const KEY_COPIES = [
   { letter: 'C', label: 'Emergenza' },
 ];
 
-const emptyBedConfig = { capacity_total: 0, beds_double: 0, beds_single: 0, sofa_beds: 0, capacity_persons: 0 };
+const emptyBedConfig = { capacity_total: 0, beds_double: 0, beds_single: 0, sofa_beds: 0, capacity_persons: 0, beds_double_min: 0, beds_single_min: 0, sofa_beds_min: 0 };
 
 const StructureDetailPage = () => {
   const { structureId } = useParams();
@@ -451,6 +451,21 @@ function BedsSection({ form, setBed }) {
             <FieldRow label="Divani letto">
               <Input type="number" min={0} value={bc.sofa_beds} onChange={e => setBed('sofa_beds', e.target.value)} className="h-9" data-testid="beds-sofa" />
             </FieldRow>
+          </div>
+          <div className="pt-2 border-t border-border">
+            <p className="text-xs font-semibold mb-1">Preparazione minima / predefinita</p>
+            <p className="text-[11px] text-muted-foreground mb-3">Valori precompilati quando viene creata una nuova pulizia per questa struttura. I massimi sopra non possono essere superati.</p>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+              <FieldRow label="Matrimoniali minimi">
+                <Input type="number" min={0} max={bc.beds_double} value={bc.beds_double_min || 0} onChange={e => setBed('beds_double_min', e.target.value)} className="h-9" data-testid="beds-double-min" />
+              </FieldRow>
+              <FieldRow label="Singoli minimi">
+                <Input type="number" min={0} max={bc.beds_single} value={bc.beds_single_min || 0} onChange={e => setBed('beds_single_min', e.target.value)} className="h-9" data-testid="beds-single-min" />
+              </FieldRow>
+              <FieldRow label="Divani letto minimi">
+                <Input type="number" min={0} max={bc.sofa_beds} value={bc.sofa_beds_min || 0} onChange={e => setBed('sofa_beds_min', e.target.value)} className="h-9" data-testid="beds-sofa-min" />
+              </FieldRow>
+            </div>
           </div>
         </CardContent>
       </Card>
