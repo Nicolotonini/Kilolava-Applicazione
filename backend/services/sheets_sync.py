@@ -221,8 +221,17 @@ async def _build_tabs():
     })
 
     # ---- Chiavi (NO access codes: only presence/box/slot) ----
+    def _copy_state(copy):
+        if not copy:
+            return "—"
+        exists = copy.get("exists") if copy.get("exists") is not None else copy.get("present")
+        if not exists:
+            return "Mancante"
+        return "Presente" if copy.get("present") else "Fuori sede"
+
     rows = []
     box_occupied = {"A": 0, "B": 0, "C": 0}
+    box_out = {"A": 0, "B": 0, "C": 0}
     for s in sorted(structures, key=lambda x: x.get("klv_code") or ""):
         ai = s.get("access_info") or {}
         has_keys = bool(ai.get("kilolava_has_keys"))
@@ -231,29 +240,35 @@ async def _build_tabs():
         if has_keys:
             for letter, copy in [("A", a), ("B", b), ("C", c_)]:
                 box_name = str(copy.get("box") or letter).upper()
-                if copy.get("present") and box_name[:1] in box_occupied:
-                    box_occupied[box_name[:1]] += 1
-        complete = has_keys and bool(a.get("present")) and bool(b.get("present")) and bool(c_.get("present"))
+                key = box_name[:1]
+                if key not in box_occupied:
+                    continue
+                state = _copy_state(copy)
+                if state == "Presente":
+                    box_occupied[key] += 1
+                elif state == "Fuori sede":
+                    box_out[key] += 1
+        complete = has_keys and all(_copy_state(x) == "Presente" for x in (a, b, c_))
         notes = "; ".join(filter(None, [a.get("note"), b.get("note"), c_.get("note")]))
         rows.append([
             s.get("klv_code") or "",
             s.get("name") or "",
             cname(s.get("client_id")),
             has_keys,
-            bool(a.get("present")),
+            _copy_state(a),
             str(a.get("slot") or ""),
-            bool(b.get("present")),
+            _copy_state(b),
             str(b.get("slot") or ""),
-            bool(c_.get("present")),
+            _copy_state(c_),
             str(c_.get("slot") or ""),
             complete,
             notes,
         ])
     tabs.append({
         "title": "Chiavi",
-        "headers": ["Codice KLV", "Nome Struttura", "Cliente", "Kilolava possiede chiavi", "Copia A presente", "Slot A", "Copia B presente", "Slot B", "Copia C presente", "Slot C", "Sistema completo", "Note"],
+        "headers": ["Codice KLV", "Nome Struttura", "Cliente", "Kilolava possiede chiavi", "Stato copia A", "Slot A", "Stato copia B", "Slot B", "Stato copia C", "Slot C", "Sistema completo", "Note"],
         "rows": rows,
-        "checkbox_cols": [3, 4, 6, 8, 10],
+        "checkbox_cols": [3, 10],
         "widths": [95, 180, 160, 165, 125, 65, 125, 65, 125, 65, 125, 220],
         "conditional_rules": [
             {"condition": {"type": "CUSTOM_FORMULA", "values": [{"userEnteredValue": "=$K2=TRUE"}]}, "color": GREEN_BG},
@@ -263,10 +278,10 @@ async def _build_tabs():
         "extra_block": {
             "start_cell": "N1",
             "values": [
-                ["Box", "Capacità", "Occupati", "Liberi"],
-                ["A — Addette", box_capacity, box_occupied["A"], max(0, box_capacity - box_occupied["A"])],
-                ["B — Rider", box_capacity, box_occupied["B"], max(0, box_capacity - box_occupied["B"])],
-                ["C — Emergenza", box_capacity, box_occupied["C"], max(0, box_capacity - box_occupied["C"])],
+                ["Box", "Capacità", "Occupati", "Liberi", "Fuori sede"],
+                ["A — Addette", box_capacity, box_occupied["A"], max(0, box_capacity - box_occupied["A"]), box_out["A"]],
+                ["B — Rider", box_capacity, box_occupied["B"], max(0, box_capacity - box_occupied["B"]), box_out["B"]],
+                ["C — Emergenza", box_capacity, box_occupied["C"], max(0, box_capacity - box_occupied["C"]), box_out["C"]],
             ],
         },
     })

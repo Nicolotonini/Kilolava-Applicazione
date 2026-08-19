@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { toast } from 'sonner';
+import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from '../components/ui/tooltip';
 
 const SERVICE_COLS = [
   { key: 'cleaning', label: 'Pulizie', icon: Sparkles, on: 'bg-sky-100 text-sky-600 dark:bg-sky-900/30 dark:text-sky-400' },
@@ -22,11 +23,11 @@ const ServiceDot = ({ svc, active }) => (
   <span
     title={`${svc.label}${active ? ' — attivo' : ' — non attivo'}`}
     className={cn(
-      'inline-flex w-7 h-7 rounded-full items-center justify-center',
+      'inline-flex w-9 h-9 rounded-full items-center justify-center',
       active ? svc.on : 'text-muted-foreground/20'
     )}
   >
-    <svc.icon className="h-3.5 w-3.5" />
+    <svc.icon className="h-[18px] w-[18px]" />
   </span>
 );
 
@@ -77,6 +78,7 @@ const StructuresListPage = () => {
   const goWarehouse = (e, id) => { e.stopPropagation(); navigate(`/structure-inventory?structure_id=${id}`); };
 
   return (
+    <TooltipProvider delayDuration={200}>
     <div className="p-4 lg:p-8 space-y-5" data-testid="structures-list-page">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
@@ -138,12 +140,12 @@ const StructuresListPage = () => {
                     data-testid={`structure-row-${s.id}`}
                   >
                     <td className="py-3 pl-4 pr-2">
-                      <span className="px-2 py-1 rounded-md bg-primary/10 text-primary font-mono text-xs font-bold whitespace-nowrap" data-testid={`klv-${s.id}`}>
+                      <span className="px-2 py-1 rounded-md bg-primary/10 text-primary font-mono text-sm font-bold whitespace-nowrap" data-testid={`klv-${s.id}`}>
                         {s.klv_code || '—'}
                       </span>
                     </td>
                     <td className="py-3 px-2">
-                      <p className="font-semibold leading-tight">{s.name}</p>
+                      <p className="font-semibold text-[15px] leading-tight">{s.name}</p>
                       <div className="flex items-center gap-3 mt-1 flex-wrap">
                         {s.address && (
                           <span className="flex items-center gap-1 text-xs text-muted-foreground">
@@ -167,28 +169,36 @@ const StructuresListPage = () => {
                       </td>
                     ))}
                     <td className="py-3 px-1 text-center">
-                      <Button
-                        variant="outline"
-                        size="icon"
-                        className="h-8 w-8"
-                        title="Accesso e Chiavi"
-                        onClick={e => goAccess(e, s.id)}
-                        data-testid={`open-access-${s.id}`}
-                      >
-                        <DoorOpen className="h-4 w-4" />
-                      </Button>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            variant="outline"
+                            size="icon"
+                            className="h-9 w-9"
+                            onClick={e => goAccess(e, s.id)}
+                            data-testid={`open-access-${s.id}`}
+                          >
+                            <DoorOpen className="h-[18px] w-[18px]" />
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>Informazioni di ingresso</TooltipContent>
+                      </Tooltip>
                     </td>
                     <td className="py-3 px-1 text-center">
-                      <Button
-                        variant="outline"
-                        size="icon"
-                        className="h-8 w-8"
-                        title="Magazzino Struttura"
-                        onClick={e => goWarehouse(e, s.id)}
-                        data-testid={`open-warehouse-${s.id}`}
-                      >
-                        <Boxes className="h-4 w-4" />
-                      </Button>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            variant="outline"
+                            size="icon"
+                            className="h-9 w-9"
+                            onClick={e => goWarehouse(e, s.id)}
+                            data-testid={`open-warehouse-${s.id}`}
+                          >
+                            <Boxes className="h-[18px] w-[18px]" />
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>Magazzino Struttura</TooltipContent>
+                      </Tooltip>
                     </td>
                     <td className="py-3 pl-1 pr-3 text-center">
                       <Button
@@ -252,6 +262,7 @@ const StructuresListPage = () => {
         </>
       )}
     </div>
+    </TooltipProvider>
   );
 };
 

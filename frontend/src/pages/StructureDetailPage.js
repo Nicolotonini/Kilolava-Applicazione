@@ -494,6 +494,8 @@ function AccessSection({ form, set, setAccess, setKeyBox, klvCode }) {
             <div className="space-y-2.5">
               {KEY_COPIES.map(kc => {
                 const kb = (ai.key_boxes || {})[kc.letter] || {};
+                const exists = kb.exists !== undefined ? !!kb.exists : !!kb.present;
+                const present = exists && !!kb.present;
                 return (
                   <div key={kc.letter} className="rounded-lg border border-border p-3.5" data-testid={`keybox-${kc.letter}`}>
                     <div className="flex items-center justify-between gap-2 flex-wrap mb-2.5">
@@ -503,11 +505,28 @@ function AccessSection({ form, set, setAccess, setKeyBox, klvCode }) {
                         </span>
                         <span className="text-xs font-medium">Box {kc.letter} — {kc.label}</span>
                       </div>
-                      <div className="flex items-center gap-2">
-                        <span className={cn('text-xs font-semibold', kb.present ? 'text-emerald-600' : 'text-red-500')}>
-                          {kb.present ? 'Presente' : 'Copia mancante'}
+                      <div className="flex items-center gap-4 flex-wrap">
+                        <span className={cn('text-xs font-semibold', !exists ? 'text-red-500' : present ? 'text-emerald-600' : 'text-amber-600')}>
+                          {!exists ? 'Copia mancante' : present ? 'Presente in lavanderia' : 'Fuori sede'}
                         </span>
-                        <Switch checked={!!kb.present} onCheckedChange={v => setKeyBox(kc.letter, 'present', v)} data-testid={`keybox-present-${kc.letter}`} />
+                        <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                          Copia esistente
+                          <Switch
+                            checked={exists}
+                            onCheckedChange={v => { setKeyBox(kc.letter, 'exists', v); if (!v) setKeyBox(kc.letter, 'present', false); }}
+                            data-testid={`keybox-exists-${kc.letter}`}
+                          />
+                        </label>
+                        {exists && (
+                          <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                            In lavanderia
+                            <Switch
+                              checked={present}
+                              onCheckedChange={v => { setKeyBox(kc.letter, 'exists', true); setKeyBox(kc.letter, 'present', v); }}
+                              data-testid={`keybox-present-${kc.letter}`}
+                            />
+                          </label>
+                        )}
                       </div>
                     </div>
                     <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">

@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import api, { structuresApi } from '../lib/api';
 import { Card, CardContent } from '../components/ui/card';
 import { Input } from '../components/ui/input';
-import { KeyRound, Search, CheckCircle2, XCircle, MapPin, User } from 'lucide-react';
+import { KeyRound, Search, CheckCircle2, XCircle, MapPin, User, ArrowUpRight } from 'lucide-react';
 import { cn } from '../lib/utils';
 
 const KEY_DEFS = [
@@ -37,21 +37,21 @@ const KeysPage = () => {
 
   const copies = (s) => KEY_DEFS.map(d => {
     const raw = (s.access_info?.key_boxes || {})[d.letter];
-    const tracked = !!raw && (raw.present || raw.slot || raw.box || raw.note);
+    const exists = raw ? (raw.exists !== undefined ? !!raw.exists : !!raw.present) : false;
     return {
       ...d,
       tracked: !!raw,
+      exists,
       box: raw?.box || d.letter,
       slot: raw?.slot || '',
-      present: !!raw?.present,
-      hasData: tracked,
+      present: exists && !!raw?.present,
     };
   });
   const hasKeys = (s) => !!s.access_info?.kilolava_has_keys;
 
   const withKeys = structures.filter(hasKeys);
   const boxOccupied = (letter) => withKeys.reduce((n, s) => n + copies(s).filter(c => c.present && String(c.box).toUpperCase().startsWith(letter)).length, 0);
-  const boxOut = (letter) => withKeys.reduce((n, s) => n + copies(s).filter(c => c.letter === letter && c.tracked && !c.present).length, 0);
+  const boxOut = (letter) => withKeys.reduce((n, s) => n + copies(s).filter(c => c.exists && !c.present && String(c.box).toUpperCase().startsWith(letter)).length, 0);
 
   const q = search.trim().toLowerCase();
   const filtered = withKeys.filter(s => {
@@ -60,6 +60,8 @@ const KeysPage = () => {
       s.name.toLowerCase().includes(q) ||
       (s.client_name || '').toLowerCase().includes(q)
     )) return false;
+    if (filter === 'out') return copies(s).some(c => c.exists && !c.present);
+    if (filter === 'missing') return copies(s).some(c => c.tracked && !c.exists);
     if (['A', 'B', 'C'].includes(filter)) return copies(s).some(c => String(c.box).toUpperCase().startsWith(filter));
     return true;
   });
@@ -103,17 +105,23 @@ const KeysPage = () => {
           />
         </div>
         <div className="flex gap-1 flex-wrap">
-          {['A', 'B', 'C'].map(letter => (
+          {[
+            { key: 'A', label: 'Box A' },
+            { key: 'B', label: 'Box B' },
+            { key: 'C', label: 'Box C' },
+            { key: 'out', label: 'Fuori sede' },
+            { key: 'missing', label: 'Copie mancanti' },
+          ].map(f => (
             <button
-              key={letter}
-              onClick={() => setFilter(filter === letter ? 'all' : letter)}
+              key={f.key}
+              onClick={() => setFilter(filter === f.key ? 'all' : f.key)}
               className={cn(
                 'px-3 py-1.5 rounded-full text-xs font-medium transition-colors',
-                filter === letter ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:text-foreground'
+                filter === f.key ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:text-foreground'
               )}
-              data-testid={`keys-filter-${letter}`}
+              data-testid={`keys-filter-${f.key}`}
             >
-              Box {letter}
+              {f.label}
             </button>
           ))}
         </div>
@@ -145,12 +153,16 @@ const KeysPage = () => {
           <div className="space-y-2">
             {filtered.map(s => {
               const cps = copies(s);
-              const anyMissing = cps.some(c => c.tracked && !c.present);
+              const anyMissing = cps.some(c => c.tracked && !c.exists);
+              const anyOut = cps.some(c => c.exists && !c.present);
               return (
                 <Card
                   key={s.id}
                   onClick={() => navigate(`/structures/${s.id}?section=access`)}
-                  className={cn('border shadow-none cursor-pointer transition-colors hover:border-primary/40', anyMissing && 'border-red-200 dark:border-red-900/50')}
+                  className={cn(
+                    'border shadow-none cursor-pointer transition-colors hover:border-primary/40',
+                    anyMissing ? 'border-red-200 dark:border-red-900/50' : anyOut && 'border-amber-200 dark:border-amber-900/50'
+                  )}
                   data-testid={`keys-row-${s.id}`}
                 >
                   {/* Desktop row */}
@@ -228,6 +240,16 @@ function CopyCell({ copy, testId }) {
 }
 
 function CopyStatus({ copy }) {
+  if (!copy.tracked) {
+    return <span className="text-muted-foreground text-base">—</span>;
+  }
+  if (!copy.exists) {
+    return (
+      <span className="flex items-center gap-1.5 text-red-600 dark:text-red-400 font-semibold text-sm whitespace-nowrap">
+        <XCircle className="h-4 w-4 shrink-0" />COPIA MANCANTE
+      </span>
+    );
+  }
   if (copy.present) {
     return (
       <span className="flex items-center gap-2 text-base font-medium">
@@ -236,14 +258,11 @@ function CopyStatus({ copy }) {
       </span>
     );
   }
-  if (copy.tracked) {
-    return (
-      <span className="flex items-center gap-1.5 text-red-600 dark:text-red-400 font-semibold text-sm whitespace-nowrap">
-        <XCircle className="h-4 w-4 shrink-0" />COPIA MANCANTE
-      </span>
-    );
-  }
-  return <span className="text-muted-foreground text-base">—</span>;
+  return (
+    <span className="flex items-center gap-1.5 text-amber-600 dark:text-amber-400 font-semibold text-sm whitespace-nowrap">
+      <ArrowUpRight className="h-4 w-4 shrink-0" />FUORI SEDE
+    </span>
+  );
 }
 
 function BoxCard({ letter, label, occupied, capacity, testId }) {
@@ -267,12 +286,14 @@ function OutCard({ letter, label, count, testId }) {
   return (
     <Card className="border shadow-none">
       <CardContent className="p-4">
-        <p className="text-[11px] uppercase tracking-wider text-muted-foreground">Chiavi fuori — Box {letter}</p>
-        <p className={cn('text-3xl font-semibold tabular-nums mt-1', count > 0 ? 'text-red-600' : 'text-emerald-600')} data-testid={testId}>
+        <p className="text-[11px] uppercase tracking-wider text-muted-foreground">Fuori sede — {label}</p>
+        <p className={cn('text-3xl font-semibold tabular-nums mt-1', count > 0 ? 'text-amber-600' : 'text-emerald-600')} data-testid={testId}>
           {count}
         </p>
         <p className="text-xs mt-1 text-muted-foreground">
-          {count === 0 ? `Tutte le copie ${label.toLowerCase()} in lavanderia` : `cop${count === 1 ? 'ia' : 'ie'} attualmente fuori dalla lavanderia`}
+          {count === 0
+            ? `Nessuna copia Box ${letter} fuori dalla lavanderia`
+            : `cop${count === 1 ? 'ia' : 'ie'} Box ${letter} attualmente fuori dalla lavanderia`}
         </p>
       </CardContent>
     </Card>
