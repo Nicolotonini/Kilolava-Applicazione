@@ -173,4 +173,18 @@ export const operationsApi = {
   updateOrderStatus: (id, data) => api.put(`/operations/orders/${id}/status`, data),
 };
 
+export const integrationsApi = {
+  providers: () => api.get('/integrations/providers'),
+  list: () => api.get('/integrations/channel-managers'),
+  create: (data) => api.post('/integrations/channel-managers', data),
+  update: (id, data) => api.put(`/integrations/channel-managers/${id}`, data),
+  remove: (id) => api.delete(`/integrations/channel-managers/${id}`),
+  test: (id) => api.post(`/integrations/channel-managers/${id}/test`),
+  importProperties: (id) => api.post(`/integrations/channel-managers/${id}/import-properties`),
+  mappings: (id) => api.get(`/integrations/channel-managers/${id}/mappings`),
+  updateMapping: (mappingId, data) => api.put(`/integrations/mappings/${mappingId}`, data),
+  sync: (id) => api.post(`/integrations/channel-managers/${id}/sync`),
+  reservations: (params) => api.get('/integrations/reservations', { params }),
+};
+
 export default api;

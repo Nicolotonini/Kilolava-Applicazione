@@ -18,6 +18,7 @@ import RiderViewPage from './pages/RiderViewPage';
 import SettingsPage from './pages/SettingsPage';
 import ActivityLogPage from './pages/ActivityLogPage';
 import UsersPage from './pages/UsersPage';
+import IntegrationsPage from './pages/IntegrationsPage';
 import CleanerView from './pages/CleanerView';
 import MaintenanceView from './pages/MaintenanceView';
 import CleaningPage from './pages/CleaningPage';
@@ -181,6 +182,7 @@ function AppRoutes() {
         <Route path="cleaning" element={<CleaningPage />} />
         <Route path="checklist-templates" element={<ChecklistTemplatesPage />} />
         <Route path="users" element={<UsersPage />} />
+        <Route path="integrations" element={<IntegrationsPage />} />
         <Route path="activity" element={<ActivityLogPage />} />
         <Route path="notifications" element={<NotificationsPage />} />
         <Route path="reports" element={<ReportsPage />} />

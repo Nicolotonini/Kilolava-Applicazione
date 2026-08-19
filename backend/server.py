@@ -6137,9 +6137,11 @@ async def scheduler_status(current_user: dict = Depends(get_current_user)):
 from routes.export_routes import create_export_router  # noqa: E402
 from routes.billing_pdf import create_billing_pdf_router  # noqa: E402
 from routes.activity_log import create_activity_router, init_activity_middleware  # noqa: E402
+from routes.integrations import create_integrations_router  # noqa: E402
 api_router.include_router(create_export_router(get_current_user))
 api_router.include_router(create_billing_pdf_router(get_current_user))
 api_router.include_router(create_activity_router(get_current_user))
+api_router.include_router(create_integrations_router(get_current_user, is_ops_user))
 init_activity_middleware(app, SECRET_KEY, ALGORITHM)
 
 app.include_router(api_router)
@@ -6181,5 +6183,24 @@ async def startup_event():
         scheduler_service.start_scheduler(_check_overdue_tasks)
     except Exception as e:
         logger.error(f"Scheduler startup failed: {e}")
+    # Channel Manager auto-sync (ogni 6 ore, predisposto anche per webhook futuri)
+    try:
+        from apscheduler.triggers.interval import IntervalTrigger
+        from integrations.sync_service import sync_all_connections
+        scheduler_service.scheduler.add_job(
+            sync_all_connections, IntervalTrigger(hours=6), id="cm_auto_sync", replace_existing=True
+        )
+    except Exception as e:
+        logger.error(f"CM auto-sync job registration failed: {e}")
+    # Indici per prenotazioni channel manager (chiave stabile anti-duplicati)
+    try:
+        await db.cm_reservations.create_index(
+            [("connection_id", 1), ("external_id", 1)], unique=True, name="cm_res_stable_key"
+        )
+        await db.cm_property_mappings.create_index(
+            [("connection_id", 1), ("external_id", 1)], unique=True, name="cm_map_key"
+        )
+    except Exception as e:
+        logger.warning(f"CM index creation: {e}")
 
 

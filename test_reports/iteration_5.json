@@ -1,0 +1,60 @@
+{
+  "summary": "Iteration 5 — Channel Manager integrations. Backend: 17/17 pytest tests pass (providers catalog, Kross missing/fake creds error handling, Guesty not_configured stub, full iCal flow create→test→import→link→sync→modify→cancel→idempotency→conflict 400, credentials masking, DELETE preserves cm_reservations, and sync does NOT touch db.events or cleaning collections). Frontend: full E2E via Playwright verified — /integrations page, 2 tabs, add-dialog with provider select, Kross transparency note + hotel_id/username/password fields, Guesty missing_requirements warning, iCal create + card + test-connection-dialog (Connessione riuscita), import properties, mappings section, reservations tab with all filters, mobile 390px layout usable.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "DELETE /api/integrations/channel-managers/{id}", "issue": "cm_property_mappings owned by the deleted connection are left orphaned (their connection_id no longer exists). Reservations preserved correctly (as spec'd), but mappings become dead rows. Consider deleting mappings on connection delete, or exposing an admin cleanup. 3 orphans were cleaned manually during teardown."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_integrations_channel_managers.py",
+    "/app/test_reports/pytest/iteration_5.xml"
+  ],
+  "action_items": [
+    "Consider deleting cm_property_mappings when a connection is deleted (currently orphaned).",
+    "Optional: expose a friendlier connection_name field in the Kross fake-credentials test flow — current response includes provider detail properly, no blocking issue."
+  ],
+  "critical_code_review_comments": [
+    "routes/integrations.py delete_connection removes only cm_connections; orphan cm_property_mappings persist. Either cascade-delete mappings or surface them so admin can garbage-collect.",
+    "sync_service._upsert_reservation writes structure_id from mapping into every reservation, but if the property is not yet mapped (unlinked), structure_id stays None and reservations still get created. That's fine, but the reservations endpoint filter by structure_id will silently miss them until relink — worth documenting.",
+    "integrations/channel_managers/kross.py uses time.sleep(0.08–0.12) inside asyncio.to_thread loops; acceptable but for hotels with many bookings the linear 1-per-day arrivals scan could get slow (see _fetch_sync). Consider pagination fallback only when 'search-reservation' probe fails once, not per-property.",
+    "IntegrationsPage.js does not disable the 'Sincronizza ora' button when the connection has zero linked mappings — clicking still triggers backend which returns errors=['Nessuna struttura collegata...']. Toast surfaces it correctly, but UX-wise the button could be disabled or badge shown.",
+    "Password field placeholder ('Impostata — lascia vuoto per non modificare') is only shown in edit mode — correct. Confirmed masked value '••••••••' is never leaked to the frontend list payload."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_integrations_channel_managers.py"
+  ],
+  "success_rate": {"backend": "100% (17/17)", "frontend": "100% (all flows verified)"},
+  "test_credentials": "Admin: test_user@kilolava.com / TestPass123!",
+  "seed_data_creation": "During tests: TEST_KROSS_EMPTY, TEST_KROSS_FAKE, TEST_GUESTY, TEST_ICAL_FLOW, TEST_ICAL_CONFLICT, TEST_ICAL_DELETE (backend) and TEST_FE_ICAL (frontend). All deleted at teardown; 3 orphan cm_property_mappings from deleted connections were also removed manually. cm_reservations and cm_property_mappings collections are now empty. Real structures (KLV-0001/2/3) untouched — booking_source restored to 'manual' where tests had temporarily set it to 'ical'.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Regression file: /app/backend/tests/test_integrations_channel_managers.py. Run with '-o addopts=\"\"' to bypass xdist parallelism because TestICalFlow is sequential (module-scoped conn_id shared across ordered tests). It boots a per-worker http.server on a free port serving a synthetic .ics feed under /app/backend/tests/_ical_tmp — dates are computed relative to today() so it stays valid indefinitely. Kross fake-credentials test hits apiapp.krossbooking.com and depends on outbound HTTPS; if run offline the assertion still holds as long as the adapter returns a Kross/login-related error rather than 'Errore generico'. Frontend: the ical-server pytest starts a socket on 127.0.0.1 which is not reachable from the browser context — that's fine, only the backend needs to reach it. If a stray /tmp http.server is needed for FE Playwright test, remember /tmp is not persistent across pod restarts.",
+  "detailed_backend_results": {
+    "TestProviders::test_five_providers": "PASS — 5 providers returned; only kross+ical implemented=true; guesty/hostaway/octorate have missing_requirements",
+    "TestKrossErrors::test_kross_missing_credentials": "PASS — error text contains 'Credenziali Kross mancanti: hotel_id, username, password'",
+    "TestKrossErrors::test_kross_fake_credentials_clear_message": "PASS — with fake creds, error mentions Kross/login (LoginError → Italian message), never 'Errore generico'",
+    "TestGuestyStub::test_guesty_test_returns_not_configured": "PASS — ok=false, missing_requirements exposed, no simulated API call",
+    "TestICalFlow::test_01→10": "PASS — full pipeline: create → test (ok=true, reservations_readable=2) → import (1 mapping) → link → conflict 400 on 2nd link ('ha già una fonte prenotazioni principale') → sync created=2 → idempotent unchanged=2 → modify+cancel updated=1 cancelled=1 with history populated → no duplicates → filters (provider/status/structure_id) work",
+    "TestMaskingAndCounts::test_password_never_in_clear": "PASS — all secret fields (password, client_secret) return '••••••••'; linked_structures + reservations_imported counters correct",
+    "TestDeleteKeepsData::test_delete_connection_keeps_reservations": "PASS — cm_reservations survive DELETE (verified via direct mongo count)",
+    "sync_side_effects": "VERIFIED — events count and cleaning_tasks count are identical before/after sync (no events/cleaning generated)"
+  },
+  "detailed_frontend_results": {
+    "sidebar_nav": "Sistema → Integrazioni menu item visible for admin (see mobile screenshot).",
+    "integrations_page": "Loads with 2 tabs (integrations-tab-connections, integrations-tab-reservations) and add-channel-manager-btn.",
+    "add_dialog": "Provider select functional; default Kross → 3 credential fields (hotel_id/username/password); dialog text contains 'app mobile' / 'non ufficiale' Kross transparency note.",
+    "guesty_dialog": "Selecting Guesty shows amber note + missing_requirements list (Client ID, Client Secret, Open API activation).",
+    "ical_create_flow": "Created TEST_FE_ICAL with feed_url http://127.0.0.1:8765/feed.ics → card appeared with iCal badge and 'Da testare' status.",
+    "test_connection_dialog": "Opens with 'Connessione riuscita' + checks (Download feed OK, Parsing iCal OK, 1 prenotazione readable, ultima prenotazione date).",
+    "mappings_section": "Toggled via show-mappings; 'Importa proprietà' creates 1 mapping-row with external_name 'Feed iCal (127.0.0.1:8765)'.",
+    "reservations_tab": "All 6 filters (provider, connection, structure, status, date_from, date_to) render and are interactive.",
+    "mobile_390": "Add-Channel-Manager button, tabs and cards render without overflow on 390x844."
+  },
+  "rca_of_the_issue": "No blocking issues. Only cosmetic/hygiene action: cascade-delete cm_property_mappings when a channel-manager connection is removed to avoid dead rows in the DB."
+}

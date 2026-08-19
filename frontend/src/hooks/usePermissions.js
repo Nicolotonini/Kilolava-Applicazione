@@ -21,7 +21,7 @@ const OPS_ROLES = new Set(['admin', 'operations_manager']);
 const NAV_KEYS = [
   'dashboard', 'calendar', 'clients', 'structures', 'cleaning', 'structure-inventory', 'keys', 'deliveries',
   'pl-jobs', 'pl-history', 'rl-warehouse', 'rl-movements', 'rl-articles',
-  'maintenance', 'documents', 'reports', 'users', 'activity', 'settings',
+  'maintenance', 'documents', 'reports', 'users', 'activity', 'settings', 'integrations',
   // legacy keys kept for compatibility
   'inventory', 'logistics',
 ];

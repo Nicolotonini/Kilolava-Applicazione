@@ -50,6 +50,7 @@ const NAV = [
   {
     type: 'group', key: 'system', icon: Settings, label: 'Sistema', children: [
       { key: 'users', path: '/users', label: 'Utenti & Ruoli' },
+      { key: 'integrations', path: '/integrations', label: 'Integrazioni' },
       { key: 'activity', path: '/activity', label: 'Registro attività' },
       { key: 'settings', path: '/settings', label: 'Impostazioni' },
     ],
@@ -95,6 +96,7 @@ function getBreadcrumb(pathname, search) {
   if (pathname.startsWith('/documents/')) return { title: 'Dettaglio documento', crumbs: [{ label: 'Documenti / DDT', to: '/documents' }] };
   if (pathname === '/reports') return { title: 'Report', crumbs: [{ label: 'Amministrazione' }] };
   if (pathname === '/users') return { title: 'Utenti & Ruoli', crumbs: [{ label: 'Sistema' }] };
+  if (pathname === '/integrations') return { title: 'Integrazioni', crumbs: [{ label: 'Sistema' }] };
   if (pathname === '/activity') return { title: 'Registro attività', crumbs: [{ label: 'Sistema' }] };
   if (pathname === '/settings') return { title: 'Impostazioni', crumbs: [{ label: 'Sistema' }] };
   if (pathname === '/notifications') return { title: 'Notifiche', crumbs: [] };
