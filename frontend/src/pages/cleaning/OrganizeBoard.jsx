@@ -1,202 +1,438 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import api from '../../lib/api';
 import { Button } from '../../components/ui/button';
-import { X, MapPin, GripVertical, UserPlus, Sparkles } from 'lucide-react';
+import { Input } from '../../components/ui/input';
+import { X, MapPin, GripVertical, UserPlus, Sparkles, Search, Settings, Users, Loader2 } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { toast } from 'sonner';
-import { isUnassigned, bedsLabel } from './shared';
-import { DaySelector, ZoneFilter } from './controls';
+import { isUnassigned, bedsLabel, fmtMinutes, CONF_LABEL } from './shared';
+import { DaySelector } from './controls';
+import { OperatorCard } from './BoardCards';
+import { ProposalDialog } from './ProposalDialog';
+import { AvailabilityDialog, BoardSettingsDialog } from './AvailabilityDialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '../../components/ui/dialog';
 
-export function OrganizeBoard({ zones, cleaners, refreshKey, onAssignDialog, onDetail, date, setDate }) {
-  const [tasks, setTasks] = useState(null);
+const CARD_W = 290;
+const CARD_H = 360;
+const GAP = 16;
+const PER_ROW = 4;
+
+export function OrganizeBoard({ date, setDate, onDetail, onAssignDialog, refreshKey }) {
+  const [board, setBoard] = useState(null);
   const [filter, setFilter] = useState('all');
-  const [zoneFilter, setZoneFilter] = useState('all');
-  const [dragOverCol, setDragOverCol] = useState(null);
-  const [localKey, setLocalKey] = useState(0);
+  const [zoom, setZoom] = useState(1);
+  const [positions, setPositions] = useState({});
+  const [selectedIds, setSelectedIds] = useState([]);
+  const [search, setSearch] = useState('');
+  const [dragging, setDragging] = useState(null);
+  const [proposal, setProposal] = useState(null);
+  const [proposing, setProposing] = useState(false);
+  const [availCleaner, setAvailCleaner] = useState(null);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [expandCard, setExpandCard] = useState(null);
+  const [addMemberGroup, setAddMemberGroup] = useState(null);
+  const [highlightId, setHighlightId] = useState(null);
+  const scrollRef = useRef(null);
+  const saveTimer = useRef(null);
+  const layoutLoaded = useRef(false);
 
-  const load = useCallback(() => {
-    api.get('/cleaning-tasks', { params: { date } }).then(r => setTasks(r.data)).catch(() => setTasks([]));
+  const load = useCallback(async () => {
+    try {
+      const r = await api.get('/cleaning-board', { params: { date } });
+      setBoard(r.data);
+      if (!layoutLoaded.current) {
+        setPositions(r.data.layout?.positions || {});
+        if (r.data.layout?.zoom) setZoom(r.data.layout.zoom);
+        layoutLoaded.current = true;
+      }
+    } catch (e) { toast.error('Errore caricamento board'); }
   }, [date]);
-  useEffect(() => { load(); }, [load, refreshKey, localKey]);
+  useEffect(() => { load(); }, [load, refreshKey]);
+  useEffect(() => { setSelectedIds([]); }, [date]);
 
-  const reload = () => setLocalKey(k => k + 1);
+  const tasks = useMemo(() => (board?.tasks || []).filter(t => t.status !== 'cancelled'), [board]);
+  const cleaners = board?.cleaners || [];
+  const groups = board?.groups || [];
+  const threshold = board?.rest_threshold_days || 5;
 
-  const active = useMemo(() => (tasks || []).filter(t => t.status !== 'cancelled'), [tasks]);
+  const cleanersById = useMemo(() => Object.fromEntries(cleaners.map(c => [c.id, c])), [cleaners]);
 
-  const listTasks = useMemo(() => {
-    let list = active;
-    if (zoneFilter !== 'all') list = list.filter(t => t.zone_id === zoneFilter);
-    if (filter === 'unassigned') list = list.filter(isUnassigned);
-    else if (filter === 'assigned') list = list.filter(t => !isUnassigned(t));
-    return list;
-  }, [active, filter, zoneFilter]);
-
-  const byZone = useMemo(() => {
-    const zoneOrder = Object.fromEntries(zones.map((z, i) => [z.id, i]));
-    const groups = {};
-    listTasks.forEach(t => {
-      const key = t.zone_id || '_none';
-      if (!groups[key]) groups[key] = { name: t.zone_name || 'Senza rione', list: [] };
-      groups[key].list.push(t);
-    });
-    return Object.entries(groups).map(([id, g]) => ({ id, ...g }))
-      .sort((a, b) => (zoneOrder[a.id] ?? 999) - (zoneOrder[b.id] ?? 999));
-  }, [listTasks, zones]);
-
-  const unassignedCount = active.filter(isUnassigned).length;
-
-  const assign = async (taskId, cleanerId) => {
-    try {
-      await api.post(`/cleaning-tasks/${taskId}/assign`, { cleaner_id: cleanerId });
-      reload();
-    } catch (e) { toast.error(e.response?.data?.detail || 'Errore assegnazione'); }
-  };
-
-  const unassign = async (taskId, cleanerId) => {
-    try {
-      await api.delete(`/cleaning-tasks/${taskId}/assign/${cleanerId}`);
-      reload();
-    } catch (e) { toast.error(e.response?.data?.detail || 'Errore'); }
-  };
-
-  const saveOrder = async (cleanerId, orderedIds) => {
-    try {
-      await api.put('/cleaning-tasks/route-order', { cleaner_id: cleanerId, ordered_task_ids: orderedIds });
-      reload();
-    } catch (e) { toast.error('Errore nel salvataggio ordine'); }
-  };
-
-  const columnTasks = (cleanerId) =>
-    active
-      .filter(t => (t.assigned_cleaner_ids || []).includes(cleanerId) || t.assigned_cleaner_id === cleanerId)
+  const tasksOf = useCallback((cleanerId) =>
+    tasks.filter(t => (t.assigned_cleaner_ids || []).includes(cleanerId) || t.assigned_cleaner_id === cleanerId)
       .sort((a, b) => {
         const oa = a.route_order?.[cleanerId] ?? 9999;
         const ob = b.route_order?.[cleanerId] ?? 9999;
         if (oa !== ob) return oa - ob;
         return (a.scheduled_time || '99').localeCompare(b.scheduled_time || '99');
-      });
+      }), [tasks]);
 
-  const handleColumnDrop = (e, cleanerId, dropIndex = null) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setDragOverCol(null);
-    let data;
-    try { data = JSON.parse(e.dataTransfer.getData('text/plain')); } catch { return; }
-    if (!data?.taskId) return;
-    const colIds = columnTasks(cleanerId).map(t => t.id);
-    if (data.from === 'col' && data.cleanerId === cleanerId) {
-      const ids = colIds.filter(id => id !== data.taskId);
-      const idx = dropIndex == null ? ids.length : Math.min(dropIndex, ids.length);
-      ids.splice(idx, 0, data.taskId);
-      saveOrder(cleanerId, ids);
-    } else if (!colIds.includes(data.taskId)) {
-      assign(data.taskId, cleanerId);
-    }
+  const cards = useMemo(() => {
+    const groupedIds = new Set(groups.flatMap(g => g.operator_ids || []));
+    const list = [];
+    groups.forEach(g => {
+      const members = (g.operator_ids || []).map(id => cleanersById[id]).filter(Boolean);
+      if (!members.length) return;
+      const seen = new Set();
+      const gTasks = [];
+      tasksOf(members[0].id).forEach(t => { if (!seen.has(t.id)) { seen.add(t.id); gTasks.push(t); } });
+      members.slice(1).forEach(m => tasksOf(m.id).forEach(t => { if (!seen.has(t.id)) { seen.add(t.id); gTasks.push(t); } }));
+      const load = gTasks.reduce((s, t) => s + (t.predicted_duration_minutes || 0), 0);
+      const capacity = members.reduce((s, m) => s + ((m.availability?.max_hours || 8) * 60), 0);
+      const zones = [...new Set(gTasks.map(t => t.zone_name).filter(Boolean))];
+      list.push({
+        id: g.id, isGroup: true, name: g.name || members.map(m => m.name).join(' + '),
+        memberIds: members.map(m => m.id), memberNames: members.map(m => m.name),
+        tasks: gTasks, load, capacity, zonesPath: zones.join(' → '),
+        availability: {}, consecutive_days: 0,
+      });
+    });
+    cleaners.filter(c => !groupedIds.has(c.id)).forEach(c => {
+      const cTasks = tasksOf(c.id);
+      const load = cTasks.reduce((s, t) => s + (t.predicted_duration_minutes || 0), 0);
+      const zones = [...new Set(cTasks.map(t => t.zone_name).filter(Boolean))];
+      list.push({
+        id: c.id, isGroup: false, name: c.name, memberIds: [c.id], memberNames: [c.name],
+        tasks: cTasks, load, capacity: (c.availability?.max_hours || 8) * 60,
+        zonesPath: zones.join(' → '), availability: c.availability || {},
+        consecutive_days: c.consecutive_days || 0, last_rest_day: c.last_rest_day,
+      });
+    });
+    return list;
+  }, [groups, cleaners, cleanersById, tasksOf]);
+
+  const placedCards = useMemo(() => {
+    const occupied = new Set();
+    const out = [];
+    const pos = { ...positions };
+    cards.forEach(c => {
+      let p = pos[c.id];
+      if (p && !occupied.has(`${p.col},${p.row}`)) {
+        occupied.add(`${p.col},${p.row}`);
+      } else {
+        let i = 0;
+        while (occupied.has(`${i % PER_ROW},${Math.floor(i / PER_ROW)}`)) i++;
+        p = { col: i % PER_ROW, row: Math.floor(i / PER_ROW) };
+        occupied.add(`${p.col},${p.row}`);
+      }
+      out.push({ ...c, col: p.col, row: p.row, x: p.col * (CARD_W + GAP), y: p.row * (CARD_H + GAP), w: c.isGroup ? CARD_W + 40 : CARD_W, h: CARD_H });
+    });
+    return out;
+  }, [cards, positions]);
+
+  const contentW = useMemo(() => Math.max(...placedCards.map(c => c.x + c.w), CARD_W) + GAP, [placedCards]);
+  const contentH = useMemo(() => Math.max(...placedCards.map(c => c.y + c.h), CARD_H) + GAP, [placedCards]);
+
+  const saveLayout = useCallback((pos, z) => {
+    clearTimeout(saveTimer.current);
+    saveTimer.current = setTimeout(() => {
+      api.put('/cleaning-board/layout', { positions: pos, zoom: z }).catch(() => {});
+    }, 600);
+  }, []);
+
+  const setZoomAndSave = (z) => { setZoom(z); saveLayout(positions, z); };
+
+  const fitZoom = () => {
+    const w = scrollRef.current?.clientWidth || 1200;
+    const z = Math.min(1, Math.max(0.5, w / contentW));
+    setZoomAndSave(Math.round(z * 100) / 100);
   };
 
-  if (tasks === null) return <p className="text-center py-10 text-muted-foreground">Caricamento...</p>;
+  // ---- mutations ----
+  const assign = async (taskId, cleanerId) => {
+    try { await api.post(`/cleaning-tasks/${taskId}/assign`, { cleaner_id: cleanerId }); load(); }
+    catch (e) { toast.error(e.response?.data?.detail || 'Errore assegnazione'); }
+  };
+  const assignGroup = async (taskId, groupId) => {
+    try { await api.post(`/cleaning-tasks/${taskId}/assign-group`, { group_id: groupId }); load(); }
+    catch (e) { toast.error(e.response?.data?.detail || 'Errore assegnazione gruppo'); }
+  };
+  const unassign = async (taskId, cleanerId) => {
+    try { await api.delete(`/cleaning-tasks/${taskId}/assign/${cleanerId}`); load(); }
+    catch (e) { toast.error(e.response?.data?.detail || 'Errore'); }
+  };
+  const saveOrder = async (memberIds, orderedIds) => {
+    try {
+      for (const cid of memberIds) {
+        await api.put('/cleaning-tasks/route-order', { cleaner_id: cid, ordered_task_ids: orderedIds });
+      }
+      load();
+    } catch (e) { toast.error('Errore nel salvataggio ordine'); }
+  };
+
+  // ---- drag & drop ----
+  const onBoardDrop = (e) => {
+    e.preventDefault();
+    if (dragging?.type !== 'card') return;
+    const content = scrollRef.current?.querySelector('[data-board-content]');
+    if (!content) return;
+    const rect = content.getBoundingClientRect();
+    const x = (e.clientX - rect.left) / zoom;
+    const y = (e.clientY - rect.top) / zoom;
+    let col = Math.max(0, Math.round((x - CARD_W / 2) / (CARD_W + GAP)));
+    let row = Math.max(0, Math.round((y - CARD_H / 2) / (CARD_H + GAP)));
+    const occupied = new Set(placedCards.filter(c => c.id !== dragging.id).map(c => `${c.col},${c.row}`));
+    while (occupied.has(`${col},${row}`)) row += 1;
+    const newPos = { ...positions };
+    placedCards.forEach(c => { if (!newPos[c.id]) newPos[c.id] = { col: c.col, row: c.row }; });
+    newPos[dragging.id] = { col, row };
+    setPositions(newPos);
+    saveLayout(newPos, zoom);
+    setDragging(null);
+  };
+
+  const onDropTask = (card) => {
+    if (dragging?.type === 'task' || dragging?.type === 'chip') {
+      const task = dragging.task;
+      if (dragging.type === 'chip' && dragging.cardId === card.id) { setDragging(null); return; }
+      if (card.isGroup) assignGroup(task.id, card.id);
+      else assign(task.id, card.memberIds[0]);
+    }
+    setDragging(null);
+  };
+
+  const onDropOnChip = (card, index) => {
+    if (dragging?.type === 'chip' && dragging.cardId === card.id) {
+      const ids = card.tasks.map(t => t.id).filter(id => id !== dragging.task.id);
+      ids.splice(Math.min(index, ids.length), 0, dragging.task.id);
+      saveOrder(card.memberIds, ids);
+    } else {
+      onDropTask(card);
+      return;
+    }
+    setDragging(null);
+  };
+
+  const onRemoveTask = (card, task) => {
+    if (card.isGroup) card.memberIds.forEach(cid => { if ((task.assigned_cleaner_ids || []).includes(cid)) unassign(task.id, cid); });
+    else unassign(task.id, card.memberIds[0]);
+  };
+
+  const dragHintFor = (card) => {
+    if (dragging?.type !== 'task' && dragging?.type !== 'chip') return null;
+    const task = dragging.task;
+    if (!task?.zone_name) return null;
+    if (!card.tasks.length) return { ok: true, text: '✓ Prima pulizia del giro' };
+    const zones = new Set(card.tasks.map(t => t.zone_name).filter(Boolean));
+    if (zones.has(task.zone_name)) return { ok: true, text: '✓ Coerente con il giro attuale' };
+    return { ok: false, text: `⚠ Aggiunge uno spostamento verso ${task.zone_name}` };
+  };
+
+  // ---- gruppi ----
+  const createGroup = async () => {
+    try {
+      await api.post('/cleaning-board/groups', { date, operator_ids: selectedIds });
+      toast.success('Gruppo creato');
+      setSelectedIds([]);
+      load();
+    } catch (e) { toast.error(e.response?.data?.detail || 'Errore creazione gruppo'); }
+  };
+
+  const onGroupAction = async (card, action, memberId) => {
+    try {
+      if (action === 'dissolve') {
+        if (!window.confirm('Sciogliere il gruppo? Le pulizie assegnate restano invariate.')) return;
+        await api.delete(`/cleaning-board/groups/${card.id}`);
+        toast.success('Gruppo sciolto: assegnazioni mantenute');
+      } else if (action === 'remove_member') {
+        const remaining = card.memberIds.filter(id => id !== memberId);
+        if (remaining.length < 2) {
+          if (!window.confirm('Rimuovendo questa addetta il gruppo si scioglie. Continuare?')) return;
+          await api.delete(`/cleaning-board/groups/${card.id}`);
+        } else {
+          await api.put(`/cleaning-board/groups/${card.id}`, { operator_ids: remaining });
+        }
+      } else if (action === 'add_member') {
+        setAddMemberGroup(card);
+        return;
+      }
+      load();
+    } catch (e) { toast.error(e.response?.data?.detail || 'Errore'); }
+  };
+
+  // ---- proposta ----
+  const propose = async () => {
+    setProposing(true);
+    try {
+      const r = await api.post(`/cleaning-board/propose?date=${date}`);
+      setProposal(r.data);
+    } catch (e) { toast.error(e.response?.data?.detail || 'Errore proposta'); }
+    finally { setProposing(false); }
+  };
+  const applyProposal = async () => {
+    try {
+      await api.post('/cleaning-board/propose/apply', { assignments: proposal.assignments });
+      toast.success('Proposta applicata: puoi sempre correggere con il drag & drop');
+      setProposal(null);
+      load();
+    } catch (e) { toast.error(e.response?.data?.detail || 'Errore applicazione'); }
+  };
+
+  // ---- ricerca ----
+  const doSearch = (q) => {
+    setSearch(q);
+    if (!q.trim()) { setHighlightId(null); return; }
+    const found = placedCards.find(c => c.name.toLowerCase().includes(q.toLowerCase()));
+    if (found) {
+      setHighlightId(found.id);
+      scrollRef.current?.scrollTo({ left: Math.max(0, found.x * zoom - 60), top: Math.max(0, found.y * zoom - 40), behavior: 'smooth' });
+    } else setHighlightId(null);
+  };
+
+  // ---- lista master sinistra ----
+  const listTasks = useMemo(() => {
+    let list = tasks;
+    if (filter === 'unassigned') list = list.filter(isUnassigned);
+    else if (filter === 'assigned') list = list.filter(t => !isUnassigned(t));
+    return list;
+  }, [tasks, filter]);
+
+  const byZone = useMemo(() => {
+    const out = {};
+    listTasks.forEach(t => {
+      const key = t.zone_name || 'Senza rione';
+      (out[key] = out[key] || []).push(t);
+    });
+    return Object.entries(out).sort((a, b) => a[0].localeCompare(b[0]));
+  }, [listTasks]);
+
+  const summary = useMemo(() => ({
+    total: tasks.length,
+    unassigned: tasks.filter(isUnassigned).length,
+    totalMinutes: tasks.reduce((s, t) => s + (t.predicted_duration_minutes || 0), 0),
+    available: cleaners.filter(c => c.availability?.available !== false).length,
+  }), [tasks, cleaners]);
+
+  const compact = zoom < 0.8;
+
+  if (board === null) return <p className="text-center py-10 text-muted-foreground">Caricamento board...</p>;
 
   return (
-    <div className="space-y-4" data-testid="organize-board">
-      <div className="flex flex-col lg:flex-row lg:items-center gap-3 lg:justify-between">
+    <div className="space-y-3" data-testid="operations-board">
+      {/* Testata */}
+      <div className="flex flex-col xl:flex-row xl:items-center gap-3 xl:justify-between">
         <DaySelector date={date} onChange={setDate} testPrefix="org" />
-        <div className="flex items-center gap-2 text-sm flex-wrap">
-          <span className="font-semibold">{active.length} pulizie</span>
-          <span className={cn('font-medium', unassignedCount > 0 ? 'text-amber-600' : 'text-emerald-600')} data-testid="org-unassigned-count">
-            {unassignedCount} da assegnare
-          </span>
+        <div className="flex items-center gap-2 flex-wrap">
+          <div className="flex items-center gap-2 text-sm flex-wrap" data-testid="board-summary">
+            <span className="font-semibold">{summary.total} pulizie</span>
+            <span className={cn('font-medium', summary.unassigned > 0 ? 'text-amber-600' : 'text-emerald-600')} data-testid="org-unassigned-count">{summary.unassigned} da assegnare</span>
+            <span className="text-muted-foreground">{fmtMinutes(summary.totalMinutes)} previste</span>
+            <span className="text-muted-foreground">{summary.available} addette disponibili</span>
+          </div>
+          <Button onClick={propose} disabled={proposing} className="bg-primary hover:bg-primary/90 text-primary-foreground" data-testid="propose-btn">
+            {proposing ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> : <Sparkles className="h-4 w-4 mr-1.5" />}Proponi organizzazione
+          </Button>
+          <Button variant="ghost" size="icon" className="h-9 w-9" onClick={() => setSettingsOpen(true)} title="Impostazioni board" data-testid="board-settings-btn"><Settings className="h-4 w-4" /></Button>
         </div>
       </div>
 
-      <div className="flex items-center gap-2 flex-wrap">
+      {/* Controlli */}
+      <div className="hidden lg:flex items-center gap-2 flex-wrap">
         {[{ key: 'all', label: 'Tutte' }, { key: 'unassigned', label: 'Da assegnare' }, { key: 'assigned', label: 'Assegnate' }].map(f => (
           <button key={f.key} onClick={() => setFilter(f.key)}
             className={cn('px-3 py-1.5 rounded-full text-xs font-medium',
               filter === f.key ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:text-foreground')}
             data-testid={`org-filter-${f.key}`}>{f.label}</button>
         ))}
-        <ZoneFilter zones={zones} value={zoneFilter} onChange={setZoneFilter} testId="org-zone-filter" />
-        <span className="hidden lg:inline text-[11px] text-muted-foreground ml-auto">Trascina una pulizia sulla colonna dell'addetta per assegnarla</span>
+        <div className="relative ml-2">
+          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+          <Input value={search} onChange={e => doSearch(e.target.value)} placeholder="Cerca addetta..." className="h-8 pl-8 w-44 text-xs" data-testid="board-search-input" />
+        </div>
+        <div className="flex items-center gap-1 ml-auto" data-testid="zoom-controls">
+          {[1, 0.8, 0.6].map(z => (
+            <button key={z} onClick={() => setZoomAndSave(z)}
+              className={cn('px-2.5 py-1 rounded-md text-xs font-medium tabular-nums',
+                zoom === z ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:text-foreground')}
+              data-testid={`zoom-${z * 100}`}>{z * 100}%</button>
+          ))}
+          <button onClick={fitZoom} className="px-2.5 py-1 rounded-md text-xs font-medium bg-muted text-muted-foreground hover:text-foreground" data-testid="zoom-fit">Adatta</button>
+        </div>
       </div>
 
-      {/* ===== Desktop / tablet board ===== */}
-      <div className="hidden lg:flex gap-4 items-start">
-        {/* Left: master list grouped by zone */}
-        <div className="w-72 xl:w-80 shrink-0 space-y-4 max-h-[calc(100vh-16rem)] overflow-y-auto pr-1" data-testid="org-master-list">
-          {byZone.length === 0 && (
-            <div className="text-center py-10 border border-dashed border-border rounded-xl">
-              <Sparkles className="h-6 w-6 mx-auto text-muted-foreground/30 mb-2" />
-              <p className="text-xs text-muted-foreground">Nessuna pulizia</p>
-            </div>
-          )}
-          {byZone.map(g => (
-            <div key={g.id}>
+      {/* ===== Desktop board ===== */}
+      <div className="hidden lg:flex gap-3 items-start">
+        {/* Colonna PULIZIE — sempre visibile */}
+        <div className="w-72 shrink-0 max-h-[calc(100vh-15rem)] overflow-y-auto pr-1 space-y-4" data-testid="org-master-list">
+          <p className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground sticky top-0 bg-background py-1 z-10">Pulizie</p>
+          {byZone.length === 0 && <p className="text-xs text-muted-foreground py-6 text-center border border-dashed border-border rounded-xl">Nessuna pulizia</p>}
+          {byZone.map(([zone, list]) => (
+            <div key={zone}>
               <p className="flex items-center gap-1 text-[11px] font-bold uppercase tracking-wider text-muted-foreground mb-1.5">
-                <MapPin className="h-3 w-3 text-primary" />{g.name} · {g.list.length}
+                <MapPin className="h-3 w-3 text-primary" />{zone} — {list.length}
               </p>
               <div className="space-y-1.5">
-                {g.list.map(t => <MasterChip key={t.id} task={t} onDetail={onDetail} onAssignDialog={onAssignDialog} />)}
+                {list.map(t => (
+                  <MasterChip key={t.id} task={t}
+                    onDragStart={() => setDragging({ type: 'task', task: t })}
+                    onDragEnd={() => setDragging(null)}
+                    onDetail={onDetail} onAssignDialog={onAssignDialog} />
+                ))}
               </div>
             </div>
           ))}
         </div>
 
-        {/* Right: cleaner columns */}
-        <div className="flex-1 flex gap-3 overflow-x-auto pb-2" data-testid="org-columns">
-          {cleaners.map(c => {
-            const colTasks = columnTasks(c.id);
-            return (
-              <div
-                key={c.id}
-                onDragOver={e => { e.preventDefault(); setDragOverCol(c.id); }}
-                onDragLeave={() => setDragOverCol(d => (d === c.id ? null : d))}
-                onDrop={e => handleColumnDrop(e, c.id)}
-                className={cn('w-52 xl:w-56 shrink-0 rounded-xl border-2 transition-colors flex flex-col',
-                  dragOverCol === c.id ? 'border-primary bg-primary/5' : 'border-border bg-muted/20')}
-                data-testid={`cleaner-column-${c.id}`}
-              >
-                <div className="px-3 py-2 border-b border-border/60">
-                  <p className="text-sm font-bold uppercase tracking-wide truncate">{c.name}</p>
-                  <p className="text-[11px] text-muted-foreground">{colTasks.length} pulizie</p>
-                </div>
-                <div className="p-2 space-y-1.5 min-h-[120px] flex-1">
-                  {colTasks.length === 0 && (
-                    <p className="text-[11px] text-muted-foreground/60 text-center py-6">Trascina qui le pulizie</p>
-                  )}
-                  {colTasks.map((t, idx) => (
-                    <ColumnChip
-                      key={t.id}
-                      task={t}
-                      cleanerId={c.id}
-                      index={idx}
-                      onRemove={() => unassign(t.id, c.id)}
-                      onDropOn={(e) => handleColumnDrop(e, c.id, idx)}
-                      onDetail={onDetail}
-                    />
-                  ))}
-                </div>
-              </div>
-            );
-          })}
-          {cleaners.length === 0 && <p className="text-sm text-muted-foreground py-6">Nessuna addetta registrata</p>}
+        {/* Area organizzazione */}
+        <div
+          ref={scrollRef}
+          className="flex-1 overflow-auto rounded-xl border border-border bg-muted/10 h-[calc(100vh-15rem)]"
+          onDragOver={e => e.preventDefault()}
+          onDrop={onBoardDrop}
+          data-testid="board-area"
+        >
+          <div style={{ width: contentW * zoom + 24, height: contentH * zoom + 24, position: 'relative' }}>
+            <div data-board-content style={{ width: contentW, height: contentH, transform: `scale(${zoom})`, transformOrigin: '0 0', position: 'absolute', top: 12, left: 12 }}>
+              {placedCards.map(card => (
+                <OperatorCard
+                  key={card.id}
+                  card={card}
+                  compact={compact}
+                  selected={selectedIds.includes(card.id)}
+                  highlighted={highlightId === card.id}
+                  dragHint={dragHintFor(card)}
+                  restThreshold={threshold}
+                  onSelect={(c) => setSelectedIds(s => s.includes(c.id) ? s.filter(x => x !== c.id) : [...s, c.id])}
+                  onDropTask={onDropTask}
+                  onDragStartCard={(id) => setDragging({ type: 'card', id })}
+                  onDragStartChip={(c, task, index) => setDragging({ type: 'chip', cardId: c.id, task, index })}
+                  onDropOnChip={onDropOnChip}
+                  onRemoveTask={onRemoveTask}
+                  onDetail={onDetail}
+                  onAvailability={(c) => setAvailCleaner(cleanersById[c.memberIds[0]])}
+                  onExpand={setExpandCard}
+                  onGroupAction={onGroupAction}
+                />
+              ))}
+              {placedCards.length === 0 && <p className="text-sm text-muted-foreground p-8">Nessuna addetta registrata</p>}
+            </div>
+          </div>
         </div>
       </div>
 
-      {/* ===== Mobile: simple list with assign buttons ===== */}
+      {/* Barra creazione gruppo */}
+      {selectedIds.length >= 2 && (
+        <div className="hidden lg:flex fixed bottom-6 left-1/2 -translate-x-1/2 z-40 items-center gap-3 rounded-full bg-foreground text-background px-5 py-2.5 shadow-xl">
+          <span className="text-sm font-medium">{selectedIds.length} addette selezionate</span>
+          <Button size="sm" className="h-8 rounded-full bg-primary text-primary-foreground hover:bg-primary/90" onClick={createGroup} data-testid="create-group-btn">
+            <Users className="h-3.5 w-3.5 mr-1.5" />Metti in gruppo
+          </Button>
+          <button onClick={() => setSelectedIds([])} className="text-background/70 hover:text-background" data-testid="clear-selection-btn"><X className="h-4 w-4" /></button>
+        </div>
+      )}
+
+      {/* ===== Mobile: versione semplificata ===== */}
       <div className="lg:hidden space-y-4" data-testid="org-mobile-list">
-        {byZone.map(g => (
-          <div key={g.id}>
+        {byZone.map(([zone, list]) => (
+          <div key={zone}>
             <p className="flex items-center gap-1 text-[11px] font-bold uppercase tracking-wider text-muted-foreground mb-1.5">
-              <MapPin className="h-3 w-3 text-primary" />{g.name} · {g.list.length}
+              <MapPin className="h-3 w-3 text-primary" />{zone} · {list.length}
             </p>
             <div className="space-y-1.5">
-              {g.list.map(t => (
+              {list.map(t => (
                 <div key={t.id} className="flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2">
                   <div className="min-w-0 flex-1" onClick={() => onDetail(t)}>
                     <p className="text-sm font-semibold truncate">{t.structure_name}</p>
                     <p className="text-[11px] text-muted-foreground">
-                      {t.guests_count ? `${t.guests_count} pax` : ''}{bedsLabel(t) ? ` · ${bedsLabel(t)}` : ''}
-                      {t.checkin_today && t.checkin_time ? ` · CI ${t.checkin_time}` : ''}
+                      {t.guests_count ? `${t.guests_count} pax` : ''}{bedsLabel(t) ? ` · ${bedsLabel(t)}` : ''} · ~{fmtMinutes(t.predicted_duration_minutes)}
                     </p>
                     {t.cleaner_names?.length > 0
                       ? <p className="text-[11px] text-primary font-medium">{t.cleaner_names.join(' + ')}</p>
@@ -212,16 +448,37 @@ export function OrganizeBoard({ zones, cleaners, refreshKey, onAssignDialog, onD
         ))}
         {byZone.length === 0 && <p className="text-sm text-muted-foreground text-center py-8">Nessuna pulizia in questa giornata</p>}
       </div>
+
+      {/* Dialogs */}
+      {proposal && <ProposalDialog proposal={proposal} onApply={applyProposal} onClose={() => setProposal(null)} />}
+      {availCleaner && <AvailabilityDialog cleaner={availCleaner} onClose={() => setAvailCleaner(null)} onSaved={() => { setAvailCleaner(null); load(); }} />}
+      {settingsOpen && <BoardSettingsDialog threshold={threshold} onClose={() => setSettingsOpen(false)} onSaved={() => { setSettingsOpen(false); load(); }} />}
+      {expandCard && <ExpandCardDialog card={placedCards.find(c => c.id === expandCard.id) || expandCard} onClose={() => setExpandCard(null)} onDetail={onDetail} />}
+      {addMemberGroup && (
+        <AddMemberDialog
+          group={addMemberGroup}
+          cleaners={cleaners.filter(c => !groups.some(g => (g.operator_ids || []).includes(c.id)))}
+          onClose={() => setAddMemberGroup(null)}
+          onAdd={async (cid) => {
+            try {
+              await api.put(`/cleaning-board/groups/${addMemberGroup.id}`, { operator_ids: [...addMemberGroup.memberIds, cid] });
+              setAddMemberGroup(null);
+              load();
+            } catch (e) { toast.error(e.response?.data?.detail || 'Errore'); }
+          }}
+        />
+      )}
     </div>
   );
 }
 
-function MasterChip({ task, onDetail, onAssignDialog }) {
+const MasterChip = React.memo(function MasterChip({ task, onDragStart, onDragEnd, onDetail, onAssignDialog }) {
   const assigned = !isUnassigned(task);
   return (
     <div
       draggable
-      onDragStart={e => e.dataTransfer.setData('text/plain', JSON.stringify({ taskId: task.id, from: 'list' }))}
+      onDragStart={e => { onDragStart(); e.dataTransfer.setData('text/plain', task.id); }}
+      onDragEnd={onDragEnd}
       onClick={() => onDetail(task)}
       className={cn('group rounded-lg border px-2.5 py-1.5 cursor-grab active:cursor-grabbing select-none transition-colors',
         assigned ? 'border-emerald-300/70 bg-emerald-50/50 dark:bg-emerald-900/10' : 'border-border bg-card hover:border-primary/40')}
@@ -233,7 +490,10 @@ function MasterChip({ task, onDetail, onAssignDialog }) {
           <p className="text-[13px] font-semibold truncate">{task.structure_name}</p>
           <p className="text-[11px] text-muted-foreground truncate">
             {task.guests_count ? `${task.guests_count} pax` : ''}{bedsLabel(task) ? ` · ${bedsLabel(task)}` : ''}
-            {task.checkin_today && task.checkin_time ? ` · CI ${task.checkin_time}` : ''}
+          </p>
+          <p className="text-[11px] text-muted-foreground truncate" data-testid={`org-task-pred-${task.id}`}>
+            ~{fmtMinutes(task.predicted_duration_minutes)} <span className="text-muted-foreground/60">· {CONF_LABEL[task.prediction_confidence] || 'Stima'}</span>
+            {task.checkin_today && task.checkin_time && <span className="text-amber-600 font-semibold"> · CI {task.checkin_time}</span>}
           </p>
           {assigned
             ? <p className="text-[11px] text-emerald-700 dark:text-emerald-400 font-medium truncate" data-testid={`org-task-assigned-${task.id}`}>{(task.cleaner_names || []).join(' + ')}</p>
@@ -250,45 +510,52 @@ function MasterChip({ task, onDetail, onAssignDialog }) {
       </div>
     </div>
   );
+});
+
+function ExpandCardDialog({ card, onClose, onDetail }) {
+  return (
+    <Dialog open onOpenChange={v => !v && onClose()}>
+      <DialogContent className="max-w-sm max-h-[85vh] overflow-y-auto" data-testid="expand-card-dialog">
+        <DialogHeader>
+          <DialogTitle className="uppercase">{card.name}</DialogTitle>
+          <DialogDescription>
+            {card.tasks.length} pulizie · {fmtMinutes(card.load)} previste / {fmtMinutes(card.capacity)} disponibili
+            {card.consecutive_days > 0 ? ` · ${card.consecutive_days}° giorno consecutivo` : ''}
+          </DialogDescription>
+        </DialogHeader>
+        {card.zonesPath && <p className="text-xs text-muted-foreground flex items-center gap-1"><MapPin className="h-3 w-3 text-primary" />{card.zonesPath}</p>}
+        <div className="space-y-1">
+          {card.tasks.map((t, i) => (
+            <div key={t.id} onClick={() => onDetail(t)} className="flex items-center justify-between text-xs rounded-lg bg-muted/40 px-2.5 py-1.5 cursor-pointer">
+              <span className="font-medium">{i + 1}. {t.structure_name}</span>
+              <span className="text-muted-foreground">~{fmtMinutes(t.predicted_duration_minutes)}{t.checkin_today && t.checkin_time ? ` · CI ${t.checkin_time}` : ''}</span>
+            </div>
+          ))}
+          {card.tasks.length === 0 && <p className="text-xs text-muted-foreground text-center py-4">Nessuna pulizia assegnata</p>}
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
 }
 
-function ColumnChip({ task, cleanerId, index, onRemove, onDropOn, onDetail }) {
-  const [over, setOver] = useState(false);
+function AddMemberDialog({ group, cleaners, onClose, onAdd }) {
+  const candidates = cleaners.filter(c => !group.memberIds.includes(c.id));
   return (
-    <div
-      draggable
-      onDragStart={e => {
-        e.stopPropagation();
-        e.dataTransfer.setData('text/plain', JSON.stringify({ taskId: task.id, from: 'col', cleanerId, index }));
-      }}
-      onDragOver={e => { e.preventDefault(); e.stopPropagation(); setOver(true); }}
-      onDragLeave={() => setOver(false)}
-      onDrop={e => { setOver(false); onDropOn(e); }}
-      onClick={() => onDetail(task)}
-      className={cn('rounded-lg border bg-card px-2.5 py-2 cursor-grab active:cursor-grabbing select-none',
-        over ? 'border-primary border-t-4' : 'border-border')}
-      data-testid={`col-chip-${cleanerId}-${task.id}`}
-    >
-      <div className="flex items-start gap-1">
-        <div className="min-w-0 flex-1">
-          <p className="text-[13px] font-semibold truncate flex items-center gap-1">
-            {task.checkin_today && <span className="h-2 w-2 rounded-full bg-amber-500 shrink-0" title="Entrano lo stesso giorno" />}
-            {task.structure_name}
-          </p>
-          <p className="text-[11px] text-muted-foreground truncate">
-            {task.zone_name ? `${task.zone_name} · ` : ''}{task.guests_count ? `${task.guests_count} pax` : ''}
-            {task.checkin_today && task.checkin_time ? ` · CI ${task.checkin_time}` : ''}
-          </p>
+    <Dialog open onOpenChange={v => !v && onClose()}>
+      <DialogContent className="max-w-xs" data-testid="add-member-dialog">
+        <DialogHeader>
+          <DialogTitle>Aggiungi al gruppo</DialogTitle>
+          <DialogDescription>{group.name}</DialogDescription>
+        </DialogHeader>
+        <div className="space-y-1 max-h-60 overflow-y-auto">
+          {candidates.length === 0 && <p className="text-xs text-muted-foreground">Nessuna addetta disponibile</p>}
+          {candidates.map(c => (
+            <button key={c.id} onClick={() => onAdd(c.id)} className="w-full text-left text-sm px-3 py-2 rounded-lg hover:bg-muted/60" data-testid={`add-member-${c.id}`}>
+              {c.name}
+            </button>
+          ))}
         </div>
-        <button
-          onClick={e => { e.stopPropagation(); onRemove(); }}
-          className="text-muted-foreground hover:text-destructive shrink-0"
-          title="Rimuovi questa addetta"
-          data-testid={`col-remove-${cleanerId}-${task.id}`}
-        >
-          <X className="h-3.5 w-3.5" />
-        </button>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }

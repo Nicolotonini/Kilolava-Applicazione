@@ -230,6 +230,9 @@ class StructureCreate(BaseModel):
     check_out_time: Optional[str] = None  # e.g. "10:00"
     bed_config: Optional[dict] = None  # {capacity_total, beds_double, beds_single, sofa_beds, capacity_persons}
     operational_zone_id: Optional[str] = None
+    expected_cleaning_minutes: Optional[int] = None
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
     notes: Optional[str] = None
     is_active: bool = True
 
@@ -255,6 +258,9 @@ class StructureUpdate(BaseModel):
     check_out_time: Optional[str] = None
     bed_config: Optional[dict] = None
     operational_zone_id: Optional[str] = None
+    expected_cleaning_minutes: Optional[int] = None
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
     notes: Optional[str] = None
     is_active: Optional[bool] = None
 
@@ -285,6 +291,9 @@ class StructureResponse(BaseModel):
     bed_config: Optional[dict] = None
     operational_zone_id: Optional[str] = None
     zone_name: Optional[str] = None
+    expected_cleaning_minutes: Optional[int] = None
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
     notes: Optional[str] = None
     is_active: bool
     unit_count: int = 0
@@ -959,6 +968,9 @@ def build_structure_response(structure: dict, client_name: Optional[str], unit_c
         "bed_config": structure.get("bed_config"),
         "operational_zone_id": structure.get("operational_zone_id"),
         "zone_name": structure.get("zone_name"),
+        "expected_cleaning_minutes": structure.get("expected_cleaning_minutes"),
+        "latitude": structure.get("latitude"),
+        "longitude": structure.get("longitude"),
         "notes": structure.get("notes"),
         "is_active": structure.get("is_active", True),
         "unit_count": unit_count,
@@ -5484,6 +5496,389 @@ async def update_cleaning_issue(issue_id: str, current_user: dict = Depends(get_
     new_status = next_map.get(current_status, "acknowledged")
     await db.cleaning_issues.update_one({"id": issue_id}, {"$set": {"status": new_status}})
     return {"status": new_status}
+
+
+# ============== KILOLAVA OPERATIONS BOARD ==============
+
+DEFAULT_AVAILABILITY = {"available": True, "start_time": "08:30", "end_time": "16:30", "max_hours": 8, "notes": ""}
+DEFAULT_REST_THRESHOLD = 5
+
+
+def _hhmm_to_min(s):
+    try:
+        h, m = str(s).split(":")
+        return int(h) * 60 + int(m)
+    except Exception:
+        return None
+
+
+def _bed_load(bd, bs, bf, guests):
+    return 30 + 25 * (bd or 0) + 15 * (bs or 0) + 10 * (bf or 0) + 5 * (guests or 0)
+
+
+def _crew_of(t):
+    ids = t.get("assigned_cleaner_ids") or ([t["assigned_cleaner_id"]] if t.get("assigned_cleaner_id") else [])
+    return max(1, len(ids))
+
+
+def _wavg(vals):
+    tv, tw = 0.0, 0.0
+    for i, v in enumerate(vals):
+        w = 0.85 ** i
+        tv += v * w
+        tw += w
+    return tv / tw if tw else None
+
+
+async def predict_cleaning_duration(structure: dict, beds_double, beds_single, beds_sofa, guests, n_cleaners):
+    """Motore deterministico/statistico: impara dallo storico reale della struttura, pesa i dati recenti."""
+    n_cleaners = max(1, n_cleaners or 1)
+    samples = await db.cleaning_tasks.find(
+        {"structure_id": structure["id"], "status": CleaningTaskStatus.COMPLETED, "duration_minutes": {"$gte": 10}},
+        {"_id": 0, "duration_minutes": 1, "beds_double": 1, "beds_single": 1, "beds_sofa": 1,
+         "guests_count": 1, "assigned_cleaner_ids": 1, "assigned_cleaner_id": 1, "finished_at": 1},
+    ).sort("finished_at", -1).to_list(30)
+    if len(samples) >= 4:
+        durs = sorted(s["duration_minutes"] for s in samples)
+        med = durs[len(durs) // 2]
+        samples = [s for s in samples if 0.4 * med <= s["duration_minutes"] <= 2.5 * med]
+    exact = [s for s in samples
+             if (s.get("beds_double") or 0) == (beds_double or 0)
+             and (s.get("beds_single") or 0) == (beds_single or 0)
+             and (s.get("beds_sofa") or 0) == (beds_sofa or 0)
+             and _crew_of(s) == n_cleaners]
+    if len(exact) >= 3:
+        pred = _wavg([s["duration_minutes"] for s in exact])
+        conf = "alta" if len(exact) >= 5 else "pochi_dati"
+        return int(round(pred)), conf, len(exact)
+    target = _bed_load(beds_double, beds_single, beds_sofa, guests)
+    same_crew = [s for s in samples if _crew_of(s) == n_cleaners]
+    if same_crew:
+        scaled = []
+        for s in same_crew:
+            base = _bed_load(s.get("beds_double"), s.get("beds_single"), s.get("beds_sofa"), s.get("guests_count"))
+            scaled.append(s["duration_minutes"] * (target / base) if base else s["duration_minutes"])
+        return int(round(_wavg(scaled))), "pochi_dati", len(same_crew)
+    if samples:
+        scaled = []
+        for s in samples:
+            base = _bed_load(s.get("beds_double"), s.get("beds_single"), s.get("beds_sofa"), s.get("guests_count"))
+            v = s["duration_minutes"] * (target / base) if base else s["duration_minutes"]
+            v *= (_crew_of(s) / n_cleaners) ** 0.7
+            scaled.append(v)
+        return int(round(_wavg(scaled))), "pochi_dati", len(samples)
+    base = structure.get("expected_cleaning_minutes") or (_bed_load(beds_double, beds_single, beds_sofa, guests) + 10)
+    if n_cleaners >= 2:
+        base = base * (0.65 if n_cleaners == 2 else 0.5)
+    return int(round(base)), "stima_iniziale", 0
+
+
+async def _consecutive_work_days(cleaner_id: str, board_date: str):
+    try:
+        d = datetime.fromisoformat(board_date).date()
+    except Exception:
+        return 0, None
+    start = (d - timedelta(days=60)).isoformat()
+    dates = set()
+    cursor = db.cleaning_tasks.find(
+        {"$or": [{"assigned_cleaner_ids": cleaner_id}, {"assigned_cleaner_id": cleaner_id}],
+         "status": {"$ne": CleaningTaskStatus.CANCELLED},
+         "date": {"$gte": start, "$lte": board_date}},
+        {"_id": 0, "date": 1},
+    )
+    async for t in cursor:
+        dates.add(t["date"])
+    streak = 0
+    cur = d if board_date in dates else d - timedelta(days=1)
+    while cur.isoformat() in dates:
+        streak += 1
+        cur -= timedelta(days=1)
+    last_rest = cur.isoformat()
+    return streak, last_rest
+
+
+async def _get_rest_threshold():
+    doc = await db.app_settings.find_one({"_id": "cleaning_board"}) or {}
+    return doc.get("rest_threshold_days", DEFAULT_REST_THRESHOLD)
+
+
+@api_router.get("/cleaning-board")
+async def get_cleaning_board(date: str, current_user: dict = Depends(get_current_user)):
+    if not is_ops_user(current_user):
+        raise HTTPException(status_code=403, detail="Non autorizzato")
+    raw_tasks = await db.cleaning_tasks.find({"date": date}, {"_id": 0}).sort([("scheduled_time", 1), ("created_at", 1)]).to_list(300)
+    structure_ids = list({t["structure_id"] for t in raw_tasks if t.get("structure_id")})
+    structures = {s["id"]: s async for s in db.structures.find({"id": {"$in": structure_ids}}, {"_id": 0})}
+    tasks = []
+    for t in raw_tasks:
+        enriched = await _enrich_cleaning_task(dict(t))
+        s = structures.get(t.get("structure_id"))
+        if s and t.get("status") != CleaningTaskStatus.CANCELLED:
+            n = _crew_of(t)
+            pred, conf, n_samples = await predict_cleaning_duration(
+                s, t.get("beds_double"), t.get("beds_single"), t.get("beds_sofa"), t.get("guests_count"), n)
+            enriched["predicted_duration_minutes"] = pred
+            enriched["prediction_confidence"] = conf
+            enriched["prediction_samples"] = n_samples
+            if t.get("predicted_duration_minutes") != pred or t.get("prediction_confidence") != conf:
+                await db.cleaning_tasks.update_one({"id": t["id"]}, {"$set": {"predicted_duration_minutes": pred, "prediction_confidence": conf}})
+        tasks.append(enriched)
+    cleaners_raw = await db.users.find({"role": UserRole.CLEANER, "is_active": {"$ne": False}}, {"_id": 0, "id": 1, "name": 1, "ops_availability": 1}).to_list(100)
+    cleaners = []
+    for c in cleaners_raw:
+        streak, last_rest = await _consecutive_work_days(c["id"], date)
+        av = {**DEFAULT_AVAILABILITY, **(c.get("ops_availability") or {})}
+        cleaners.append({"id": c["id"], "name": c["name"], "availability": av,
+                         "consecutive_days": streak, "last_rest_day": last_rest})
+    groups = await db.cleaning_groups.find({"date": date}, {"_id": 0}).to_list(100)
+    layout = await db.board_layouts.find_one({"user_id": current_user["id"]}, {"_id": 0}) or {}
+    return {
+        "date": date,
+        "rest_threshold_days": await _get_rest_threshold(),
+        "tasks": tasks,
+        "cleaners": cleaners,
+        "groups": groups,
+        "layout": {"positions": layout.get("positions", {}), "zoom": layout.get("zoom", 1)},
+    }
+
+
+class BoardLayoutUpdate(BaseModel):
+    positions: dict = {}
+    zoom: float = 1
+
+
+@api_router.put("/cleaning-board/layout")
+async def save_board_layout(data: BoardLayoutUpdate, current_user: dict = Depends(get_current_user)):
+    if not is_ops_user(current_user):
+        raise HTTPException(status_code=403, detail="Non autorizzato")
+    await db.board_layouts.update_one(
+        {"user_id": current_user["id"]},
+        {"$set": {"positions": data.positions, "zoom": data.zoom, "updated_at": now_iso()}},
+        upsert=True,
+    )
+    return {"saved": True}
+
+
+class BoardSettingsUpdate(BaseModel):
+    rest_threshold_days: int
+
+
+@api_router.put("/cleaning-board/settings")
+async def save_board_settings(data: BoardSettingsUpdate, current_user: dict = Depends(get_current_user)):
+    if not is_ops_user(current_user):
+        raise HTTPException(status_code=403, detail="Non autorizzato")
+    await db.app_settings.update_one({"_id": "cleaning_board"}, {"$set": {"rest_threshold_days": max(1, data.rest_threshold_days)}}, upsert=True)
+    return {"rest_threshold_days": max(1, data.rest_threshold_days)}
+
+
+class AvailabilityUpdate(BaseModel):
+    available: Optional[bool] = None
+    start_time: Optional[str] = None
+    end_time: Optional[str] = None
+    max_hours: Optional[float] = None
+    notes: Optional[str] = None
+
+
+@api_router.put("/cleaning-board/cleaners/{cleaner_id}/availability")
+async def update_cleaner_availability(cleaner_id: str, data: AvailabilityUpdate, current_user: dict = Depends(get_current_user)):
+    if not is_ops_user(current_user):
+        raise HTTPException(status_code=403, detail="Non autorizzato")
+    cleaner = await db.users.find_one({"id": cleaner_id, "role": UserRole.CLEANER}, {"_id": 0, "id": 1, "ops_availability": 1})
+    if cleaner is None:
+        raise HTTPException(status_code=404, detail="Addetta non trovata")
+    av = {**DEFAULT_AVAILABILITY, **(cleaner.get("ops_availability") or {})}
+    for field, val in data.dict(exclude_unset=True).items():
+        if val is not None:
+            av[field] = val
+    await db.users.update_one({"id": cleaner_id}, {"$set": {"ops_availability": av}})
+    return av
+
+
+# ---- Gruppi / squadre temporanee ----
+
+class GroupCreate(BaseModel):
+    date: str
+    operator_ids: List[str]
+    name: Optional[str] = None
+
+class GroupUpdate(BaseModel):
+    operator_ids: Optional[List[str]] = None
+    name: Optional[str] = None
+
+
+@api_router.post("/cleaning-board/groups")
+async def create_cleaning_group(data: GroupCreate, current_user: dict = Depends(get_current_user)):
+    if not is_ops_user(current_user):
+        raise HTTPException(status_code=403, detail="Non autorizzato")
+    ids = list(dict.fromkeys(data.operator_ids))
+    if len(ids) < 2:
+        raise HTTPException(status_code=400, detail="Un gruppo richiede almeno 2 addette")
+    existing = await db.cleaning_groups.find({"date": data.date}, {"_id": 0, "operator_ids": 1}).to_list(100)
+    busy = {oid for g in existing for oid in g.get("operator_ids", [])}
+    if busy.intersection(ids):
+        raise HTTPException(status_code=400, detail="Una o più addette fanno già parte di un gruppo in questa giornata")
+    group = {"id": str(uuid.uuid4()), "date": data.date, "operator_ids": ids, "name": data.name,
+             "temporary": True, "created_by": current_user["id"], "created_at": now_iso()}
+    await db.cleaning_groups.insert_one(group)
+    group.pop("_id", None)
+    return group
+
+
+@api_router.put("/cleaning-board/groups/{group_id}")
+async def update_cleaning_group(group_id: str, data: GroupUpdate, current_user: dict = Depends(get_current_user)):
+    if not is_ops_user(current_user):
+        raise HTTPException(status_code=403, detail="Non autorizzato")
+    group = await db.cleaning_groups.find_one({"id": group_id}, {"_id": 0})
+    if not group:
+        raise HTTPException(status_code=404, detail="Gruppo non trovato")
+    update = {}
+    if data.operator_ids is not None:
+        ids = list(dict.fromkeys(data.operator_ids))
+        if len(ids) < 2:
+            raise HTTPException(status_code=400, detail="Un gruppo richiede almeno 2 addette: scioglilo se non serve più")
+        update["operator_ids"] = ids
+    if data.name is not None:
+        update["name"] = data.name
+    if update:
+        await db.cleaning_groups.update_one({"id": group_id}, {"$set": update})
+    return await db.cleaning_groups.find_one({"id": group_id}, {"_id": 0})
+
+
+@api_router.delete("/cleaning-board/groups/{group_id}")
+async def dissolve_cleaning_group(group_id: str, current_user: dict = Depends(get_current_user)):
+    """Scioglie il gruppo: NON tocca le pulizie assegnate né lo storico."""
+    if not is_ops_user(current_user):
+        raise HTTPException(status_code=403, detail="Non autorizzato")
+    result = await db.cleaning_groups.delete_one({"id": group_id})
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Gruppo non trovato")
+    return {"message": "Gruppo sciolto"}
+
+
+class AssignGroupRequest(BaseModel):
+    group_id: str
+
+
+@api_router.post("/cleaning-tasks/{task_id}/assign-group")
+async def assign_group_to_task(task_id: str, data: AssignGroupRequest, current_user: dict = Depends(get_current_user)):
+    """Assegna tutte le addette del gruppo alla pulizia (restano operator_id distinti)."""
+    if not is_ops_user(current_user):
+        raise HTTPException(status_code=403, detail="Non autorizzato")
+    task = await db.cleaning_tasks.find_one({"id": task_id}, {"_id": 0})
+    if not task:
+        raise HTTPException(status_code=404, detail="Task non trovato")
+    group = await db.cleaning_groups.find_one({"id": data.group_id}, {"_id": 0})
+    if not group:
+        raise HTTPException(status_code=404, detail="Gruppo non trovato")
+    ids = _cleaner_ids_of(task)
+    added = [oid for oid in group["operator_ids"] if oid not in ids]
+    ids.extend(added)
+    update = {"assigned_cleaner_ids": ids, "assigned_cleaner_id": ids[0] if ids else None, "updated_at": now_iso()}
+    if task.get("status") == CleaningTaskStatus.UNASSIGNED and ids:
+        update["status"] = CleaningTaskStatus.ASSIGNED
+    await db.cleaning_tasks.update_one({"id": task_id}, {"$set": update})
+    for oid in added:
+        await create_notification(oid, "Nuova pulizia assegnata",
+                                  f"Pulizia il {task.get('date', '')}", "cleaning_assigned", "normal", "cleaning_task", task_id)
+    updated = await db.cleaning_tasks.find_one({"id": task_id}, {"_id": 0})
+    return await _enrich_cleaning_task(updated)
+
+
+# ---- Proposta organizzazione (il software propone, l'Admin decide) ----
+
+@api_router.post("/cleaning-board/propose")
+async def propose_organization(date: str, current_user: dict = Depends(get_current_user)):
+    if not is_ops_user(current_user):
+        raise HTTPException(status_code=403, detail="Non autorizzato")
+    board = await get_cleaning_board(date, current_user)
+    threshold = board["rest_threshold_days"]
+    tasks = [t for t in board["tasks"] if t.get("status") != CleaningTaskStatus.CANCELLED]
+    unassigned = [t for t in tasks if not (t.get("assigned_cleaner_ids") or t.get("assigned_cleaner_id"))]
+    cleaners = [c for c in board["cleaners"] if c["availability"].get("available", True)]
+    if not cleaners:
+        raise HTTPException(status_code=400, detail="Nessuna addetta disponibile in questa giornata")
+    state = {}
+    for c in cleaners:
+        cap = int((c["availability"].get("max_hours") or 8) * 60)
+        load = sum(t.get("predicted_duration_minutes") or 0 for t in tasks
+                   if c["id"] in (t.get("assigned_cleaner_ids") or []))
+        zones = {t.get("zone_name") for t in tasks if c["id"] in (t.get("assigned_cleaner_ids") or []) and t.get("zone_name")}
+        state[c["id"]] = {"cleaner": c, "capacity": cap, "load": load, "zones": zones, "proposed": []}
+    def sort_key(t):
+        ci = _hhmm_to_min(t.get("checkin_time")) if t.get("checkin_today") else None
+        return (0 if ci is not None else 1, ci or 9999, t.get("zone_name") or "zzz")
+    alerts = []
+    assignments = []
+    for t in sorted(unassigned, key=sort_key):
+        pred = t.get("predicted_duration_minutes") or 60
+        best, best_score = None, None
+        for cid, st in state.items():
+            score = 0.0
+            if t.get("zone_name") and t["zone_name"] in st["zones"]:
+                score += 50
+            score += (st["capacity"] - st["load"] - pred) / 10.0
+            if st["cleaner"]["consecutive_days"] >= threshold:
+                score -= 40
+            if st["load"] + pred > st["capacity"]:
+                score -= 100
+            if best_score is None or score > best_score:
+                best, best_score = cid, score
+        st = state[best]
+        st["load"] += pred
+        if t.get("zone_name"):
+            st["zones"].add(t["zone_name"])
+        st["proposed"].append(t)
+        assignments.append({
+            "task_id": t["id"], "structure_name": t.get("structure_name"), "zone_name": t.get("zone_name"),
+            "predicted_duration_minutes": pred, "checkin_time": t.get("checkin_time") if t.get("checkin_today") else None,
+            "cleaner_ids": [best], "cleaner_names": [st["cleaner"]["name"]],
+        })
+        if st["load"] > st["capacity"]:
+            msg = f"{st['cleaner']['name']}: sovraccarico previsto ({st['load']} min su {st['capacity']} disponibili)"
+            if msg not in alerts:
+                alerts.append(msg)
+        if t.get("checkin_today") and pred >= 120:
+            alerts.append(f"{t.get('structure_name')}: consigliate 2 addette per rispettare il check-in {t.get('checkin_time') or ''}".strip())
+    for cid, st in state.items():
+        if st["cleaner"]["consecutive_days"] >= threshold and (st["proposed"] or st["load"] > 0):
+            alerts.append(f"{st['cleaner']['name']} è al {st['cleaner']['consecutive_days']}° giorno consecutivo: valuta riposo")
+    per_cleaner = [{
+        "cleaner_id": cid, "name": st["cleaner"]["name"],
+        "count": len(st["proposed"]), "total_minutes": st["load"], "capacity_minutes": st["capacity"],
+        "zones": sorted(z for z in st["zones"] if z), "consecutive_days": st["cleaner"]["consecutive_days"],
+    } for cid, st in state.items() if st["proposed"] or st["load"] > 0]
+    return {"date": date, "assignments": assignments, "per_cleaner": per_cleaner,
+            "alerts": list(dict.fromkeys(alerts)), "unassigned_count": len(unassigned)}
+
+
+class ProposalApply(BaseModel):
+    assignments: List[dict]
+
+
+@api_router.post("/cleaning-board/propose/apply")
+async def apply_proposal(data: ProposalApply, current_user: dict = Depends(get_current_user)):
+    if not is_ops_user(current_user):
+        raise HTTPException(status_code=403, detail="Non autorizzato")
+    applied = 0
+    order_by_cleaner = {}
+    for a in data.assignments:
+        task = await db.cleaning_tasks.find_one({"id": a.get("task_id")}, {"_id": 0})
+        if not task:
+            continue
+        ids = _cleaner_ids_of(task)
+        for cid in a.get("cleaner_ids", []):
+            if cid not in ids:
+                ids.append(cid)
+            order_by_cleaner.setdefault(cid, []).append(task["id"])
+        update = {"assigned_cleaner_ids": ids, "assigned_cleaner_id": ids[0] if ids else None, "updated_at": now_iso()}
+        if task.get("status") == CleaningTaskStatus.UNASSIGNED and ids:
+            update["status"] = CleaningTaskStatus.ASSIGNED
+        await db.cleaning_tasks.update_one({"id": task["id"]}, {"$set": update})
+        applied += 1
+    for cid, ordered in order_by_cleaner.items():
+        for i, tid in enumerate(ordered):
+            await db.cleaning_tasks.update_one({"id": tid}, {"$set": {f"route_order.{cid}": i}})
+    return {"applied": applied}
 
 
 # ============== MAINTENANCE MODULE ==============

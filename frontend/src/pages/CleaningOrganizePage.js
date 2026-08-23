@@ -7,14 +7,13 @@ import { TaskDetailDialog, AssignDialog } from './cleaning/dialogs';
 export default function CleaningOrganizePage() {
   const [date, setDate] = useState(todayStr());
   const [cleaners, setCleaners] = useState([]);
-  const [zones, setZones] = useState([]);
   const [refreshKey, setRefreshKey] = useState(0);
   const [detailTask, setDetailTask] = useState(null);
   const [assignTask, setAssignTask] = useState(null);
 
   useEffect(() => {
-    Promise.all([api.get('/cleaning-tasks/cleaners'), api.get('/zones')])
-      .then(([c, z]) => { setCleaners(c.data); setZones(z.data); })
+    api.get('/cleaning-tasks/cleaners')
+      .then(c => setCleaners(c.data))
       .catch(e => console.error(e));
   }, []);
 
@@ -25,8 +24,6 @@ export default function CleaningOrganizePage() {
         <p className="text-sm text-muted-foreground">Distribuisci il lavoro tra le addette: trascina una pulizia sulla colonna dell'addetta</p>
       </div>
       <OrganizeBoard
-        zones={zones}
-        cleaners={cleaners}
         refreshKey={refreshKey}
         date={date}
         setDate={setDate}

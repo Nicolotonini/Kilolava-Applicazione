@@ -56,3 +56,16 @@ export const bedsLabel = (task) => {
 };
 
 export const isUnassigned = (task) => !(task.assigned_cleaner_ids || []).length && !task.assigned_cleaner_id;
+
+export const fmtMinutes = (m) => {
+  if (m == null) return '—';
+  const h = Math.floor(m / 60);
+  const mm = Math.round(m % 60);
+  return h ? `${h}h${String(mm).padStart(2, '0')}` : `${mm} min`;
+};
+
+export const CONF_LABEL = {
+  alta: 'Alta affidabilità',
+  pochi_dati: 'Pochi dati',
+  stima_iniziale: 'Stima iniziale',
+};

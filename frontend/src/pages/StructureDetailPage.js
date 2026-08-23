@@ -78,6 +78,7 @@ const StructureDetailPage = () => {
     check_in_time: '15:00', check_out_time: '10:00',
     bed_config: { ...emptyBedConfig },
     operational_zone_id: '',
+    expected_cleaning_minutes: '',
     notes: '', is_active: true,
   });
 
@@ -108,6 +109,7 @@ const StructureDetailPage = () => {
         check_in_time: s.check_in_time || '15:00', check_out_time: s.check_out_time || '10:00',
         bed_config: { ...emptyBedConfig, ...(s.bed_config || {}) },
         operational_zone_id: s.operational_zone_id || '',
+        expected_cleaning_minutes: s.expected_cleaning_minutes || '',
         notes: s.notes || '', is_active: s.is_active !== false,
       });
       const uRes = await unitsApi.getAll({ structure_id: structureId });
@@ -145,7 +147,11 @@ const StructureDetailPage = () => {
     if (!form.client_id) { toast.error('Seleziona il cliente'); return; }
     setSaving(true);
     try {
-      const payload = { ...form, cleaning_template_id: form.cleaning_template_id || null };
+      const payload = {
+        ...form,
+        cleaning_template_id: form.cleaning_template_id || null,
+        expected_cleaning_minutes: form.expected_cleaning_minutes ? parseInt(form.expected_cleaning_minutes) : null,
+      };
       if (isNew) {
         const res = await structuresApi.create(payload);
         toast.success(`Struttura creata — codice ${res.data.klv_code}`);
@@ -348,6 +354,9 @@ function GeneralSection({ form, set, clients, isNew, zones }) {
                 </Select>
               </FieldRow>
             </div>
+            <FieldRow label="Durata pulizia prevista (min)" hint="Stima iniziale usata finché non c'è abbastanza storico reale.">
+              <Input type="number" min={10} max={600} value={form.expected_cleaning_minutes} onChange={e => set('expected_cleaning_minutes', e.target.value)} placeholder="es. 75" className="h-9" data-testid="expected-cleaning-minutes-input" />
+            </FieldRow>
             <FieldRow label="Parcheggio">
               <Input value={form.parking_info} onChange={e => set('parking_info', e.target.value)} placeholder="es. Strisce blu in piazza" className="h-9" data-testid="parking-input" />
             </FieldRow>
