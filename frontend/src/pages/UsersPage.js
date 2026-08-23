@@ -54,6 +54,8 @@ const SidePanel = ({ open, onClose, title, children, wide }) => {
   );
 };
 
+const EMPTY_ANAG = { birth_date: '', address: '', tax_code: '', emergency_contact: '', emergency_phone: '' };
+
 const UsersPage = () => {
   const [users, setUsers] = useState([]);
   const [clients, setClients] = useState([]);
@@ -95,7 +97,7 @@ const UsersPage = () => {
 
   const openNew = () => {
     setEditUser(null);
-    setForm({ first_name: '', last_name: '', email: '', password: '', role: 'cleaner', phone: '', vehicle_type: '', client_id: '', notes: '' });
+    setForm({ first_name: '', last_name: '', email: '', password: '', role: 'cleaner', phone: '', vehicle_type: '', client_id: '', notes: '', anagrafica: { ...EMPTY_ANAG } });
     setPanel(true);
   };
 
@@ -107,6 +109,7 @@ const UsersPage = () => {
       role: user.role || 'cleaner', phone: user.phone || '',
       vehicle_type: user.vehicle_type || '', client_id: user.client_id || '',
       notes: user.notes || '',
+      anagrafica: { ...EMPTY_ANAG, ...(user.anagrafica || {}) },
     });
     setPanel(true);
   };
@@ -300,7 +303,37 @@ const UsersPage = () => {
               </Select>
             </div>
           )}
-          <div className="space-y-2"><Label>Note</Label><Textarea value={form.notes} onChange={e => setForm(p => ({ ...p, notes: e.target.value }))} rows={2} className="resize-none" /></div>
+          <div className="space-y-2"><Label>Note (esigenze particolari)</Label><Textarea value={form.notes} onChange={e => setForm(p => ({ ...p, notes: e.target.value }))} rows={2} className="resize-none" /></div>
+          {form.role !== 'client' && (
+            <div className="space-y-3 rounded-xl border border-border p-3" data-testid="anagrafica-section">
+              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Anagrafica dipendente</p>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-2">
+                  <Label>Data di nascita</Label>
+                  <Input type="date" value={form.anagrafica?.birth_date || ''} onChange={e => setForm(p => ({ ...p, anagrafica: { ...p.anagrafica, birth_date: e.target.value } }))} data-testid="anag-birth-date" />
+                  <p className="text-[10px] text-muted-foreground">Il giorno del compleanno il dipendente sta a casa e non lavora.</p>
+                </div>
+                <div className="space-y-2">
+                  <Label>Codice fiscale</Label>
+                  <Input value={form.anagrafica?.tax_code || ''} onChange={e => setForm(p => ({ ...p, anagrafica: { ...p.anagrafica, tax_code: e.target.value.toUpperCase() } }))} data-testid="anag-tax-code" />
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label>Indirizzo di residenza</Label>
+                <Input value={form.anagrafica?.address || ''} onChange={e => setForm(p => ({ ...p, anagrafica: { ...p.anagrafica, address: e.target.value } }))} data-testid="anag-address" />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-2">
+                  <Label>Contatto di emergenza</Label>
+                  <Input value={form.anagrafica?.emergency_contact || ''} onChange={e => setForm(p => ({ ...p, anagrafica: { ...p.anagrafica, emergency_contact: e.target.value } }))} placeholder="Nome" data-testid="anag-emergency-contact" />
+                </div>
+                <div className="space-y-2">
+                  <Label>Telefono emergenza</Label>
+                  <Input value={form.anagrafica?.emergency_phone || ''} onChange={e => setForm(p => ({ ...p, anagrafica: { ...p.anagrafica, emergency_phone: e.target.value } }))} data-testid="anag-emergency-phone" />
+                </div>
+              </div>
+            </div>
+          )}
         </div>
         <div className="px-5 py-4 border-t border-border flex gap-3 flex-shrink-0">
           <Button variant="outline" onClick={() => setPanel(false)} className="flex-1">Annulla</Button>

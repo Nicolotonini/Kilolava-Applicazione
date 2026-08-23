@@ -115,11 +115,16 @@ export const OperatorCard = React.memo(function OperatorCard({
         </div>
         {card.isGroup ? (
           <p className="text-[10px] text-primary font-medium">GRUPPO · {card.memberNames.length} addette</p>
+        ) : card.is_birthday ? (
+          <p className="text-[10px] font-semibold text-primary" data-testid={`card-birthday-${card.id}`}>🎂 Compleanno — oggi a casa</p>
         ) : (
-          <p className="text-[10px] text-muted-foreground">
-            {unavailable ? 'Non disponibile oggi' : `${av.start_time || '—'} → ${av.end_time || '—'} · max ${av.max_hours || 8}h`}
-            {card.consecutive_days > 0 && <span className={cn('ml-1', restAlert && 'text-amber-600 font-semibold')}> · {card.consecutive_days}° giorno</span>}
-          </p>
+          <>
+            <p className="text-[10px] text-muted-foreground">
+              {unavailable ? 'Non disponibile oggi' : `${av.start_time || '—'} → ${av.end_time || '—'} · max ${av.max_hours || 8}h`}
+              {card.consecutive_days > 0 && <span className={cn('ml-1', restAlert && 'text-amber-600 font-semibold')}> · {card.consecutive_days}° giorno</span>}
+            </p>
+            {av.notes && <p className="text-[10px] text-amber-700 truncate" title={av.notes} data-testid={`card-notes-${card.id}`}>✎ {av.notes}</p>}
+          </>
         )}
       </div>
 

@@ -1,25 +1,44 @@
-import React from 'react';
+import React, { useRef } from 'react';
 import { Button } from '../../components/ui/button';
-import { Input } from '../../components/ui/input';
-import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { ChevronLeft, ChevronRight, CalendarDays } from 'lucide-react';
 import { fmtDayLong, todayStr, shiftDay } from './shared';
 
 export function DaySelector({ date, onChange, testPrefix = 'day' }) {
+  const inputRef = useRef(null);
+  const openPicker = () => {
+    if (inputRef.current?.showPicker) inputRef.current.showPicker();
+    else inputRef.current?.click();
+  };
   return (
     <div className="flex items-center gap-1.5 flex-wrap">
-      <Button variant="outline" size="icon" className="h-9 w-9" onClick={() => onChange(shiftDay(date, -1))} data-testid={`${testPrefix}-prev`}>
-        <ChevronLeft className="h-4 w-4" />
+      <Button variant="outline" size="icon" className="h-11 w-11 rounded-xl" onClick={() => onChange(shiftDay(date, -1))} data-testid={`${testPrefix}-prev`}>
+        <ChevronLeft className="h-5 w-5" />
       </Button>
-      <span className="text-base lg:text-lg font-heading font-semibold capitalize min-w-[190px] text-center" data-testid={`${testPrefix}-label`}>
-        {fmtDayLong(date)}
-      </span>
-      <Button variant="outline" size="icon" className="h-9 w-9" onClick={() => onChange(shiftDay(date, 1))} data-testid={`${testPrefix}-next`}>
-        <ChevronRight className="h-4 w-4" />
+      <button
+        onClick={openPicker}
+        className="relative flex items-center gap-2.5 h-11 px-4 rounded-xl border border-border bg-card hover:border-primary/50 transition-colors"
+        data-testid={`${testPrefix}-date-btn`}
+      >
+        <CalendarDays className="h-5 w-5 text-primary" />
+        <span className="text-base lg:text-lg font-heading font-semibold capitalize whitespace-nowrap" data-testid={`${testPrefix}-label`}>
+          {fmtDayLong(date)}
+        </span>
+        <input
+          ref={inputRef}
+          type="date"
+          value={date}
+          onChange={e => e.target.value && onChange(e.target.value)}
+          className="absolute inset-0 opacity-0 cursor-pointer"
+          tabIndex={-1}
+          data-testid={`${testPrefix}-date-input`}
+        />
+      </button>
+      <Button variant="outline" size="icon" className="h-11 w-11 rounded-xl" onClick={() => onChange(shiftDay(date, 1))} data-testid={`${testPrefix}-next`}>
+        <ChevronRight className="h-5 w-5" />
       </Button>
       {date !== todayStr() && (
-        <Button variant="outline" size="sm" className="h-9" onClick={() => onChange(todayStr())} data-testid={`${testPrefix}-today-btn`}>Oggi</Button>
+        <Button variant="outline" className="h-11 rounded-xl" onClick={() => onChange(todayStr())} data-testid={`${testPrefix}-today-btn`}>Oggi</Button>
       )}
-      <Input type="date" value={date} onChange={e => e.target.value && onChange(e.target.value)} className="h-9 w-36" data-testid={`${testPrefix}-date-input`} />
     </div>
   );
 }

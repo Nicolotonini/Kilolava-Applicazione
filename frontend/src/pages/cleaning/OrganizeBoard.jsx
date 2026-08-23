@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import api from '../../lib/api';
 import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
-import { X, MapPin, GripVertical, UserPlus, Sparkles, Search, Settings, Users, Loader2 } from 'lucide-react';
+import { X, MapPin, GripVertical, UserPlus, Sparkles, Search, Settings, Users, Loader2, Plus } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { toast } from 'sonner';
 import { isUnassigned, bedsLabel, fmtMinutes, CONF_LABEL } from './shared';
@@ -13,11 +13,11 @@ import { AvailabilityDialog, BoardSettingsDialog } from './AvailabilityDialog';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '../../components/ui/dialog';
 
 const CARD_W = 290;
-const CARD_H = 360;
 const GAP = 16;
 const PER_ROW = 4;
+const MAX_CARD_H = 640;
 
-export function OrganizeBoard({ date, setDate, onDetail, onAssignDialog, refreshKey }) {
+export function OrganizeBoard({ date, setDate, onDetail, onAssignDialog, refreshKey, onNewTask }) {
   const [board, setBoard] = useState(null);
   const [filter, setFilter] = useState('all');
   const [zoom, setZoom] = useState(1);
@@ -94,33 +94,57 @@ export function OrganizeBoard({ date, setDate, onDetail, onAssignDialog, refresh
         id: c.id, isGroup: false, name: c.name, memberIds: [c.id], memberNames: [c.name],
         tasks: cTasks, load, capacity: (c.availability?.max_hours || 8) * 60,
         zonesPath: zones.join(' → '), availability: c.availability || {},
+        is_birthday: c.is_birthday || false,
         consecutive_days: c.consecutive_days || 0, last_rest_day: c.last_rest_day,
       });
     });
     return list;
   }, [groups, cleaners, cleanersById, tasksOf]);
 
+  const compact = zoom < 0.8;
+
+  const cardHeight = useCallback((c) => {
+    if (compact) return 175;
+    const header = c.isGroup || c.availability?.notes ? 72 : 58;
+    const info = 88;
+    const footer = c.isGroup ? 76 : 0;
+    const tasksH = Math.max(1, c.tasks.length) * 48 + 14;
+    return Math.min(Math.max(235, header + info + tasksH + footer), MAX_CARD_H);
+  }, [compact]);
+
   const placedCards = useMemo(() => {
-    const occupied = new Set();
-    const out = [];
-    const pos = { ...positions };
+    const byCol = {};
+    const unplaced = [];
     cards.forEach(c => {
-      let p = pos[c.id];
-      if (p && !occupied.has(`${p.col},${p.row}`)) {
-        occupied.add(`${p.col},${p.row}`);
-      } else {
-        let i = 0;
-        while (occupied.has(`${i % PER_ROW},${Math.floor(i / PER_ROW)}`)) i++;
-        p = { col: i % PER_ROW, row: Math.floor(i / PER_ROW) };
-        occupied.add(`${p.col},${p.row}`);
+      const p = positions[c.id];
+      if (p && Number.isInteger(p.col) && p.col >= 0) {
+        (byCol[p.col] = byCol[p.col] || []).push({ c, row: Number.isInteger(p.row) ? p.row : 999 });
+      } else unplaced.push(c);
+    });
+    unplaced.forEach(c => {
+      let best = 0, bestLen = Infinity;
+      for (let i = 0; i < PER_ROW; i++) {
+        const len = (byCol[i] || []).length;
+        if (len < bestLen) { best = i; bestLen = len; }
       }
-      out.push({ ...c, col: p.col, row: p.row, x: p.col * (CARD_W + GAP), y: p.row * (CARD_H + GAP), w: c.isGroup ? CARD_W + 40 : CARD_W, h: CARD_H });
+      (byCol[best] = byCol[best] || []).push({ c, row: 999 });
+    });
+    const out = [];
+    Object.entries(byCol).forEach(([colStr, list]) => {
+      const col = parseInt(colStr);
+      list.sort((a, b) => a.row - b.row);
+      let y = 0;
+      list.forEach((item, i) => {
+        const h = cardHeight(item.c);
+        out.push({ ...item.c, col, row: i, x: col * (CARD_W + GAP), y, w: item.c.isGroup ? CARD_W + 40 : CARD_W, h });
+        y += h + GAP;
+      });
     });
     return out;
-  }, [cards, positions]);
+  }, [cards, positions, cardHeight]);
 
   const contentW = useMemo(() => Math.max(...placedCards.map(c => c.x + c.w), CARD_W) + GAP, [placedCards]);
-  const contentH = useMemo(() => Math.max(...placedCards.map(c => c.y + c.h), CARD_H) + GAP, [placedCards]);
+  const contentH = useMemo(() => Math.max(...placedCards.map(c => c.y + c.h), 235) + GAP, [placedCards]);
 
   const saveLayout = useCallback((pos, z) => {
     clearTimeout(saveTimer.current);
@@ -168,13 +192,19 @@ export function OrganizeBoard({ date, setDate, onDetail, onAssignDialog, refresh
     const rect = content.getBoundingClientRect();
     const x = (e.clientX - rect.left) / zoom;
     const y = (e.clientY - rect.top) / zoom;
-    let col = Math.max(0, Math.round((x - CARD_W / 2) / (CARD_W + GAP)));
-    let row = Math.max(0, Math.round((y - CARD_H / 2) / (CARD_H + GAP)));
-    const occupied = new Set(placedCards.filter(c => c.id !== dragging.id).map(c => `${c.col},${c.row}`));
-    while (occupied.has(`${col},${row}`)) row += 1;
-    const newPos = { ...positions };
-    placedCards.forEach(c => { if (!newPos[c.id]) newPos[c.id] = { col: c.col, row: c.row }; });
-    newPos[dragging.id] = { col, row };
+    const col = Math.max(0, Math.round((x - CARD_W / 2) / (CARD_W + GAP)));
+    const colCards = placedCards.filter(c => c.col === col && c.id !== dragging.id).sort((a, b) => a.y - b.y);
+    let insertAt = colCards.length;
+    for (let i = 0; i < colCards.length; i++) {
+      if (y < colCards[i].y + colCards[i].h / 2) { insertAt = i; break; }
+    }
+    const byCol = {};
+    placedCards.filter(c => c.id !== dragging.id).forEach(c => { (byCol[c.col] = byCol[c.col] || []).push(c); });
+    Object.values(byCol).forEach(l => l.sort((a, b) => a.y - b.y));
+    const target = byCol[col] = byCol[col] || [];
+    target.splice(Math.min(insertAt, target.length), 0, { id: dragging.id });
+    const newPos = {};
+    Object.entries(byCol).forEach(([cStr, list]) => list.forEach((c, i) => { newPos[c.id] = { col: parseInt(cStr), row: i }; }));
     setPositions(newPos);
     saveLayout(newPos, zoom);
     setDragging(null);
@@ -302,8 +332,6 @@ export function OrganizeBoard({ date, setDate, onDetail, onAssignDialog, refresh
     available: cleaners.filter(c => c.availability?.available !== false).length,
   }), [tasks, cleaners]);
 
-  const compact = zoom < 0.8;
-
   if (board === null) return <p className="text-center py-10 text-muted-foreground">Caricamento board...</p>;
 
   return (
@@ -318,6 +346,11 @@ export function OrganizeBoard({ date, setDate, onDetail, onAssignDialog, refresh
             <span className="text-muted-foreground">{fmtMinutes(summary.totalMinutes)} previste</span>
             <span className="text-muted-foreground">{summary.available} addette disponibili</span>
           </div>
+          {onNewTask && (
+            <Button onClick={onNewTask} variant="outline" className="border-primary/40 text-primary hover:bg-primary/5" data-testid="org-new-cleaning-btn">
+              <Plus className="h-4 w-4 mr-1.5" />Nuova pulizia
+            </Button>
+          )}
           <Button onClick={propose} disabled={proposing} className="bg-primary hover:bg-primary/90 text-primary-foreground" data-testid="propose-btn">
             {proposing ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> : <Sparkles className="h-4 w-4 mr-1.5" />}Proponi organizzazione
           </Button>

@@ -233,3 +233,16 @@
         display: contents !important;
     }
 }
+
+@media print {
+    aside, nav, header, [data-mobile-topbar] {
+        display: none !important;
+    }
+    main {
+        margin: 0 !important;
+        padding: 0 !important;
+    }
+    body {
+        background: #fff !important;
+    }
+}

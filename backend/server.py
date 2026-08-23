@@ -138,6 +138,7 @@ class UserResponse(BaseModel):
     client_id: Optional[str] = None
     is_active: bool = True
     notes: Optional[str] = None
+    anagrafica: Optional[dict] = None
     permissions: List[str] = []
     created_at: str
 
@@ -442,6 +443,7 @@ def _build_user_response(user: dict) -> UserResponse:
         phone=user.get("phone"), vehicle_type=user.get("vehicle_type"),
         client_id=user.get("client_id"), is_active=user.get("is_active", True),
         notes=user.get("notes"),
+        anagrafica=user.get("anagrafica"),
         permissions=ROLE_PERMISSIONS.get(role, []),
         created_at=user.get("created_at", ""),
     )
@@ -4158,6 +4160,7 @@ class UserManageCreate(BaseModel):
     vehicle_type: Optional[str] = None
     client_id: Optional[str] = None
     notes: Optional[str] = None
+    anagrafica: Optional[dict] = None
 
 class UserManageUpdate(BaseModel):
     first_name: Optional[str] = None
@@ -4168,6 +4171,7 @@ class UserManageUpdate(BaseModel):
     vehicle_type: Optional[str] = None
     client_id: Optional[str] = None
     notes: Optional[str] = None
+    anagrafica: Optional[dict] = None
     is_active: Optional[bool] = None
 
 
@@ -4227,6 +4231,7 @@ async def create_user(data: UserManageCreate, current_user: dict = Depends(get_c
         "language": "it", "phone": data.phone,
         "vehicle_type": data.vehicle_type, "client_id": data.client_id,
         "is_active": True, "notes": data.notes,
+        "anagrafica": data.anagrafica,
         "created_at": now, "updated_at": now,
     }
     await db.users.insert_one(doc)
@@ -5623,12 +5628,17 @@ async def get_cleaning_board(date: str, current_user: dict = Depends(get_current
             if t.get("predicted_duration_minutes") != pred or t.get("prediction_confidence") != conf:
                 await db.cleaning_tasks.update_one({"id": t["id"]}, {"$set": {"predicted_duration_minutes": pred, "prediction_confidence": conf}})
         tasks.append(enriched)
-    cleaners_raw = await db.users.find({"role": UserRole.CLEANER, "is_active": {"$ne": False}}, {"_id": 0, "id": 1, "name": 1, "ops_availability": 1}).to_list(100)
+    cleaners_raw = await db.users.find({"role": UserRole.CLEANER, "is_active": {"$ne": False}}, {"_id": 0, "id": 1, "name": 1, "ops_availability": 1, "anagrafica": 1}).to_list(100)
     cleaners = []
     for c in cleaners_raw:
         streak, last_rest = await _consecutive_work_days(c["id"], date)
         av = {**DEFAULT_AVAILABILITY, **(c.get("ops_availability") or {})}
+        birth = (c.get("anagrafica") or {}).get("birth_date") or ""
+        is_birthday = bool(birth) and len(birth) >= 10 and birth[5:10] == date[5:10]
+        if is_birthday:
+            av = {**av, "available": False}
         cleaners.append({"id": c["id"], "name": c["name"], "availability": av,
+                         "is_birthday": is_birthday,
                          "consecutive_days": streak, "last_rest_day": last_rest})
     groups = await db.cleaning_groups.find({"date": date}, {"_id": 0}).to_list(100)
     layout = await db.board_layouts.find_one({"user_id": current_user["id"]}, {"_id": 0}) or {}
@@ -5809,6 +5819,9 @@ async def propose_organization(date: str, current_user: dict = Depends(get_curre
         return (0 if ci is not None else 1, ci or 9999, t.get("zone_name") or "zzz")
     alerts = []
     assignments = []
+    for c in board["cleaners"]:
+        if c.get("is_birthday"):
+            alerts.append(f"Oggi è il compleanno di {c['name']}: a casa, non lavora")
     for t in sorted(unassigned, key=sort_key):
         pred = t.get("predicted_duration_minutes") or 60
         best, best_score = None, None
@@ -5820,7 +5833,7 @@ async def propose_organization(date: str, current_user: dict = Depends(get_curre
             if st["cleaner"]["consecutive_days"] >= threshold:
                 score -= 40
             if st["load"] + pred > st["capacity"]:
-                score -= 100
+                score -= 25
             if best_score is None or score > best_score:
                 best, best_score = cid, score
         st = state[best]
