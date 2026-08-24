@@ -25,9 +25,8 @@ export default function CleaningOrganizePage() {
 
   const refresh = () => setRefreshKey(k => k + 1);
 
-    return (
+  return (
     <div className="p-4 lg:p-6 space-y-5" data-testid="cleaning-organize-page">
-      <h1 className="text-xl lg:text-2xl font-heading font-semibold">Organizzazione Pulizie</h1>
       <OrganizeBoard
         refreshKey={refreshKey}
         date={date}

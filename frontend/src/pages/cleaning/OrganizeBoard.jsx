@@ -336,16 +336,10 @@ export function OrganizeBoard({ date, setDate, onDetail, onAssignDialog, refresh
 
   return (
     <div className="space-y-3" data-testid="operations-board">
-      {/* Testata */}
-      <div className="flex flex-col xl:flex-row xl:items-center gap-3 xl:justify-between">
-        <DaySelector date={date} onChange={setDate} testPrefix="org" />
+      {/* Titolo + azioni principali */}
+      <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:justify-between">
+        <h1 className="text-xl lg:text-2xl font-heading font-semibold">Organizzazione Pulizie</h1>
         <div className="flex items-center gap-2 flex-wrap">
-          <div className="flex items-center gap-2 text-sm flex-wrap" data-testid="board-summary">
-            <span className="font-semibold">{summary.total} pulizie</span>
-            <span className={cn('font-medium', summary.unassigned > 0 ? 'text-amber-600' : 'text-emerald-600')} data-testid="org-unassigned-count">{summary.unassigned} da assegnare</span>
-            <span className="text-muted-foreground">{fmtMinutes(summary.totalMinutes)} previste</span>
-            <span className="text-muted-foreground">{summary.available} addette disponibili</span>
-          </div>
           {onNewTask && (
             <Button onClick={onNewTask} variant="outline" className="border-primary/40 text-primary hover:bg-primary/5" data-testid="org-new-cleaning-btn">
               <Plus className="h-4 w-4 mr-1.5" />Nuova pulizia
@@ -355,6 +349,17 @@ export function OrganizeBoard({ date, setDate, onDetail, onAssignDialog, refresh
             {proposing ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> : <Sparkles className="h-4 w-4 mr-1.5" />}Proponi organizzazione
           </Button>
           <Button variant="ghost" size="icon" className="h-9 w-9" onClick={() => setSettingsOpen(true)} title="Impostazioni board" data-testid="board-settings-btn"><Settings className="h-4 w-4" /></Button>
+        </div>
+      </div>
+
+      {/* Giorno + riepilogo */}
+      <div className="flex flex-col xl:flex-row xl:items-center gap-3 xl:justify-between">
+        <DaySelector date={date} onChange={setDate} testPrefix="org" />
+        <div className="flex items-center gap-2 text-sm flex-wrap" data-testid="board-summary">
+          <span className="font-semibold">{summary.total} pulizie</span>
+          <span className={cn('font-medium', summary.unassigned > 0 ? 'text-amber-600' : 'text-emerald-600')} data-testid="org-unassigned-count">{summary.unassigned} da assegnare</span>
+          <span className="text-muted-foreground">{fmtMinutes(summary.totalMinutes)} previste</span>
+          <span className="text-muted-foreground">{summary.available} addette disponibili</span>
         </div>
       </div>
 
