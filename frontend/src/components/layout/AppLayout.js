@@ -189,7 +189,7 @@ const AppLayout = ({ children }) => {
           onClick={onNavigate}
           data-testid={`nav-${entry.key}`}
           className={cn(
-            'flex items-center gap-3 px-3 py-2.5 rounded-md text-[15px] transition-colors',
+            'flex items-center gap-3 px-3 py-2.5 rounded-md text-sm transition-colors',
             active
               ? 'bg-primary/10 text-primary font-semibold'
               : 'text-foreground/70 hover:bg-muted hover:text-foreground'
@@ -208,7 +208,7 @@ const AppLayout = ({ children }) => {
           onClick={() => toggleGroup(entry.key)}
           data-testid={`nav-group-${entry.key}`}
           className={cn(
-            'w-full flex items-center gap-3 px-3 py-2.5 rounded-md text-[15px] transition-colors',
+            'w-full flex items-center gap-3 px-3 py-2.5 rounded-md text-sm transition-colors',
             childActive && !open ? 'text-primary font-medium' : 'text-foreground/70 hover:bg-muted hover:text-foreground'
           )}
         >
@@ -251,7 +251,7 @@ const AppLayout = ({ children }) => {
       </div>
       {isRealAdmin && (
         <>
-          <div className="px-3.5 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+          <div className="px-3.5 pt-2 pb-1 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
             Visualizza come
           </div>
           {ALL_ROLES.map((r) => {
@@ -269,7 +269,7 @@ const AppLayout = ({ children }) => {
               >
                 <RoleIcon className="h-3.5 w-3.5" />
                 <span className="text-xs">{ROLE_LABELS[r]}</span>
-                {isCurrent && <span className="ml-auto text-[10px] text-primary font-semibold">Attivo</span>}
+                {isCurrent && <span className="ml-auto text-xs text-primary font-semibold">Attivo</span>}
               </button>
             );
           })}
@@ -456,14 +456,14 @@ const AppLayout = ({ children }) => {
         </div>
         {isRealAdmin && (
           <div className="px-4 py-2.5 border-b border-border flex-shrink-0">
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1.5">Visualizza come</p>
+            <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1.5">Visualizza come</p>
             <div className="flex flex-wrap gap-1">
               {ALL_ROLES.map((r) => (
                 <button
                   key={r}
                   onClick={() => handleRoleSwitch(r)}
                   className={cn(
-                    'px-2 py-1 rounded-full text-[10px] font-medium transition-colors',
+                    'px-2 py-1 rounded-full text-xs font-medium transition-colors',
                     r === role ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'
                   )}
                 >
@@ -482,7 +482,7 @@ const AppLayout = ({ children }) => {
           </div>
           <div className="flex-1 min-w-0">
             <p className="text-xs font-medium truncate">{user?.name}</p>
-            <p className="text-[10px] text-muted-foreground truncate">{ROLE_LABELS[role]}</p>
+            <p className="text-xs text-muted-foreground truncate">{ROLE_LABELS[role]}</p>
           </div>
           <Button
             variant="ghost"

@@ -226,7 +226,7 @@ const NewOrderPage = () => {
                     <span className="text-sm font-medium">
                       {new Date(s.date + 'T00:00:00').toLocaleDateString('it-IT', { weekday: 'short', day: 'numeric', month: 'short' })}
                     </span>
-                    <span className="text-[10px] opacity-70">{s.slots.length} slot disponibili</span>
+                    <span className="text-xs opacity-70">{s.slots.length} slot disponibili</span>
                   </Button>
                 ))}
               </div>

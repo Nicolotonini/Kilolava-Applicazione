@@ -474,7 +474,7 @@ const DocumentDetailPage = () => {
                   <ShoppingCart className="h-4 w-4 text-purple-600" />
                   <div className="flex-1 min-w-0">
                     <p className="text-xs font-medium">Ordine</p>
-                    <p className="text-[10px] text-muted-foreground truncate">{doc.order_id}</p>
+                    <p className="text-xs text-muted-foreground truncate">{doc.order_id}</p>
                   </div>
                   <ExternalLink className="h-3 w-3 text-muted-foreground" />
                 </button>
@@ -488,7 +488,7 @@ const DocumentDetailPage = () => {
                   <Truck className="h-4 w-4 text-blue-600" />
                   <div className="flex-1 min-w-0">
                     <p className="text-xs font-medium">Task Logistica</p>
-                    <p className="text-[10px] text-muted-foreground truncate">{doc.logistics_task_id}</p>
+                    <p className="text-xs text-muted-foreground truncate">{doc.logistics_task_id}</p>
                   </div>
                   <ExternalLink className="h-3 w-3 text-muted-foreground" />
                 </button>
@@ -502,7 +502,7 @@ const DocumentDetailPage = () => {
                   <Package className="h-4 w-4 text-teal-600" />
                   <div className="flex-1 min-w-0">
                     <p className="text-xs font-medium">Movimento Inventario</p>
-                    <p className="text-[10px] text-muted-foreground truncate">{doc.movement_id}</p>
+                    <p className="text-xs text-muted-foreground truncate">{doc.movement_id}</p>
                   </div>
                   <ExternalLink className="h-3 w-3 text-muted-foreground" />
                 </button>

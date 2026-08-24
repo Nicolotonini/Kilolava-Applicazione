@@ -334,9 +334,9 @@ const InventoryPage = () => {
                   <div key={a.id} className="grid grid-cols-[1fr_110px_80px_80px_80px_70px] items-center gap-2 px-4 py-2.5 hover:bg-accent/30 transition-colors" data-testid={`article-${a.id}`}>
                     <div className="min-w-0">
                       <span className="text-sm font-medium truncate block">{a.name}</span>
-                      {a.notes && <span className="text-[11px] text-muted-foreground truncate block">{a.notes}</span>}
+                      {a.notes && <span className="text-xs text-muted-foreground truncate block">{a.notes}</span>}
                     </div>
-                    <span className={cn("text-[11px] px-1.5 py-0.5 rounded font-medium w-fit", CAT_COLORS[a.category])}>
+                    <span className={cn("text-xs px-1.5 py-0.5 rounded font-medium w-fit", CAT_COLORS[a.category])}>
                       {a.category === 'rental_linen' ? 'Noleggio' : a.category === 'consumable' ? 'Consumabile' : 'Kit'}
                     </span>
                     <span className="text-sm text-right tabular-nums">{a.standard_price.toFixed(2)}</span>
@@ -437,12 +437,12 @@ const InventoryPage = () => {
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                 <Card className="kilolava-card"><CardContent className="p-3">
                   <p className="text-2xl font-bold tabular-nums">{register.total_movements}</p>
-                  <p className="text-[11px] text-muted-foreground">Movimenti totali</p>
+                  <p className="text-xs text-muted-foreground">Movimenti totali</p>
                 </CardContent></Card>
                 {Object.entries(register.totals_by_type || {}).map(([type, count]) => (
                   <Card key={type} className="kilolava-card"><CardContent className="p-3">
                     <p className={cn("text-xl font-bold tabular-nums", MOV_COLORS[type])}>{count}</p>
-                    <p className="text-[11px] text-muted-foreground capitalize">{type.replace('_',' ')}</p>
+                    <p className="text-xs text-muted-foreground capitalize">{type.replace('_',' ')}</p>
                   </CardContent></Card>
                 ))}
               </div>

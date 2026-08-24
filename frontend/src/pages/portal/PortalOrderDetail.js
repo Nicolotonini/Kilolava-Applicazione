@@ -86,7 +86,7 @@ const PortalOrderDetail = () => {
               return (
                 <React.Fragment key={s}>
                   <div className={cn(
-                    "text-[10px] px-2 py-1 rounded-full font-medium whitespace-nowrap",
+                    "text-xs px-2 py-1 rounded-full font-medium whitespace-nowrap",
                     isCurrent ? "bg-[#F24E75] text-white" : isActive ? "bg-green-100 text-green-700" : "bg-muted text-muted-foreground"
                   )}>
                     {STATUS_LABELS[s]}

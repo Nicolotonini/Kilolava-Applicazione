@@ -72,7 +72,7 @@ const StructureInventoryPage = () => {
                     {s.structure_name}
                   </Link>
                   {s.has_negative && (
-                    <span className="flex items-center gap-1 text-[10px] font-semibold text-red-600 bg-red-50 dark:bg-red-900/20 px-2 py-0.5 rounded-full">
+                    <span className="flex items-center gap-1 text-xs font-semibold text-red-600 bg-red-50 dark:bg-red-900/20 px-2 py-0.5 rounded-full">
                       <AlertTriangle className="h-3 w-3" />Saldo negativo
                     </span>
                   )}

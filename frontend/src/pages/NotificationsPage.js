@@ -157,11 +157,11 @@ const NotificationsPage = () => {
                             <div className="flex items-center gap-1.5 mb-0.5">
                               <p className={cn("text-sm", !notif.read ? "font-semibold" : "text-muted-foreground")}>{notif.title}</p>
                               {!notif.read && <div className="w-2 h-2 rounded-full bg-[#F24E75] shrink-0" />}
-                              {notif.priority === 'urgent' && <span className="text-[10px] px-1.5 py-0.5 rounded bg-red-100 text-red-700 font-medium">Urgente</span>}
-                              {notif.priority === 'important' && <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 font-medium">Importante</span>}
+                              {notif.priority === 'urgent' && <span className="text-xs px-1.5 py-0.5 rounded bg-red-100 text-red-700 font-medium">Urgente</span>}
+                              {notif.priority === 'important' && <span className="text-xs px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 font-medium">Importante</span>}
                             </div>
                             <p className="text-xs text-muted-foreground">{notif.message}</p>
-                            <p className="text-[10px] text-muted-foreground/50 mt-1">{formatDate(notif.created_at)}</p>
+                            <p className="text-xs text-muted-foreground/50 mt-1">{formatDate(notif.created_at)}</p>
                           </div>
                           <div className="flex items-center gap-0.5 shrink-0">
                             {!notif.read && (

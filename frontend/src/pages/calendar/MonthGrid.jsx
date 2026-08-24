@@ -39,7 +39,7 @@ export const MonthGrid = ({
           <div key={i}
             className="sticky top-0 z-10 bg-card border-b border-r border-border px-2 py-2 text-center cursor-grab select-none"
             onMouseDown={onPanStart} onMouseMove={onPanMove}>
-            <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">{d}</span>
+            <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">{d}</span>
           </div>
         ))}
         {days.map((day, i) => {
@@ -66,7 +66,7 @@ export const MonthGrid = ({
                   {day.getDate()}
                 </span>
                 {cellEvents.length > 3 && (
-                  <span className="text-[9px] text-muted-foreground">+{cellEvents.length - 3}</span>
+                  <span className="text-xs text-muted-foreground">+{cellEvents.length - 3}</span>
                 )}
               </div>
               <div className="space-y-0.5">
@@ -90,7 +90,7 @@ export const MonthGrid = ({
                     >
                       <div className="flex items-center gap-1">
                         <Icon className={cn("h-2.5 w-2.5 flex-shrink-0", colors.text)} />
-                        <span className={cn("text-[10px] font-medium truncate flex-1", colors.text)}>
+                        <span className={cn("text-xs font-medium truncate flex-1", colors.text)}>
                           {ev.title}
                         </span>
                       </div>

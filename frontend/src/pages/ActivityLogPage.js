@@ -129,17 +129,17 @@ export default function ActivityLogPage() {
                       <td className="px-4 py-2.5 text-xs whitespace-nowrap tabular-nums">{fmtTs(log.timestamp)}</td>
                       <td className="px-3 py-2.5">
                         <p className="text-xs font-medium">{log.user_name || '—'}</p>
-                        {log.user_role && <p className="text-[10px] text-muted-foreground">{ROLE_LABELS[log.user_role] || log.user_role}</p>}
+                        {log.user_role && <p className="text-xs text-muted-foreground">{ROLE_LABELS[log.user_role] || log.user_role}</p>}
                       </td>
                       <td className="px-3 py-2.5">
-                        <span className={cn('inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium', meta.cls)}>
+                        <span className={cn('inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium', meta.cls)}>
                           <ActionIcon className="h-3 w-3" />{meta.label}
                         </span>
                       </td>
                       <td className="px-3 py-2.5 text-xs font-medium">{ENTITY_LABELS[log.entity_type] || log.entity_type || '—'}</td>
                       <td className="px-4 py-2.5 hidden md:table-cell">
-                        <p className="text-[10px] font-mono text-muted-foreground truncate max-w-[320px]">{log.path}</p>
-                        {log.entity_id && <p className="text-[10px] text-muted-foreground/70 font-mono">ID: {log.entity_id.slice(0, 8)}…</p>}
+                        <p className="text-xs font-mono text-muted-foreground truncate max-w-[320px]">{log.path}</p>
+                        {log.entity_id && <p className="text-xs text-muted-foreground/70 font-mono">ID: {log.entity_id.slice(0, 8)}…</p>}
                       </td>
                     </tr>
                   );

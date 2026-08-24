@@ -73,7 +73,7 @@ const PortalHistory = () => {
                   <div className="min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="text-sm font-bold">{order.order_number}</span>
-                      <span className={cn("text-[10px] px-2 py-0.5 rounded-full font-medium", STATUS_BADGE[order.status])}>
+                      <span className={cn("text-xs px-2 py-0.5 rounded-full font-medium", STATUS_BADGE[order.status])}>
                         {STATUS_LABELS[order.status] || order.status}
                       </span>
                     </div>

@@ -9,7 +9,14 @@ module.exports = {
         extend: {
             fontFamily: {
                 sans: ['Inter', 'system-ui', 'sans-serif'],
-                heading: ['Work Sans', 'system-ui', 'sans-serif'],
+                heading: ['Inter', 'system-ui', 'sans-serif'],
+            },
+            fontSize: {
+                xs: ['0.8125rem', { lineHeight: '1.125rem' }],
+                sm: ['0.9375rem', { lineHeight: '1.375rem' }],
+                base: ['1rem', { lineHeight: '1.5rem' }],
+                lg: ['1.125rem', { lineHeight: '1.75rem' }],
+                xl: ['1.25rem', { lineHeight: '1.75rem' }],
             },
             borderRadius: {
                 lg: 'var(--radius)',

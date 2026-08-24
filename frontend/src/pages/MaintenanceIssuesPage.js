@@ -118,8 +118,8 @@ const IssueDetail = ({ issue, onBack, onRefresh, staffList }) => {
         <div className="flex-1">
           <p className="text-sm font-semibold">Dettaglio Issue</p>
         </div>
-        <span className={cn("text-[10px] px-2 py-0.5 rounded-full font-medium", sc.color)}>{sc.label}</span>
-        <span className={cn("text-[10px] px-2 py-0.5 rounded-full font-medium", pc.color)}>{pc.label}</span>
+        <span className={cn("text-xs px-2 py-0.5 rounded-full font-medium", sc.color)}>{sc.label}</span>
+        <span className={cn("text-xs px-2 py-0.5 rounded-full font-medium", pc.color)}>{pc.label}</span>
       </div>
 
       <div className="flex-1 overflow-y-auto p-5 space-y-4">
@@ -128,7 +128,7 @@ const IssueDetail = ({ issue, onBack, onRefresh, staffList }) => {
           <div className="flex items-center gap-2">
             <CatIcon className="h-5 w-5 text-muted-foreground" />
             <h3 className="text-base font-semibold">{cc.label}</h3>
-            {issue.source === 'cleaning' && <span className="text-[10px] px-2 py-0.5 rounded-full bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-300">Da pulizia</span>}
+            {issue.source === 'cleaning' && <span className="text-xs px-2 py-0.5 rounded-full bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-300">Da pulizia</span>}
           </div>
           <p className="text-sm text-muted-foreground">{issue.description}</p>
         </div>
@@ -394,7 +394,7 @@ const MaintenanceIssuesPage = () => {
           ].map(c => (
             <Card key={c.label} className="border"><CardContent className="p-3 text-center">
               <p className={cn("text-xl font-bold", c.cls)}>{c.val}</p>
-              <p className="text-[10px] text-muted-foreground">{c.label}</p>
+              <p className="text-xs text-muted-foreground">{c.label}</p>
             </CardContent></Card>
           ))}
         </div>
@@ -412,7 +412,7 @@ const MaintenanceIssuesPage = () => {
             const cfg = s === 'all' ? { label: `Tutti (${issues.length})` } : STATUS_CONFIG[s];
             const count = s === 'all' ? issues.length : issues.filter(i => i.status === s).length;
             return (
-              <button key={s} className={cn("text-[10px] px-2.5 py-1 rounded-full font-medium border shrink-0 transition-colors",
+              <button key={s} className={cn("text-xs px-2.5 py-1 rounded-full font-medium border shrink-0 transition-colors",
                 statusFilter === s ? "border-[#F24E75] bg-[#F24E75]/10 text-[#F24E75]" : "border-border text-muted-foreground"
               )} onClick={() => setStatusFilter(statusFilter === s ? 'all' : s)}>
                 {s === 'all' ? `Tutti` : cfg.label} {s !== 'all' ? `(${count})` : ''}
@@ -427,7 +427,7 @@ const MaintenanceIssuesPage = () => {
         {['all', ...Object.keys(PRIORITY_CONFIG)].map(p => {
           const cfg = p === 'all' ? { label: 'Tutte' } : PRIORITY_CONFIG[p];
           return (
-            <button key={p} className={cn("text-[10px] px-2.5 py-1 rounded-full font-medium border shrink-0 transition-colors",
+            <button key={p} className={cn("text-xs px-2.5 py-1 rounded-full font-medium border shrink-0 transition-colors",
               priorityFilter === p ? "border-[#F24E75] bg-[#F24E75]/10 text-[#F24E75]" : "border-border text-muted-foreground"
             )} onClick={() => setPriorityFilter(priorityFilter === p ? 'all' : p)}>
               {cfg.label}
@@ -460,12 +460,12 @@ const MaintenanceIssuesPage = () => {
                       <div className="flex items-center gap-2 mb-1 flex-wrap">
                         <CatIcon className="h-4 w-4 text-muted-foreground shrink-0" />
                         <span className="text-sm font-semibold">{cc.label}</span>
-                        <span className={cn("text-[10px] px-1.5 py-0.5 rounded-full font-medium", sc.color)}>{sc.label}</span>
-                        <span className={cn("text-[10px] px-1.5 py-0.5 rounded-full font-medium", pc.color)}>{pc.label}</span>
-                        {issue.source === 'cleaning' && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-300">Pulizia</span>}
+                        <span className={cn("text-xs px-1.5 py-0.5 rounded-full font-medium", sc.color)}>{sc.label}</span>
+                        <span className={cn("text-xs px-1.5 py-0.5 rounded-full font-medium", pc.color)}>{pc.label}</span>
+                        {issue.source === 'cleaning' && <span className="text-xs px-1.5 py-0.5 rounded-full bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-300">Pulizia</span>}
                       </div>
                       <p className="text-xs text-muted-foreground line-clamp-1 mb-1">{issue.description}</p>
-                      <div className="flex items-center gap-3 text-[11px] text-muted-foreground flex-wrap">
+                      <div className="flex items-center gap-3 text-xs text-muted-foreground flex-wrap">
                         {issue.structure_name && <span className="flex items-center gap-1"><MapPin className="h-3 w-3" />{issue.structure_name}{issue.unit_name ? ` / ${issue.unit_name}` : ''}</span>}
                         {issue.assigned_name && <span className="flex items-center gap-1"><User className="h-3 w-3" />{issue.assigned_name}</span>}
                         <span className="flex items-center gap-1"><Clock className="h-3 w-3" />{new Date(issue.created_at).toLocaleDateString('it-IT', { day: '2-digit', month: 'short' })}</span>

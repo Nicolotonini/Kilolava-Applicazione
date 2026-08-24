@@ -97,7 +97,7 @@ function CleanerTaskCard({ task, onOpen, compact }) {
       <CardContent className="p-4 space-y-2">
         <div className="flex items-center justify-between gap-2">
           <p className="font-semibold text-base">{task.structure_name}</p>
-          <Badge className={cn('text-[10px] border-0 shrink-0', sm.cls)}>{sm.label}</Badge>
+          <Badge className={cn('text-xs border-0 shrink-0', sm.cls)}>{sm.label}</Badge>
         </div>
         {task.structure_address && (
           <p className="flex items-center gap-1.5 text-sm text-muted-foreground"><MapPin className="h-4 w-4 shrink-0" />{task.structure_address}</p>
@@ -146,7 +146,7 @@ function TaskWorkScreen({ taskId, onBack }) {
         <Button variant="ghost" size="icon" onClick={onBack} className="h-9 w-9" data-testid="cleaner-back-btn"><ChevronLeft className="h-5 w-5" /></Button>
         <div className="min-w-0">
           <p className="font-semibold text-base truncate">{task.structure_name}</p>
-          <Badge className={cn('text-[10px] border-0', (STATUS_META[task.status] || STATUS_META.assigned).cls)}>
+          <Badge className={cn('text-xs border-0', (STATUS_META[task.status] || STATUS_META.assigned).cls)}>
             {(STATUS_META[task.status] || STATUS_META.assigned).label}
           </Badge>
         </div>
@@ -297,7 +297,7 @@ function BigStat({ label, value }) {
   return (
     <div className="rounded-lg bg-muted/40 p-2.5 text-center">
       <p className="text-2xl font-bold tabular-nums">{value}</p>
-      <p className="text-[11px] uppercase tracking-wide text-muted-foreground">{label}</p>
+      <p className="text-xs uppercase tracking-wide text-muted-foreground">{label}</p>
     </div>
   );
 }

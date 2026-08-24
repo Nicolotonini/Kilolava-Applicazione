@@ -404,7 +404,7 @@ const LogisticsPage = () => {
                 onClick={() => setRiderFilter(riderFilter === r.id ? 'all' : r.id)}
                 data-testid={`rider-chip-${r.id}`}
               >
-                <div className="w-6 h-6 rounded-full bg-primary/10 flex items-center justify-center text-[11px] font-semibold text-primary">
+                <div className="w-6 h-6 rounded-full bg-primary/10 flex items-center justify-center text-xs font-semibold text-primary">
                   {r.name.charAt(0).toUpperCase()}
                 </div>
                 <span className="font-medium">{r.name}</span>
@@ -475,11 +475,11 @@ const LogisticsPage = () => {
                       <div className="min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">
                           <span className="text-sm font-semibold">{TYPE_LABELS[task.task_type]}</span>
-                          <span className={cn("text-[10px] px-1.5 py-0.5 rounded-full font-medium", STATUS_COLORS[task.status])}>
+                          <span className={cn("text-xs px-1.5 py-0.5 rounded-full font-medium", STATUS_COLORS[task.status])}>
                             {STATUS_LABELS[task.status]}
                           </span>
                           {task.route_order > 0 && (
-                            <span className="text-[10px] px-1 py-0.5 bg-muted rounded text-muted-foreground">#{task.route_order}</span>
+                            <span className="text-xs px-1 py-0.5 bg-muted rounded text-muted-foreground">#{task.route_order}</span>
                           )}
                         </div>
                         {task.structure_name && <p className="text-xs text-muted-foreground truncate">{task.client_name ? `${task.client_name} - ` : ''}{task.structure_name}</p>}
@@ -492,7 +492,7 @@ const LogisticsPage = () => {
                     <div className="flex items-center gap-1 flex-shrink-0">
                       {task.status === 'unassigned' && riders.length > 0 && (
                         <Select onValueChange={v => quickAssign(task.id, v)}>
-                          <SelectTrigger className="h-7 w-[90px] text-[11px]" data-testid={`assign-${task.id}`}>
+                          <SelectTrigger className="h-7 w-[90px] text-xs" data-testid={`assign-${task.id}`}>
                             <SelectValue placeholder="Assegna" />
                           </SelectTrigger>
                           <SelectContent>
@@ -501,7 +501,7 @@ const LogisticsPage = () => {
                         </Select>
                       )}
                       {task.rider_name && (
-                        <span className="text-[11px] px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300 font-medium flex items-center gap-1">
+                        <span className="text-xs px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300 font-medium flex items-center gap-1">
                           <User className="h-3 w-3" />{task.rider_name}
                         </span>
                       )}
@@ -510,7 +510,7 @@ const LogisticsPage = () => {
                   {task.items?.length > 0 && (
                     <div className="mt-1.5 flex flex-wrap gap-1">
                       {task.items.map((it, i) => (
-                        <span key={i} className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-muted rounded text-[11px]">
+                        <span key={i} className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-muted rounded text-xs">
                           <span className="font-medium">{it.article_name || it.article_id}</span>
                           <span className="text-muted-foreground">x{it.quantity}</span>
                         </span>

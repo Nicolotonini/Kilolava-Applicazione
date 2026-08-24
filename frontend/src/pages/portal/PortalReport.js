@@ -106,7 +106,7 @@ const PortalReport = () => {
                       style={{ width: `${(data.total / maxBreakdown) * 100}%` }}
                     />
                   </div>
-                  <p className="text-[10px] text-muted-foreground mt-0.5">{data.count} unita</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">{data.count} unita</p>
                 </div>
               ))}
             </div>

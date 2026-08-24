@@ -121,8 +121,8 @@ const DashboardPage = () => {
                 {loading ? '—' : fmtEur(rev.laundry?.total)}
               </p>
               <div className="flex gap-4 mt-2">
-                <span className="text-[11px] text-muted-foreground">Privata <strong className="text-foreground tabular-nums">{fmtEur(rev.laundry?.private)}</strong></span>
-                <span className="text-[11px] text-muted-foreground">Noleggio <strong className="text-foreground tabular-nums">{fmtEur(rev.laundry?.rental)}</strong></span>
+                <span className="text-xs text-muted-foreground">Privata <strong className="text-foreground tabular-nums">{fmtEur(rev.laundry?.private)}</strong></span>
+                <span className="text-xs text-muted-foreground">Noleggio <strong className="text-foreground tabular-nums">{fmtEur(rev.laundry?.rental)}</strong></span>
               </div>
             </CardContent>
           </Card>

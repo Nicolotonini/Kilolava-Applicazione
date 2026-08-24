@@ -143,11 +143,11 @@ const KeysPage = () => {
         <div>
           {/* Desktop table header */}
           <div className={cn('hidden px-4 pb-2 md:sticky md:top-0 md:z-10 bg-background', GRID)} data-testid="keys-table-header">
-            <span className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium">KLV</span>
-            <span className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium">Struttura</span>
-            <span className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium">Box A — Addette</span>
-            <span className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium">Box B — Rider</span>
-            <span className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium">Box C — Emergenza</span>
+            <span className="text-xs uppercase tracking-wider text-muted-foreground font-medium">KLV</span>
+            <span className="text-xs uppercase tracking-wider text-muted-foreground font-medium">Struttura</span>
+            <span className="text-xs uppercase tracking-wider text-muted-foreground font-medium">Box A — Addette</span>
+            <span className="text-xs uppercase tracking-wider text-muted-foreground font-medium">Box B — Rider</span>
+            <span className="text-xs uppercase tracking-wider text-muted-foreground font-medium">Box C — Emergenza</span>
           </div>
 
           <div className="space-y-2">
@@ -169,7 +169,7 @@ const KeysPage = () => {
                   <CardContent className={cn('hidden p-4', GRID)}>
                     <span className="px-2 py-1 rounded-md bg-primary/10 text-primary font-mono text-sm font-bold w-fit whitespace-nowrap">{s.klv_code || '—'}</span>
                     <div className="min-w-0">
-                      <p className="font-semibold text-[15px] truncate">{s.name}</p>
+                      <p className="font-semibold text-sm truncate">{s.name}</p>
                       <div className="flex items-center gap-3 mt-0.5 flex-wrap">
                         {s.address && (
                           <span className="flex items-center gap-1 text-xs text-muted-foreground">
@@ -196,7 +196,7 @@ const KeysPage = () => {
                   <CardContent className="p-4 md:hidden space-y-2.5">
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="px-2 py-0.5 rounded-md bg-primary/10 text-primary font-mono text-sm font-bold">{s.klv_code || '—'}</span>
-                      <p className="font-semibold text-[15px]">{s.name}</p>
+                      <p className="font-semibold text-sm">{s.name}</p>
                     </div>
                     {s.address && (
                       <p className="flex items-center gap-1 text-xs text-muted-foreground">
@@ -270,7 +270,7 @@ function BoxCard({ letter, label, occupied, capacity, testId }) {
   return (
     <Card className="border shadow-none">
       <CardContent className="p-4">
-        <p className="text-[11px] uppercase tracking-wider text-muted-foreground">Box {letter} — {label}</p>
+        <p className="text-xs uppercase tracking-wider text-muted-foreground">Box {letter} — {label}</p>
         <p className="text-3xl font-semibold tabular-nums mt-1" data-testid={testId}>
           {occupied} <span className="text-base text-muted-foreground font-normal">/ {capacity}</span>
         </p>
@@ -286,7 +286,7 @@ function OutCard({ letter, label, count, testId }) {
   return (
     <Card className="border shadow-none">
       <CardContent className="p-4">
-        <p className="text-[11px] uppercase tracking-wider text-muted-foreground">Fuori sede — {label}</p>
+        <p className="text-xs uppercase tracking-wider text-muted-foreground">Fuori sede — {label}</p>
         <p className={cn('text-3xl font-semibold tabular-nums mt-1', count > 0 ? 'text-amber-600' : 'text-emerald-600')} data-testid={testId}>
           {count}
         </p>

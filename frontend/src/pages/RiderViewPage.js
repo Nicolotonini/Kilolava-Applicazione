@@ -145,7 +145,7 @@ const RiderViewPage = () => {
             </div>
             <div>
               <p className="text-sm font-semibold leading-tight">{user?.name}</p>
-              <p className="text-[11px] text-muted-foreground">Rider</p>
+              <p className="text-xs text-muted-foreground">Rider</p>
             </div>
           </div>
           <div className="flex items-center gap-1">
@@ -288,7 +288,7 @@ const TaskCard = ({
               <div className="min-w-0">
                 <div className="flex items-center gap-2">
                   <span className="text-sm font-semibold">{TYPE_LABELS[task.task_type]}</span>
-                  <span className={cn("text-[10px] px-1.5 py-0.5 rounded-full font-medium", STATUS_BADGE[task.status])}>
+                  <span className={cn("text-xs px-1.5 py-0.5 rounded-full font-medium", STATUS_BADGE[task.status])}>
                     {STATUS_LABELS[task.status]}
                   </span>
                 </div>
@@ -320,7 +320,7 @@ const TaskCard = ({
             {/* Items */}
             {task.items?.length > 0 && (
               <div>
-                <p className="text-[11px] font-medium text-muted-foreground uppercase mb-1">Articoli</p>
+                <p className="text-xs font-medium text-muted-foreground uppercase mb-1">Articoli</p>
                 {task.items.map((it, i) => (
                   <div key={i} className="flex items-center justify-between py-1 text-sm">
                     <span>{it.article_name || it.article_id}</span>
@@ -335,7 +335,7 @@ const TaskCard = ({
             {/* Access details */}
             {task.access_details && (
               <div className="bg-muted/50 rounded-lg p-2.5">
-                <p className="text-[11px] font-medium text-muted-foreground uppercase mb-0.5">Accesso</p>
+                <p className="text-xs font-medium text-muted-foreground uppercase mb-0.5">Accesso</p>
                 <p className="text-sm flex items-start gap-1.5">
                   <KeyRound className="h-3.5 w-3.5 mt-0.5 flex-shrink-0 text-muted-foreground" />
                   {task.access_details}
@@ -346,21 +346,21 @@ const TaskCard = ({
             {/* Notes */}
             {task.notes && (
               <div>
-                <p className="text-[11px] font-medium text-muted-foreground uppercase mb-0.5">Note</p>
+                <p className="text-xs font-medium text-muted-foreground uppercase mb-0.5">Note</p>
                 <p className="text-sm">{task.notes}</p>
               </div>
             )}
 
             {task.problem_notes && (
               <div className="bg-red-50 dark:bg-red-950/30 rounded-lg p-2.5">
-                <p className="text-[11px] font-medium text-red-600 uppercase mb-0.5">Problema</p>
+                <p className="text-xs font-medium text-red-600 uppercase mb-0.5">Problema</p>
                 <p className="text-sm text-red-700 dark:text-red-300">{task.problem_notes}</p>
               </div>
             )}
 
             {task.completion_notes && (
               <div className="bg-green-50 dark:bg-green-950/30 rounded-lg p-2.5">
-                <p className="text-[11px] font-medium text-green-600 uppercase mb-0.5">Note completamento</p>
+                <p className="text-xs font-medium text-green-600 uppercase mb-0.5">Note completamento</p>
                 <p className="text-sm">{task.completion_notes}</p>
               </div>
             )}

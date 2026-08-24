@@ -108,10 +108,10 @@ const TaskDetail = ({ task, onBack, onRefresh }) => {
             <p className="text-sm font-semibold truncate flex items-center gap-2">
               <CatIcon className="h-4 w-4 shrink-0" />{cc.label}
             </p>
-            <p className="text-[11px] text-muted-foreground">{task.structure_name || 'Intervento'}</p>
+            <p className="text-xs text-muted-foreground">{task.structure_name || 'Intervento'}</p>
           </div>
-          <span className={cn("text-[10px] px-2 py-0.5 rounded-full font-medium", sb.cls)}>{sb.label}</span>
-          <span className={cn("text-[10px] px-2 py-0.5 rounded-full font-medium", pb.cls)}>{pb.label}</span>
+          <span className={cn("text-xs px-2 py-0.5 rounded-full font-medium", sb.cls)}>{sb.label}</span>
+          <span className={cn("text-xs px-2 py-0.5 rounded-full font-medium", pb.cls)}>{pb.label}</span>
         </div>
       </div>
 
@@ -312,7 +312,7 @@ const MaintenanceView = () => {
             </div>
             <div>
               <p className="text-sm font-semibold leading-tight">{user?.name}</p>
-              <p className="text-[11px] text-muted-foreground">Manutenzione</p>
+              <p className="text-xs text-muted-foreground">Manutenzione</p>
             </div>
           </div>
           <div className="flex items-center gap-1">
@@ -380,12 +380,12 @@ const MaintenanceView = () => {
                         </div>
                       </div>
                       <div className="flex flex-col items-end gap-1">
-                        <span className={cn("text-[10px] px-2 py-0.5 rounded-full font-medium", sb.cls)}>{sb.label}</span>
-                        <span className={cn("text-[10px] px-2 py-0.5 rounded-full font-medium", pb.cls)}>{pb.label}</span>
+                        <span className={cn("text-xs px-2 py-0.5 rounded-full font-medium", sb.cls)}>{sb.label}</span>
+                        <span className={cn("text-xs px-2 py-0.5 rounded-full font-medium", pb.cls)}>{pb.label}</span>
                       </div>
                     </div>
                     <p className="text-xs text-muted-foreground line-clamp-2 mb-2">{task.description}</p>
-                    <div className="flex items-center justify-between text-[11px] text-muted-foreground">
+                    <div className="flex items-center justify-between text-xs text-muted-foreground">
                       <span className="flex items-center gap-1"><Clock className="h-3 w-3" />{new Date(task.created_at).toLocaleDateString('it-IT', { day: '2-digit', month: 'short' })}</span>
                       {task.scheduled_date && <span>Programmato: {new Date(task.scheduled_date + 'T00:00:00').toLocaleDateString('it-IT', { day: '2-digit', month: 'short' })}</span>}
                       <ChevronRight className="h-4 w-4" />

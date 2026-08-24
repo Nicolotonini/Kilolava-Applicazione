@@ -390,11 +390,11 @@ export function OrganizeBoard({ date, setDate, onDetail, onAssignDialog, refresh
       <div className="hidden lg:flex gap-3 items-start">
         {/* Colonna PULIZIE — sempre visibile */}
         <div className="w-72 shrink-0 max-h-[calc(100vh-15rem)] overflow-y-auto pr-1 space-y-4" data-testid="org-master-list">
-          <p className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground sticky top-0 bg-background py-1 z-10">Pulizie</p>
+          <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground sticky top-0 bg-background py-1 z-10">Pulizie</p>
           {byZone.length === 0 && <p className="text-xs text-muted-foreground py-6 text-center border border-dashed border-border rounded-xl">Nessuna pulizia</p>}
           {byZone.map(([zone, list]) => (
             <div key={zone}>
-              <p className="flex items-center gap-1 text-[11px] font-bold uppercase tracking-wider text-muted-foreground mb-1.5">
+              <p className="flex items-center gap-1 text-xs font-bold uppercase tracking-wider text-muted-foreground mb-1.5">
                 <MapPin className="h-3 w-3 text-primary" />{zone} — {list.length}
               </p>
               <div className="space-y-1.5">
@@ -461,7 +461,7 @@ export function OrganizeBoard({ date, setDate, onDetail, onAssignDialog, refresh
       <div className="lg:hidden space-y-4" data-testid="org-mobile-list">
         {byZone.map(([zone, list]) => (
           <div key={zone}>
-            <p className="flex items-center gap-1 text-[11px] font-bold uppercase tracking-wider text-muted-foreground mb-1.5">
+            <p className="flex items-center gap-1 text-xs font-bold uppercase tracking-wider text-muted-foreground mb-1.5">
               <MapPin className="h-3 w-3 text-primary" />{zone} · {list.length}
             </p>
             <div className="space-y-1.5">
@@ -469,12 +469,12 @@ export function OrganizeBoard({ date, setDate, onDetail, onAssignDialog, refresh
                 <div key={t.id} className="flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2">
                   <div className="min-w-0 flex-1" onClick={() => onDetail(t)}>
                     <p className="text-sm font-semibold truncate">{t.structure_name}</p>
-                    <p className="text-[11px] text-muted-foreground">
+                    <p className="text-xs text-muted-foreground">
                       {t.guests_count ? `${t.guests_count} pax` : ''}{bedsLabel(t) ? ` · ${bedsLabel(t)}` : ''} · ~{fmtMinutes(t.predicted_duration_minutes)}
                     </p>
                     {t.cleaner_names?.length > 0
-                      ? <p className="text-[11px] text-primary font-medium">{t.cleaner_names.join(' + ')}</p>
-                      : <p className="text-[11px] text-amber-600 font-medium">Da assegnare</p>}
+                      ? <p className="text-xs text-primary font-medium">{t.cleaner_names.join(' + ')}</p>
+                      : <p className="text-xs text-amber-600 font-medium">Da assegnare</p>}
                   </div>
                   <Button variant="outline" size="sm" className="h-8 text-xs shrink-0" onClick={() => onAssignDialog(t)} data-testid={`mobile-assign-${t.id}`}>
                     <UserPlus className="h-3.5 w-3.5 mr-1" />Assegna
@@ -525,17 +525,17 @@ const MasterChip = React.memo(function MasterChip({ task, onDragStart, onDragEnd
       <div className="flex items-center gap-1.5">
         <GripVertical className="h-3.5 w-3.5 text-muted-foreground/50 shrink-0" />
         <div className="min-w-0 flex-1">
-          <p className="text-[13px] font-semibold truncate">{task.structure_name}</p>
-          <p className="text-[11px] text-muted-foreground truncate">
+          <p className="text-sm font-semibold truncate">{task.structure_name}</p>
+          <p className="text-xs text-muted-foreground truncate">
             {task.guests_count ? `${task.guests_count} pax` : ''}{bedsLabel(task) ? ` · ${bedsLabel(task)}` : ''}
           </p>
-          <p className="text-[11px] text-muted-foreground truncate" data-testid={`org-task-pred-${task.id}`}>
+          <p className="text-xs text-muted-foreground truncate" data-testid={`org-task-pred-${task.id}`}>
             ~{fmtMinutes(task.predicted_duration_minutes)} <span className="text-muted-foreground/60">· {CONF_LABEL[task.prediction_confidence] || 'Stima'}</span>
             {task.checkin_today && task.checkin_time && <span className="text-amber-600 font-semibold"> · CI {task.checkin_time}</span>}
           </p>
           {assigned
-            ? <p className="text-[11px] text-emerald-700 dark:text-emerald-400 font-medium truncate" data-testid={`org-task-assigned-${task.id}`}>{(task.cleaner_names || []).join(' + ')}</p>
-            : <p className="text-[11px] text-amber-600 font-medium" data-testid={`org-task-unassigned-${task.id}`}>Da assegnare</p>}
+            ? <p className="text-xs text-emerald-700 dark:text-emerald-400 font-medium truncate" data-testid={`org-task-assigned-${task.id}`}>{(task.cleaner_names || []).join(' + ')}</p>
+            : <p className="text-xs text-amber-600 font-medium" data-testid={`org-task-unassigned-${task.id}`}>Da assegnare</p>}
         </div>
         <button
           onClick={e => { e.stopPropagation(); onAssignDialog(task); }}

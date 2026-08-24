@@ -56,8 +56,8 @@ const NotificationItem = ({ notif, onRead, onNavigate }) => {
           </p>
           {!notif.read && <div className="w-1.5 h-1.5 rounded-full bg-[#F24E75] shrink-0" />}
         </div>
-        <p className="text-[11px] text-muted-foreground line-clamp-2 mt-0.5">{notif.message}</p>
-        <p className="text-[10px] text-muted-foreground/60 mt-0.5">{timeAgo}</p>
+        <p className="text-xs text-muted-foreground line-clamp-2 mt-0.5">{notif.message}</p>
+        <p className="text-xs text-muted-foreground/60 mt-0.5">{timeAgo}</p>
       </div>
       {!notif.read && (
         <Button variant="ghost" size="icon" className="h-6 w-6 shrink-0 mt-0.5" onClick={e => { e.stopPropagation(); onRead(notif.id); }}>
@@ -152,7 +152,7 @@ export const NotificationBell = ({ className, dropUp = false, align = 'right' })
       <Button variant="ghost" size="icon" className="h-8 w-8 relative" onClick={() => setOpen(!open)} data-testid="notification-bell">
         <Bell className="h-4 w-4" />
         {unread > 0 && (
-          <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 rounded-full bg-[#F24E75] text-[10px] font-bold text-white flex items-center justify-center px-1" data-testid="notif-badge">
+          <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 rounded-full bg-[#F24E75] text-xs font-bold text-white flex items-center justify-center px-1" data-testid="notif-badge">
             {unread > 99 ? '99+' : unread}
           </span>
         )}
@@ -169,11 +169,11 @@ export const NotificationBell = ({ className, dropUp = false, align = 'right' })
             <h3 className="text-sm font-semibold">Notifiche</h3>
             <div className="flex gap-1">
               {unread > 0 && (
-                <Button variant="ghost" size="sm" className="h-7 text-[10px] gap-1 px-2" onClick={handleMarkAllRead} data-testid="mark-all-read">
+                <Button variant="ghost" size="sm" className="h-7 text-xs gap-1 px-2" onClick={handleMarkAllRead} data-testid="mark-all-read">
                   <CheckCheck className="h-3 w-3" />Segna tutto letto
                 </Button>
               )}
-              <Button variant="ghost" size="sm" className="h-7 text-[10px] px-2" onClick={() => { setOpen(false); navigate('/notifications'); }} data-testid="view-all-notifs">
+              <Button variant="ghost" size="sm" className="h-7 text-xs px-2" onClick={() => { setOpen(false); navigate('/notifications'); }} data-testid="view-all-notifs">
                 Vedi tutte
               </Button>
             </div>

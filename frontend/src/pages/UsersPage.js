@@ -235,11 +235,11 @@ const UsersPage = () => {
                     <div className="min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
                         <span className="text-sm font-semibold">{user.name}</span>
-                        <span className={cn("text-[10px] px-2 py-0.5 rounded-full font-medium", ROLE_COLORS[user.role] || 'bg-muted')}>
+                        <span className={cn("text-xs px-2 py-0.5 rounded-full font-medium", ROLE_COLORS[user.role] || 'bg-muted')}>
                           {ROLE_LABELS[user.role] || user.role}
                         </span>
                         {!user.is_active && (
-                          <span className="text-[10px] px-2 py-0.5 rounded-full font-medium bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300">
+                          <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300">
                             Disattivato
                           </span>
                         )}
@@ -311,7 +311,7 @@ const UsersPage = () => {
                 <div className="space-y-2">
                   <Label>Data di nascita</Label>
                   <Input type="date" value={form.anagrafica?.birth_date || ''} onChange={e => setForm(p => ({ ...p, anagrafica: { ...p.anagrafica, birth_date: e.target.value } }))} data-testid="anag-birth-date" />
-                  <p className="text-[10px] text-muted-foreground">Il giorno del compleanno il dipendente sta a casa e non lavora.</p>
+                  <p className="text-xs text-muted-foreground">Il giorno del compleanno il dipendente sta a casa e non lavora.</p>
                 </div>
                 <div className="space-y-2">
                   <Label>Codice fiscale</Label>

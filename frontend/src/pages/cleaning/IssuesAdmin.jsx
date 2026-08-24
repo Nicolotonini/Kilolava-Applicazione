@@ -61,7 +61,7 @@ export function IssuesAdmin() {
               <Card key={i.id} className="border shadow-none" data-testid={`issue-card-${i.id}`}>
                 <CardContent className="p-4 space-y-2">
                   <div className="flex items-center gap-2 flex-wrap">
-                    <Badge className={cn('text-[10px] border-0', cat.cls)}>{cat.label}</Badge>
+                    <Badge className={cn('text-xs border-0', cat.cls)}>{cat.label}</Badge>
                     {i.klv_code && <span className="font-mono text-xs text-primary font-bold">{i.klv_code}</span>}
                     <span className="font-medium text-sm">{i.structure_name || ''}</span>
                     <span className="text-xs text-muted-foreground ml-auto">{i.reporter_name} · {new Date(i.created_at).toLocaleString('it-IT')}</span>

@@ -284,7 +284,7 @@ const FieldRow = ({ label, children, hint }) => (
   <div>
     <Label className="text-xs">{label}</Label>
     <div className="mt-1">{children}</div>
-    {hint && <p className="text-[11px] text-muted-foreground mt-1">{hint}</p>}
+    {hint && <p className="text-xs text-muted-foreground mt-1">{hint}</p>}
   </div>
 );
 
@@ -483,7 +483,7 @@ function BedsSection({ form, setBed }) {
           </div>
           <div className="pt-2 border-t border-border">
             <p className="text-xs font-semibold mb-1">Preparazione minima / predefinita</p>
-            <p className="text-[11px] text-muted-foreground mb-3">Valori precompilati quando viene creata una nuova pulizia per questa struttura. I massimi sopra non possono essere superati.</p>
+            <p className="text-xs text-muted-foreground mb-3">Valori precompilati quando viene creata una nuova pulizia per questa struttura. I massimi sopra non possono essere superati.</p>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
               <FieldRow label="Matrimoniali minimi">
                 <Input type="number" min={0} max={bc.beds_double} value={bc.beds_double_min || 0} onChange={e => setBed('beds_double_min', e.target.value)} className="h-9" data-testid="beds-double-min" />
@@ -513,7 +513,7 @@ function BedsSection({ form, setBed }) {
             </FieldRow>
           </div>
           {form.has_units && (
-            <p className="text-[11px] text-muted-foreground">Se la struttura ha Unità, questi valori possono essere configurati anche sulla singola Unità.</p>
+            <p className="text-xs text-muted-foreground">Se la struttura ha Unità, questi valori possono essere configurati anche sulla singola Unità.</p>
           )}
         </CardContent>
       </Card>
@@ -587,7 +587,7 @@ function AccessSection({ form, set, setAccess, setKeyBox, klvCode }) {
                   </div>
                 );
               })}
-              <p className="text-[11px] text-muted-foreground">
+              <p className="text-xs text-muted-foreground">
                 Il portachiavi fisico è identificato solo dal codice KLV, mai da nome, indirizzo, piano o cliente. Predisposto per QR anonimo di recupero chiavi.
               </p>
             </div>
@@ -829,7 +829,7 @@ function MediaSection({ structureId, units, hasUnits, form, setWarehouse, onSave
                   <div className="flex items-center gap-2 flex-wrap">
                     {m.title && <p className="text-sm font-semibold">{m.title}</p>}
                     {m.unit_id && unitName(m.unit_id) && (
-                      <span className="px-1.5 py-0.5 rounded-full bg-primary/10 text-primary text-[10px] font-medium">{unitName(m.unit_id)}</span>
+                      <span className="px-1.5 py-0.5 rounded-full bg-primary/10 text-primary text-xs font-medium">{unitName(m.unit_id)}</span>
                     )}
                   </div>
                   <p className="text-xs text-muted-foreground whitespace-pre-wrap mt-0.5">{m.description || <span className="italic">Nessuna descrizione</span>}</p>
@@ -955,7 +955,7 @@ function UnitsSection({ structureId, units, refresh }) {
                     Posti {u.bed_config.capacity_total || 0} · Matr. {u.bed_config.beds_double || 0} · Sing. {u.bed_config.beds_single || 0} · Persone {u.bed_config.capacity_persons || 0}
                   </p>
                 )}
-                {!u.is_active && <span className="text-[10px] text-red-500 font-medium">Non attiva</span>}
+                {!u.is_active && <span className="text-xs text-red-500 font-medium">Non attiva</span>}
               </CardContent>
             </Card>
           ))}

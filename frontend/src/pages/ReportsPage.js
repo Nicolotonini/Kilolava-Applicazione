@@ -19,7 +19,7 @@ const KPI = ({ label, value, sub, icon: Icon, color, trend }) => (
           <Icon className="h-5 w-5 text-white" />
         </div>
         {trend && (
-          <span className={cn("text-[10px] flex items-center gap-0.5 font-medium", trend > 0 ? "text-green-600" : "text-red-500")}>
+          <span className={cn("text-xs flex items-center gap-0.5 font-medium", trend > 0 ? "text-green-600" : "text-red-500")}>
             {trend > 0 ? <ArrowUpRight className="h-3 w-3" /> : <ArrowDownRight className="h-3 w-3" />}
             {Math.abs(trend)}%
           </span>
@@ -27,7 +27,7 @@ const KPI = ({ label, value, sub, icon: Icon, color, trend }) => (
       </div>
       <p className="text-2xl font-bold">{typeof value === 'number' ? value.toLocaleString('it-IT') : value}</p>
       <p className="text-xs text-muted-foreground mt-0.5">{label}</p>
-      {sub && <p className="text-[10px] text-muted-foreground">{sub}</p>}
+      {sub && <p className="text-xs text-muted-foreground">{sub}</p>}
     </CardContent>
   </Card>
 );
@@ -60,7 +60,7 @@ const StatusTable = ({ title, data, labels }) => {
               <span className="text-muted-foreground capitalize">{labels?.[k] || k.replace(/_/g, ' ')}</span>
               <div className="flex items-center gap-2">
                 <span className="font-medium">{v}</span>
-                <span className="text-[10px] text-muted-foreground w-8 text-right">{total > 0 ? Math.round((v / total) * 100) : 0}%</span>
+                <span className="text-xs text-muted-foreground w-8 text-right">{total > 0 ? Math.round((v / total) * 100) : 0}%</span>
               </div>
             </div>
           ))}

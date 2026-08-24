@@ -790,13 +790,13 @@ const ClientDetailPage = () => {
                 <input type="file" accept="image/*" id="client-logo-input" className="hidden" onChange={handleLogoUpload} data-testid="client-logo-input" />
                 <button
                   onClick={() => document.getElementById('client-logo-input').click()}
-                  className="text-[11px] font-medium text-primary hover:underline"
+                  className="text-xs font-medium text-primary hover:underline"
                   data-testid="upload-logo-btn"
                 >
                   {client?.logo_path ? 'Sostituisci immagine' : 'Carica logo / foto'}
                 </button>
                 {client?.logo_path && (
-                  <button onClick={handleLogoRemove} className="text-[11px] font-medium text-muted-foreground hover:text-destructive" data-testid="remove-logo-btn">
+                  <button onClick={handleLogoRemove} className="text-xs font-medium text-muted-foreground hover:text-destructive" data-testid="remove-logo-btn">
                     Rimuovi
                   </button>
                 )}
@@ -973,10 +973,10 @@ const ClientDetailPage = () => {
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">
                           {structure.klv_code && (
-                            <span className="px-1.5 py-0.5 text-[10px] font-mono font-bold bg-primary/10 text-primary rounded">{structure.klv_code}</span>
+                            <span className="px-1.5 py-0.5 text-xs font-mono font-bold bg-primary/10 text-primary rounded">{structure.klv_code}</span>
                           )}
                           <span className="font-medium">{structure.name}</span>
-                          <span className="px-1.5 py-0.5 text-[10px] bg-muted text-muted-foreground rounded">
+                          <span className="px-1.5 py-0.5 text-xs bg-muted text-muted-foreground rounded">
                             {t(`structures.structureTypes.${structure.structure_type}`)}
                           </span>
                           {structure.ical_url && <Link2 className="h-3.5 w-3.5 text-blue-500" />}
@@ -994,7 +994,7 @@ const ClientDetailPage = () => {
                         {structure.services?.length > 0 && (
                           <div className="flex flex-wrap gap-1 mt-1.5">
                             {structure.services.map(s => (
-                              <span key={s} className="px-1.5 py-0.5 text-[10px] bg-primary/10 text-primary rounded">
+                              <span key={s} className="px-1.5 py-0.5 text-xs bg-primary/10 text-primary rounded">
                                 {t(`structures.servicesList.${s}`)}
                               </span>
                             ))}
@@ -1093,7 +1093,7 @@ const ClientDetailPage = () => {
                                 <div className="flex-1 min-w-0">
                                   <div className="flex items-center gap-2">
                                     <span className="font-medium text-sm">{unit.name}</span>
-                                    <span className="px-1.5 py-0.5 text-[10px] bg-muted rounded">{t(`units.types.${unit.unit_type}`)}</span>
+                                    <span className="px-1.5 py-0.5 text-xs bg-muted rounded">{t(`units.types.${unit.unit_type}`)}</span>
                                   </div>
                                   <div className="flex items-center gap-4 text-xs text-muted-foreground mt-1">
                                     {unit.bed_config && unit.bed_config.capacity_total > 0 && (
@@ -1216,7 +1216,7 @@ const ClientDetailPage = () => {
                           {item._date ? new Date(item._date).toLocaleDateString('it-IT') : '-'}
                         </td>
                         <td className="px-3 py-2.5">
-                          <span className={cn('px-2 py-0.5 rounded-full text-[10px] font-medium', typeColors[item._type])}>
+                          <span className={cn('px-2 py-0.5 rounded-full text-xs font-medium', typeColors[item._type])}>
                             {item._label}
                           </span>
                         </td>
@@ -1224,7 +1224,7 @@ const ClientDetailPage = () => {
                           {item.title || item.order_number || item.description || item.notes || '-'}
                         </td>
                         <td className="text-center px-3 py-2.5">
-                          <span className="text-[10px] font-medium text-muted-foreground">{item.status || '-'}</span>
+                          <span className="text-xs font-medium text-muted-foreground">{item.status || '-'}</span>
                         </td>
                       </tr>
                     );

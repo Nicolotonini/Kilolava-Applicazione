@@ -30,9 +30,9 @@ export const CompactTaskRow = ({ task, actions, showDate, showCleaners = true, d
       {dragHandle}
       <div className="min-w-0 flex-1 space-y-1.5">
         <div className="flex items-center gap-2 flex-wrap">
-          <Badge className={cn('text-[11px] border-0 px-2.5 py-0.5 rounded-full font-semibold', sm.cls)}>{statusLabel}</Badge>
+          <Badge className={cn('text-xs border-0 px-2.5 py-0.5 rounded-full font-semibold', sm.cls)}>{statusLabel}</Badge>
           {task.checkin_today && (
-            <Badge className={cn('text-[11px] border-0 px-2.5 py-0.5 rounded-full font-bold flex items-center gap-1',
+            <Badge className={cn('text-xs border-0 px-2.5 py-0.5 rounded-full font-bold flex items-center gap-1',
               isToday ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300' : 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300')}
               data-testid={`row-checkin-${task.id}`}>
               <BellRing className="h-3 w-3" />
@@ -53,17 +53,17 @@ export const CompactTaskRow = ({ task, actions, showDate, showCleaners = true, d
         </p>
         <div className="flex items-center gap-1.5 flex-wrap">
           {bedBadges(task).map(b => (
-            <span key={b.label} className={cn('text-[11px] font-medium px-2 py-0.5 rounded-full', b.cls)}>{b.label}</span>
+            <span key={b.label} className={cn('text-xs font-medium px-2 py-0.5 rounded-full', b.cls)}>{b.label}</span>
           ))}
           {task.zone_name && (
-            <span className="flex items-center gap-0.5 text-[11px] font-medium px-2 py-0.5 rounded-full bg-muted text-muted-foreground">
+            <span className="flex items-center gap-0.5 text-xs font-medium px-2 py-0.5 rounded-full bg-muted text-muted-foreground">
               <MapPin className="h-3 w-3" />{task.zone_name}
             </span>
           )}
-          {task.scheduled_time && <span className="text-[11px] text-muted-foreground font-medium">ore {task.scheduled_time}</span>}
-          {dur && <span className="text-[11px] text-primary font-semibold">{dur}</span>}
+          {task.scheduled_time && <span className="text-xs text-muted-foreground font-medium">ore {task.scheduled_time}</span>}
+          {dur && <span className="text-xs text-primary font-semibold">{dur}</span>}
           {showCleaners && task.cleaner_names?.length > 0 && (
-            <span className="flex items-center gap-1 text-[11px] font-medium text-foreground/80">
+            <span className="flex items-center gap-1 text-xs font-medium text-foreground/80">
               <Users className="h-3 w-3 text-primary" />{task.cleaner_names.join(' + ')}
             </span>
           )}
@@ -72,7 +72,7 @@ export const CompactTaskRow = ({ task, actions, showDate, showCleaners = true, d
       {task.guests_count ? (
         <div className="text-center shrink-0 w-14" data-testid={`row-guests-${task.id}`}>
           <p className="text-3xl font-bold text-primary leading-none tabular-nums">{task.guests_count}</p>
-          <p className="text-[9px] uppercase tracking-widest text-muted-foreground mt-0.5">Ospiti</p>
+          <p className="text-xs uppercase tracking-widest text-muted-foreground mt-0.5">Ospiti</p>
         </div>
       ) : <div className="w-14 shrink-0" />}
       <div className="flex items-center gap-0.5 shrink-0" onClick={e => e.stopPropagation()}>

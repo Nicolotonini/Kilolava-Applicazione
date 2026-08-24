@@ -103,7 +103,7 @@ export default function CleaningPage() {
       {printMode && <PrintSheets mode={printMode} date={date} tasks={tasks || []} cleaners={cleaners} />}
       <div className="p-4 lg:p-6 space-y-5 print:hidden" data-testid="cleaning-overview-page">
         <div>
-          <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-muted-foreground">Piano lavoro</p>
+          <p className="text-xs font-bold uppercase tracking-[0.2em] text-muted-foreground">Piano lavoro</p>
           <h1 className="text-3xl lg:text-4xl font-heading font-bold mt-0.5">Scheda quotidiana</h1>
         </div>
 
@@ -194,7 +194,7 @@ function KpiCard({ label, value, valueCls, testId }) {
   return (
     <Card className="border shadow-none">
       <CardContent className="p-4">
-        <p className="text-[11px] uppercase tracking-wider text-muted-foreground">{label}</p>
+        <p className="text-xs uppercase tracking-wider text-muted-foreground">{label}</p>
         <p className={cn('text-3xl font-semibold tabular-nums mt-1', valueCls)} data-testid={testId}>{value}</p>
       </CardContent>
     </Card>

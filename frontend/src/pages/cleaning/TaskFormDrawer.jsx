@@ -23,7 +23,7 @@ function Stepper({ label, value, min = 0, max, onChange, testId }) {
     <div className="flex items-center justify-between gap-3 rounded-xl border border-border px-3 py-2.5">
       <div>
         <p className="text-sm font-medium">{label}</p>
-        {max != null && max > 0 && <p className="text-[10px] text-muted-foreground">max {max}</p>}
+        {max != null && max > 0 && <p className="text-xs text-muted-foreground">max {max}</p>}
       </div>
       <div className="flex items-center gap-2">
         <Button type="button" variant="outline" size="icon" className="h-9 w-9 rounded-full" onClick={() => onChange(clamp((value || 0) - 1))} data-testid={`${testId}-minus`}><Minus className="h-4 w-4" /></Button>
@@ -175,7 +175,7 @@ export function TaskFormDrawer({ task, defaultDate, structures, cleaners, zones,
                         {s.klv_code && <span className="font-mono text-primary text-xs mr-1.5">{s.klv_code}</span>}
                         {s.name}
                       </p>
-                      <p className="text-[11px] text-muted-foreground flex items-center gap-1">
+                      <p className="text-xs text-muted-foreground flex items-center gap-1">
                         {s.address || '—'}
                         {s.operational_zone_id && zonesById[s.operational_zone_id] && (
                           <span className="flex items-center gap-0.5 text-primary/80"><MapPin className="h-3 w-3" />{zonesById[s.operational_zone_id]}</span>
@@ -196,7 +196,7 @@ export function TaskFormDrawer({ task, defaultDate, structures, cleaners, zones,
               <button onClick={() => setDate(tomorrowStr())} className={cn('px-3.5 py-2 rounded-full text-sm font-medium', date === tomorrowStr() ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground')} data-testid="date-tomorrow-btn">Domani</button>
               <Input type="date" value={date} onChange={e => setDate(e.target.value)} className="h-10 w-40" data-testid="date-picker-input" />
             </div>
-            <p className="text-[11px] text-muted-foreground capitalize mt-1">{fmtDayLong(date)}</p>
+            <p className="text-xs text-muted-foreground capitalize mt-1">{fmtDayLong(date)}</p>
           </div>
 
           {/* STEP 3 — Persone e letti */}

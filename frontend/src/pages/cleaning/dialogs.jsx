@@ -15,7 +15,7 @@ export const WEEKDAYS = ['Lun', 'Mar', 'Mer', 'Gio', 'Ven', 'Sab', 'Dom'];
 export function Info({ label, value }) {
   return (
     <div className="rounded-lg bg-muted/40 p-2">
-      <p className="text-[10px] uppercase tracking-wider text-muted-foreground">{label}</p>
+      <p className="text-xs uppercase tracking-wider text-muted-foreground">{label}</p>
       <p className="font-medium">{value}</p>
     </div>
   );
@@ -69,7 +69,7 @@ export function TaskDetailDialog({ taskId, onClose }) {
           <DialogTitle className="flex items-center gap-2 flex-wrap">
             {task.klv_code && <span className="px-2 py-0.5 rounded-md bg-primary/10 text-primary font-mono text-sm font-bold">{task.klv_code}</span>}
             {task.structure_name}
-            <Badge className={cn('text-[10px] border-0', sm.cls)}>{sm.label}</Badge>
+            <Badge className={cn('text-xs border-0', sm.cls)}>{sm.label}</Badge>
           </DialogTitle>
           <DialogDescription className="capitalize">{fmtDate(task.date)} {task.scheduled_time ? `· ${task.scheduled_time}` : ''} {task.client_name ? `· ${task.client_name}` : ''} {task.zone_name ? `· ${task.zone_name}` : ''}</DialogDescription>
         </DialogHeader>
@@ -112,11 +112,11 @@ export function TaskDetailDialog({ taskId, onClose }) {
                   {(n.media || []).length > 0 && (
                     <div className="flex gap-1.5 mt-1.5">
                       {n.media.map(m => (
-                        <a key={m.id} href={fileUrl(m.file_path)} target="_blank" rel="noreferrer" className="text-[10px] underline text-primary">{m.kind === 'video' ? 'Video' : 'Foto'}</a>
+                        <a key={m.id} href={fileUrl(m.file_path)} target="_blank" rel="noreferrer" className="text-xs underline text-primary">{m.kind === 'video' ? 'Video' : 'Foto'}</a>
                       ))}
                     </div>
                   )}
-                  <p className="text-[10px] text-muted-foreground mt-1">{n.by_name} · {new Date(n.at).toLocaleString('it-IT')}</p>
+                  <p className="text-xs text-muted-foreground mt-1">{n.by_name} · {new Date(n.at).toLocaleString('it-IT')}</p>
                 </div>
               ))}
             </div>
@@ -128,7 +128,7 @@ export function TaskDetailDialog({ taskId, onClose }) {
                 const cat = ISSUE_CAT[i.category] || { label: i.category, cls: 'bg-muted text-muted-foreground' };
                 return (
                   <div key={i.id} className="flex items-center gap-2 text-xs rounded-lg border border-border p-2">
-                    <Badge className={cn('text-[10px] border-0', cat.cls)}>{cat.label}</Badge>
+                    <Badge className={cn('text-xs border-0', cat.cls)}>{cat.label}</Badge>
                     <span className="flex-1">{i.note}</span>
                     <span className="text-muted-foreground">{i.status === 'open' ? 'Aperta' : i.status}</span>
                   </div>
@@ -281,7 +281,7 @@ export function SeriesDialog({ task, onClose }) {
                     return (
                       <div key={t.id} className="flex items-center justify-between text-xs rounded-lg bg-muted/40 px-2.5 py-1.5" data-testid={`series-item-${t.id}`}>
                         <span className="capitalize">{fmtDate(t.date)} · {t.date}{t.scheduled_time ? ` · ${t.scheduled_time}` : ''}</span>
-                        <Badge className={cn('text-[10px] border-0', sm.cls)}>{sm.label}</Badge>
+                        <Badge className={cn('text-xs border-0', sm.cls)}>{sm.label}</Badge>
                       </div>
                     );
                   })}

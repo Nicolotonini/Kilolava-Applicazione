@@ -120,7 +120,7 @@ const StructuresListPage = () => {
           <div className="hidden lg:block border border-border rounded-xl bg-card">
             <table className="w-full text-sm border-separate border-spacing-0" data-testid="structures-table">
               <thead>
-                <tr className="text-left text-[10px] uppercase tracking-wider text-muted-foreground">
+                <tr className="text-left text-xs uppercase tracking-wider text-muted-foreground">
                   <th className={cn(TH, 'py-2.5 pl-4 pr-2 rounded-tl-xl')}>KLV</th>
                   <th className={cn(TH, 'py-2.5 px-2')}>Struttura</th>
                   {SERVICE_COLS.map(s => (
@@ -145,7 +145,7 @@ const StructuresListPage = () => {
                       </span>
                     </td>
                     <td className="py-3 px-2">
-                      <p className="font-semibold text-[15px] leading-tight">{s.name}</p>
+                      <p className="font-semibold text-sm leading-tight">{s.name}</p>
                       <div className="flex items-center gap-3 mt-1 flex-wrap">
                         {s.address && (
                           <span className="flex items-center gap-1 text-xs text-muted-foreground">

@@ -259,7 +259,7 @@ function ConnectionCard({ conn, structures, onReload, onEdit, onTestResult }) {
               <span className="px-2 py-0.5 rounded-md bg-primary/10 text-primary text-xs font-bold uppercase tracking-wide">
                 {PROVIDER_LABELS[conn.provider] || conn.provider}
               </span>
-              <p className="font-semibold text-[15px]">{conn.name}</p>
+              <p className="font-semibold text-sm">{conn.name}</p>
               <StatusDot status={conn.status} />
             </div>
             <div className="flex items-center gap-4 mt-1.5 text-xs text-muted-foreground flex-wrap">
@@ -270,7 +270,7 @@ function ConnectionCard({ conn, structures, onReload, onEdit, onTestResult }) {
               <span>Ultima sync: {fmtDateTime(conn.last_sync)}</span>
             </div>
             {conn.provider === 'hostaway' && conn.webhook_path && (
-              <p className="text-[11px] text-muted-foreground mt-1.5 flex items-center gap-1 flex-wrap" data-testid={`webhook-url-${conn.id}`}>
+              <p className="text-xs text-muted-foreground mt-1.5 flex items-center gap-1 flex-wrap" data-testid={`webhook-url-${conn.id}`}>
                 <Webhook className="h-3 w-3 shrink-0" />
                 Webhook: <span className="font-mono select-all">{window.location.origin}{conn.webhook_path}</span>
                 <span>(registralo su Hostaway → Settings → Add Webhook con login/password webhook)</span>
@@ -388,9 +388,9 @@ function MappingSection({ conn, structures, onChanged }) {
               <div key={m.id} className="flex items-center gap-3 flex-wrap rounded-lg border border-border/60 px-3 py-2" data-testid={`mapping-row-${m.id}`}>
                 <div className="min-w-[180px]">
                   <p className="text-sm font-medium">{m.external_name}</p>
-                  <p className="text-[11px] text-muted-foreground font-mono">External ID: {m.external_id}</p>
+                  <p className="text-xs text-muted-foreground font-mono">External ID: {m.external_id}</p>
                 </div>
-                <Badge className={cn('text-[10px] border-0', ms.cls)}>{ms.label}</Badge>
+                <Badge className={cn('text-xs border-0', ms.cls)}>{ms.label}</Badge>
                 {m.status === 'linked' ? (
                   <div className="flex items-center gap-2 flex-1 justify-end flex-wrap">
                     <span className="text-sm">→ <span className="font-mono text-primary font-bold text-xs">{m.klv_code || '—'}</span> {m.structure_name}</span>
@@ -533,7 +533,7 @@ function ConnectionDialog({ open, onClose, providers, clients, editConn, onSaved
                 className="h-9 mt-1"
                 data-testid={`cred-${f.key}-input`}
               />
-              {f.help && <p className="text-[11px] text-muted-foreground mt-0.5">{f.help}</p>}
+              {f.help && <p className="text-xs text-muted-foreground mt-0.5">{f.help}</p>}
             </div>
           ))}
           <div className="flex justify-end gap-2 pt-1">
@@ -606,7 +606,7 @@ function OctorateAppDialog({ open, onClose }) {
           <div>
             <label className="text-xs font-medium text-muted-foreground">Redirect URI Kilolava</label>
             <Input value={form.redirect_uri} onChange={e => setForm(f => ({ ...f, redirect_uri: e.target.value }))} placeholder={suggested} className="h-9 mt-1 font-mono text-xs" data-testid="octorate-redirect-uri-input" />
-            <p className="text-[11px] text-muted-foreground mt-1">
+            <p className="text-xs text-muted-foreground mt-1">
               Suggerita: <button type="button" className="font-mono underline underline-offset-2" onClick={() => setForm(f => ({ ...f, redirect_uri: suggested }))}>{suggested}</button>
               <br />Deve essere whitelistata da Octorate per la vostra app (HTTPS obbligatorio).
             </p>
@@ -737,7 +737,7 @@ function ReservationsTab({ connections, structures }) {
           <div className="hidden lg:block border border-border rounded-xl bg-card">
             <table className="w-full text-sm border-separate border-spacing-0" data-testid="reservations-table">
               <thead>
-                <tr className="text-left text-[10px] uppercase tracking-wider text-muted-foreground">
+                <tr className="text-left text-xs uppercase tracking-wider text-muted-foreground">
                   {['Check-in', 'Check-out', 'Struttura', 'Provider', 'External ID', 'Stato', 'Ultimo aggiornamento'].map((h, i) => (
                     <th key={h} className={cn('sticky top-0 z-10 bg-card border-b border-border font-medium py-2.5 px-3', i === 0 && 'rounded-tl-xl', i === 6 && 'rounded-tr-xl')}>{h}</th>
                   ))}
@@ -756,7 +756,7 @@ function ReservationsTab({ connections, structures }) {
                       </td>
                       <td className="py-2.5 px-3 text-xs">{PROVIDER_LABELS[r.provider] || r.provider}<span className="text-muted-foreground"> · {r.connection_name}</span></td>
                       <td className="py-2.5 px-3 font-mono text-xs">{r.external_id}</td>
-                      <td className="py-2.5 px-3"><Badge className={cn('text-[10px] border-0', sm.cls)}>{sm.label}</Badge></td>
+                      <td className="py-2.5 px-3"><Badge className={cn('text-xs border-0', sm.cls)}>{sm.label}</Badge></td>
                       <td className="py-2.5 px-3 text-xs text-muted-foreground">{fmtDateTime(r.last_synced_at)}</td>
                     </tr>
                   );
@@ -773,13 +773,13 @@ function ReservationsTab({ connections, structures }) {
                 <div key={`${r.connection_id}-${r.external_id}`} className="p-3.5 rounded-xl border border-border bg-card space-y-1.5">
                   <div className="flex items-center justify-between gap-2">
                     <p className="font-semibold text-sm tabular-nums">{fmtDate(r.check_in)} → {fmtDate(r.check_out)}</p>
-                    <Badge className={cn('text-[10px] border-0', sm.cls)}>{sm.label}</Badge>
+                    <Badge className={cn('text-xs border-0', sm.cls)}>{sm.label}</Badge>
                   </div>
                   <p className="text-xs">
                     {r.klv_code && <span className="font-mono text-primary font-bold mr-1">{r.klv_code}</span>}
                     {r.structure_name || 'non mappata'}
                   </p>
-                  <p className="text-[11px] text-muted-foreground">
+                  <p className="text-xs text-muted-foreground">
                     {PROVIDER_LABELS[r.provider] || r.provider} · {r.connection_name} · <span className="font-mono">{r.external_id}</span>
                   </p>
                 </div>

@@ -280,27 +280,27 @@ const ClientsPage = () => {
                 {/* KPIs */}
                 <div className="flex items-center gap-7 flex-wrap">
                   <div className="min-w-[72px]" data-testid={`kpi-structures-${client.id}`}>
-                    <p className="text-[10px] uppercase tracking-wider text-muted-foreground">Strutture</p>
+                    <p className="text-xs uppercase tracking-wider text-muted-foreground">Strutture</p>
                     <p className="text-sm font-semibold tabular-nums flex items-center gap-1.5">
                       <Building2 className="h-3.5 w-3.5 text-muted-foreground" />{client.structure_count}
                     </p>
                   </div>
                   <div className="min-w-[92px]" data-testid={`kpi-revenue-${client.id}`}>
-                    <p className="text-[10px] uppercase tracking-wider text-muted-foreground">Questo mese</p>
+                    <p className="text-xs uppercase tracking-wider text-muted-foreground">Questo mese</p>
                     <p className="text-sm font-semibold tabular-nums flex items-center gap-1.5">
                       <TrendingUp className="h-3.5 w-3.5 text-muted-foreground" />
                       {revenue.toLocaleString('it-IT', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 })}
                     </p>
                   </div>
                   <div className="min-w-[72px]" data-testid={`kpi-today-${client.id}`}>
-                    <p className="text-[10px] uppercase tracking-wider text-muted-foreground">Oggi</p>
+                    <p className="text-xs uppercase tracking-wider text-muted-foreground">Oggi</p>
                     <p className="text-sm font-semibold tabular-nums flex items-center gap-1.5">
                       <CalendarCheck className="h-3.5 w-3.5 text-muted-foreground" />
                       {todayN} {todayN === 1 ? 'attività' : 'attività'}
                     </p>
                   </div>
                   <div className="min-w-[72px]" data-testid={`kpi-alerts-${client.id}`}>
-                    <p className="text-[10px] uppercase tracking-wider text-muted-foreground">Alert</p>
+                    <p className="text-xs uppercase tracking-wider text-muted-foreground">Alert</p>
                     {alerts > 0 ? (
                       <p className="text-sm font-semibold tabular-nums flex items-center gap-1.5 text-red-600 dark:text-red-400">
                         <AlertTriangle className="h-3.5 w-3.5" />{alerts}

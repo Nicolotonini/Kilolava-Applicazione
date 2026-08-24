@@ -33,7 +33,7 @@ export const PlanningBoard = ({
           title="Trascina per scorrere"
         >
           <Move className="h-3 w-3 text-muted-foreground/50" />
-          <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Strutture</span>
+          <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Strutture</span>
         </div>
         {days.map((day, i) => (
           <div
@@ -44,7 +44,7 @@ export const PlanningBoard = ({
             )}
             onMouseDown={onPanStart} onMouseMove={onPanMove}
           >
-            <p className="text-[11px] text-muted-foreground uppercase tracking-wider">{WEEKDAYS_SHORT[(day.getDay()+6)%7]}</p>
+            <p className="text-xs text-muted-foreground uppercase tracking-wider">{WEEKDAYS_SHORT[(day.getDay()+6)%7]}</p>
             <p className={cn("text-lg font-bold tabular-nums leading-tight", isToday(day) ? 'text-[#F24E75]' : 'text-foreground')}>
               {day.getDate()}{viewMode === 'day' ? ` ${MONTHS_SHORT[day.getMonth()]}` : ''}
             </p>
@@ -77,7 +77,7 @@ export const PlanningBoard = ({
                   <div className="min-w-0">
                     <p className={cn("text-sm font-medium truncate", prop.isChild && "text-xs")}>{prop.name}</p>
                     {prop.clientName && !prop.isChild && (
-                      <p className="text-[11px] text-muted-foreground truncate">{prop.clientName}</p>
+                      <p className="text-xs text-muted-foreground truncate">{prop.clientName}</p>
                     )}
                   </div>
                 </div>
@@ -133,7 +133,7 @@ export const PlanningBoard = ({
                             >
                               <div className="flex items-center gap-1">
                                 <Icon className={cn("h-3 w-3 flex-shrink-0", colors.text)} />
-                                <span className={cn("text-[11px] font-semibold truncate flex-1", colors.text)}>
+                                <span className={cn("text-xs font-semibold truncate flex-1", colors.text)}>
                                   {ev.title}
                                 </span>
                                 {(ev.auto_generated || ev.source === 'automation') && <Zap className="h-2.5 w-2.5 text-violet-500 flex-shrink-0" />}
@@ -142,7 +142,7 @@ export const PlanningBoard = ({
 
                               {isBooking ? (
                                 <>
-                                  <div className={cn("text-[10px] mt-0.5", colors.text)}>
+                                  <div className={cn("text-xs mt-0.5", colors.text)}>
                                     <div className="flex items-center gap-1">
                                       <span className="font-medium">In:</span> {fmtEU(ev.start_time)}{ev.start_time?.includes('T') ? ` · ${fmtTime(ev.start_time)}` : ''}
                                     </div>
@@ -152,7 +152,7 @@ export const PlanningBoard = ({
                                   </div>
                                   <div className="flex items-center gap-1.5 mt-0.5">
                                     {ev.source && (
-                                      <span className={cn("text-[10px] font-medium", colors.text)}>
+                                      <span className={cn("text-xs font-medium", colors.text)}>
                                         {SOURCE_COLORS[ev.source]?.label || ev.source}
                                       </span>
                                     )}
@@ -166,11 +166,11 @@ export const PlanningBoard = ({
                                 </>
                               ) : (
                                 <div className="flex items-center gap-1.5 mt-0.5">
-                                  <span className={cn("text-[10px]", colors.text)}>
+                                  <span className={cn("text-xs", colors.text)}>
                                     {fmtTime(ev.start_time)}{isMultiDay ? '' : `-${fmtTime(ev.end_time)}`}
                                   </span>
                                   {ev.assigned_operator && (
-                                    <span className="text-[10px] text-muted-foreground truncate flex items-center gap-0.5">
+                                    <span className="text-xs text-muted-foreground truncate flex items-center gap-0.5">
                                       <User className="h-2.5 w-2.5" />{ev.assigned_operator}
                                     </span>
                                   )}

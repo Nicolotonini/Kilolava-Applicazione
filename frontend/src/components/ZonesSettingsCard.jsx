@@ -91,7 +91,7 @@ export const ZonesSettingsCard = () => {
                   ) : (
                     <>
                       <p className="text-sm font-medium">{z.name}</p>
-                      {z.group && <p className="text-[10px] text-muted-foreground">{z.group}</p>}
+                      {z.group && <p className="text-xs text-muted-foreground">{z.group}</p>}
                     </>
                   )}
                 </div>

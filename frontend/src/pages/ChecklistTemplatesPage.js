@@ -225,7 +225,7 @@ const ChecklistTemplatesPage = () => {
                 </div>
                 <div className="flex flex-wrap gap-1 mt-2">
                   {(t.sections || []).map((s, i) => (
-                    <span key={i} className="text-[10px] bg-muted px-2 py-0.5 rounded-full">{s.name}</span>
+                    <span key={i} className="text-xs bg-muted px-2 py-0.5 rounded-full">{s.name}</span>
                   ))}
                 </div>
               </CardContent>
@@ -260,7 +260,7 @@ const ChecklistTemplatesPage = () => {
                     <GripVertical className="h-4 w-4 text-muted-foreground/50" />
                     <Input value={section.name} onChange={e => updateSection(sIdx, 'name', e.target.value)}
                       onClick={e => e.stopPropagation()} className="h-7 text-sm font-medium bg-transparent border-0 p-0 focus-visible:ring-0 flex-1" />
-                    <span className="text-[10px] text-muted-foreground shrink-0">{(section.items || []).length} item</span>
+                    <span className="text-xs text-muted-foreground shrink-0">{(section.items || []).length} item</span>
                     <div className="flex gap-0.5">
                       <Button variant="ghost" size="icon" className="h-6 w-6" onClick={e => { e.stopPropagation(); moveSection(sIdx, -1); }}><ChevronUp className="h-3 w-3" /></Button>
                       <Button variant="ghost" size="icon" className="h-6 w-6" onClick={e => { e.stopPropagation(); moveSection(sIdx, 1); }}><ChevronDown className="h-3 w-3" /></Button>
@@ -287,7 +287,7 @@ const ChecklistTemplatesPage = () => {
                                 ))}
                               </SelectContent>
                             </Select>
-                            <label className="flex items-center gap-1 text-[10px] text-muted-foreground cursor-pointer shrink-0">
+                            <label className="flex items-center gap-1 text-xs text-muted-foreground cursor-pointer shrink-0">
                               <input type="checkbox" checked={item.required} onChange={e => updateItem(sIdx, iIdx, 'required', e.target.checked)} className="rounded" />
                               Obb.
                             </label>
@@ -300,7 +300,7 @@ const ChecklistTemplatesPage = () => {
                           const Icon = c.icon;
                           return (
                             <Button key={k} variant="outline" size="sm" onClick={() => addItem(sIdx, k)}
-                              className="h-7 text-[10px] gap-1 px-2">
+                              className="h-7 text-xs gap-1 px-2">
                               <Icon className={cn("h-3 w-3", c.color)} />{c.label}
                             </Button>
                           );

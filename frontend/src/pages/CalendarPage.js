@@ -473,12 +473,12 @@ const CalendarPage = () => {
                   <div className="flex items-center gap-1.5 flex-wrap">
                     <h3 className="font-semibold">{detailEvent.title}</h3>
                     {(detailEvent.auto_generated || detailEvent.source === 'automation') && (
-                      <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 text-[10px] font-medium bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-300 rounded">
+                      <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 text-xs font-medium bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-300 rounded">
                         <Zap className="h-2.5 w-2.5" />Auto
                       </span>
                     )}
                     {detailEvent.manually_modified && (
-                      <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 text-[10px] font-medium bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300 rounded">
+                      <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 text-xs font-medium bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300 rounded">
                         <Lock className="h-2.5 w-2.5" />Modif. manuale
                       </span>
                     )}
@@ -491,21 +491,21 @@ const CalendarPage = () => {
 
               <div className="grid grid-cols-2 gap-3 text-sm">
                 <div>
-                  <p className="text-[11px] text-muted-foreground uppercase tracking-wider mb-0.5">Check-in</p>
+                  <p className="text-xs text-muted-foreground uppercase tracking-wider mb-0.5">Check-in</p>
                   <p className="font-medium">{fmtEU(detailEvent.start_time)}{detailEvent.start_time?.includes('T') ? ` · ${fmtTime(detailEvent.start_time)}` : ''}</p>
                 </div>
                 <div>
-                  <p className="text-[11px] text-muted-foreground uppercase tracking-wider mb-0.5">Check-out</p>
+                  <p className="text-xs text-muted-foreground uppercase tracking-wider mb-0.5">Check-out</p>
                   <p className="font-medium">{fmtEU(detailEvent.end_time)}{detailEvent.end_time?.includes('T') ? ` · ${fmtTime(detailEvent.end_time)}` : ''}</p>
                 </div>
-                <div><p className="text-[11px] text-muted-foreground uppercase tracking-wider mb-0.5">{t('calendar.structure')}</p><p className="font-medium">{detailEvent.structure_name || '-'}</p></div>
-                {detailEvent.unit_name && <div><p className="text-[11px] text-muted-foreground uppercase tracking-wider mb-0.5">{t('calendar.unit')}</p><p className="font-medium">{detailEvent.unit_name}</p></div>}
+                <div><p className="text-xs text-muted-foreground uppercase tracking-wider mb-0.5">{t('calendar.structure')}</p><p className="font-medium">{detailEvent.structure_name || '-'}</p></div>
+                {detailEvent.unit_name && <div><p className="text-xs text-muted-foreground uppercase tracking-wider mb-0.5">{t('calendar.unit')}</p><p className="font-medium">{detailEvent.unit_name}</p></div>}
               </div>
 
               {detailEvent.event_type === 'booking' && (
                 <div>
                   <div className="flex items-center justify-between mb-2">
-                    <p className="text-[11px] text-muted-foreground uppercase tracking-wider">Servizi al checkout</p>
+                    <p className="text-xs text-muted-foreground uppercase tracking-wider">Servizi al checkout</p>
                     <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => handleRegenerateTasks(detailEvent.id)} data-testid="regenerate-tasks-btn">
                       <RotateCw className="h-3.5 w-3.5 mr-1" />Rigenera
                     </Button>
@@ -531,7 +531,7 @@ const CalendarPage = () => {
                           <Icon className={cn("h-4 w-4 flex-shrink-0", task ? color : 'text-muted-foreground')} />
                           <div className="flex-1 min-w-0">
                             <p className={cn("text-xs font-medium truncate", task ? color : 'text-muted-foreground')}>{label}</p>
-                            <p className="text-[10px] text-muted-foreground truncate">
+                            <p className="text-xs text-muted-foreground truncate">
                               {task ? t(`calendar.statuses.${task.status}`) : (active ? 'Da generare' : 'Non configurato')}
                             </p>
                           </div>
@@ -544,7 +544,7 @@ const CalendarPage = () => {
 
               {detailEvent.event_type !== 'booking' && (
                 <div>
-                  <p className="text-[11px] text-muted-foreground uppercase tracking-wider mb-2">Status</p>
+                  <p className="text-xs text-muted-foreground uppercase tracking-wider mb-2">Status</p>
                   <div className="flex flex-wrap gap-1.5">
                     {EVENT_STATUSES.filter(s => s !== 'cancelled').map(s => {
                       const SIcon = STATUS_ICONS[s];
@@ -563,7 +563,7 @@ const CalendarPage = () => {
 
               {detailEvent.event_type !== 'booking' && (
                 <div>
-                  <p className="text-[11px] text-muted-foreground uppercase tracking-wider mb-2">{t('calendar.operator')}</p>
+                  <p className="text-xs text-muted-foreground uppercase tracking-wider mb-2">{t('calendar.operator')}</p>
                   {detailEvent.assigned_operator ? (
                     <div className="flex items-center gap-2 p-2 bg-muted/50 rounded-lg">
                       <div className="w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center text-primary text-xs font-bold">{detailEvent.assigned_operator.charAt(0).toUpperCase()}</div>
@@ -584,7 +584,7 @@ const CalendarPage = () => {
 
               {detailEvent.source && (
                 <div>
-                  <p className="text-[11px] text-muted-foreground uppercase tracking-wider mb-1">{t('calendar.source')}</p>
+                  <p className="text-xs text-muted-foreground uppercase tracking-wider mb-1">{t('calendar.source')}</p>
                   <span className={cn("inline-block px-2 py-0.5 text-xs rounded font-medium",
                     detailEvent.source === 'airbnb' && "bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-300",
                     detailEvent.source === 'booking_com' && "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300",
@@ -596,7 +596,7 @@ const CalendarPage = () => {
               )}
 
               {detailEvent.notes && (
-                <div><p className="text-[11px] text-muted-foreground uppercase tracking-wider mb-1">{t('clients.notes')}</p><p className="text-sm bg-muted/50 rounded-lg p-2.5 whitespace-pre-line">{detailEvent.notes}</p></div>
+                <div><p className="text-xs text-muted-foreground uppercase tracking-wider mb-1">{t('clients.notes')}</p><p className="text-sm bg-muted/50 rounded-lg p-2.5 whitespace-pre-line">{detailEvent.notes}</p></div>
               )}
             </div>
             <div className="px-5 py-3 border-t border-border flex gap-2 flex-shrink-0">
@@ -691,11 +691,11 @@ const CalendarPage = () => {
                 <div className="grid grid-cols-2 gap-3">
                   <div className="bg-emerald-50 dark:bg-emerald-900/20 rounded-lg p-3 border border-emerald-200 dark:border-emerald-800">
                     <p className="text-2xl font-bold text-emerald-700 dark:text-emerald-300 tabular-nums">{automationResult.generated_count}</p>
-                    <p className="text-[11px] text-emerald-600 dark:text-emerald-400">{t('calendar.automation.generated')}</p>
+                    <p className="text-xs text-emerald-600 dark:text-emerald-400">{t('calendar.automation.generated')}</p>
                   </div>
                   <div className="bg-muted rounded-lg p-3 border border-border">
                     <p className="text-2xl font-bold tabular-nums">{automationResult.skipped_count}</p>
-                    <p className="text-[11px] text-muted-foreground">{t('calendar.automation.skipped')}</p>
+                    <p className="text-xs text-muted-foreground">{t('calendar.automation.skipped')}</p>
                   </div>
                 </div>
                 {automationResult.generated.length > 0 && (
@@ -713,7 +713,7 @@ const CalendarPage = () => {
                               <Icon className={cn("h-3.5 w-3.5", colors.text)} />
                               <span className={cn("text-xs font-semibold", colors.text)}>{task.title}</span>
                             </div>
-                            <p className="text-[11px] text-muted-foreground mt-0.5">{fmtEU(task.start_time)} · {fmtTime(task.start_time)}-{fmtTime(task.end_time)}</p>
+                            <p className="text-xs text-muted-foreground mt-0.5">{fmtEU(task.start_time)} · {fmtTime(task.start_time)}-{fmtTime(task.end_time)}</p>
                           </div>
                         );
                       })}
@@ -750,15 +750,15 @@ const CalendarPage = () => {
               <div className="grid grid-cols-3 gap-3">
                 <div className="bg-emerald-50 dark:bg-emerald-900/20 rounded-lg p-3 border border-emerald-200 dark:border-emerald-800">
                   <p className="text-2xl font-bold text-emerald-700 dark:text-emerald-300 tabular-nums">{syncResult.total_created}</p>
-                  <p className="text-[11px] text-emerald-600 dark:text-emerald-400">Nuove</p>
+                  <p className="text-xs text-emerald-600 dark:text-emerald-400">Nuove</p>
                 </div>
                 <div className="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-3 border border-blue-200 dark:border-blue-800">
                   <p className="text-2xl font-bold text-blue-700 dark:text-blue-300 tabular-nums">{syncResult.total_updated}</p>
-                  <p className="text-[11px] text-blue-600 dark:text-blue-400">Aggiornate</p>
+                  <p className="text-xs text-blue-600 dark:text-blue-400">Aggiornate</p>
                 </div>
                 <div className="bg-muted rounded-lg p-3 border border-border">
                   <p className="text-2xl font-bold tabular-nums">{syncResult.total_removed}</p>
-                  <p className="text-[11px] text-muted-foreground">Rimosse</p>
+                  <p className="text-xs text-muted-foreground">Rimosse</p>
                 </div>
               </div>
               <div className="space-y-2">
@@ -768,14 +768,14 @@ const CalendarPage = () => {
                     <div className="flex items-center justify-between">
                       <span className="text-xs font-medium">{r.structure_name || r.structure_id}</span>
                       {r.status === 'error'
-                        ? <span className="text-[10px] text-red-600 font-medium">Errore</span>
-                        : <span className="text-[10px] text-emerald-600 font-medium flex items-center gap-0.5"><CheckCircle2 className="h-3 w-3" />OK</span>
+                        ? <span className="text-xs text-red-600 font-medium">Errore</span>
+                        : <span className="text-xs text-emerald-600 font-medium flex items-center gap-0.5"><CheckCircle2 className="h-3 w-3" />OK</span>
                       }
                     </div>
                     {r.status === 'error' ? (
-                      <p className="text-[11px] text-red-500 mt-1">{r.error}</p>
+                      <p className="text-xs text-red-500 mt-1">{r.error}</p>
                     ) : (
-                      <p className="text-[11px] text-muted-foreground mt-0.5">
+                      <p className="text-xs text-muted-foreground mt-0.5">
                         {r.events_in_feed} nel feed | +{r.created} nuove, ~{r.updated} aggiornate, -{r.removed} rimosse{r.auto_tasks_created ? `, ${r.auto_tasks_created} task auto` : ''}
                       </p>
                     )}

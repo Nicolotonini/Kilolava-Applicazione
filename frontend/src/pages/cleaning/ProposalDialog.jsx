@@ -34,7 +34,7 @@ export function ProposalDialog({ proposal, onApply, onClose }) {
                     <p className="text-sm font-bold">{pc.name}</p>
                     <p className="text-xs text-muted-foreground tabular-nums">{pc.count} pulizie · {fmtMinutes(pc.total_minutes)} / {fmtMinutes(pc.capacity_minutes)}</p>
                   </div>
-                  <p className="text-[11px] text-muted-foreground flex items-center gap-1">
+                  <p className="text-xs text-muted-foreground flex items-center gap-1">
                     {pc.zones.length > 0 && <><MapPin className="h-3 w-3" />{pc.zones.join(' → ')}</>}
                     {pc.consecutive_days > 0 && <span className="ml-1">· {pc.consecutive_days}° giorno consecutivo</span>}
                   </p>
@@ -51,7 +51,7 @@ export function ProposalDialog({ proposal, onApply, onClose }) {
                       {a.zone_name && <span className="text-muted-foreground"> · {a.zone_name}</span>}
                       {a.checkin_time && <span className="text-amber-600 font-medium"> · CI {a.checkin_time}</span>}
                     </span>
-                    <span className="shrink-0 ml-2">→ <Badge className="text-[10px] border-0 bg-primary/10 text-primary">{a.cleaner_names.join(' + ')}</Badge> <span className="text-muted-foreground">~{fmtMinutes(a.predicted_duration_minutes)}</span></span>
+                    <span className="shrink-0 ml-2">→ <Badge className="text-xs border-0 bg-primary/10 text-primary">{a.cleaner_names.join(' + ')}</Badge> <span className="text-muted-foreground">~{fmtMinutes(a.predicted_duration_minutes)}</span></span>
                   </div>
                 ))}
               </div>
