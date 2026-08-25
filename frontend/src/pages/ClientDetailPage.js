@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useLanguage } from '../contexts/LanguageContext';
 import { clientsApi, structuresApi, unitsApi, operationsApi, inventoryApi } from '../lib/api';
 import api from '../lib/api';
+import { GestioneSegnalazioniCard } from './segnalazioni/ConfigDialog';
 import { Card, CardContent } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
@@ -749,6 +750,7 @@ const ClientDetailPage = () => {
   const TABS = [
     { key: 'anagrafica', label: 'Anagrafica' },
     { key: 'strutture', label: `Strutture (${structures.length})` },
+    { key: 'segnalazioni', label: 'Segnalazioni' },
     { key: 'storico', label: 'Storico' },
     { key: 'fatturazione', label: 'Fatturazione' },
   ];
@@ -1237,6 +1239,10 @@ const ClientDetailPage = () => {
       )}
 
       {/* TAB: Fatturazione */}
+      {activeTab === 'segnalazioni' && (
+        <GestioneSegnalazioniCard scope="client" id={clientId} />
+      )}
+
       {activeTab === 'fatturazione' && (
         <div className="space-y-4">
           <div className="flex items-center justify-between flex-wrap gap-2">

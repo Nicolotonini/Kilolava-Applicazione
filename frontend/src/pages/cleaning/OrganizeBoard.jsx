@@ -365,13 +365,7 @@ export function OrganizeBoard({ date, setDate, onDetail, onAssignDialog, refresh
 
       {/* Controlli */}
       <div className="hidden lg:flex items-center gap-2 flex-wrap">
-        {[{ key: 'all', label: 'Tutte' }, { key: 'unassigned', label: 'Da assegnare' }, { key: 'assigned', label: 'Assegnate' }].map(f => (
-          <button key={f.key} onClick={() => setFilter(f.key)}
-            className={cn('px-3 py-1.5 rounded-full text-xs font-medium',
-              filter === f.key ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:text-foreground')}
-            data-testid={`org-filter-${f.key}`}>{f.label}</button>
-        ))}
-        <div className="relative ml-2">
+        <div className="relative">
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
           <Input value={search} onChange={e => doSearch(e.target.value)} placeholder="Cerca addetta..." className="h-8 pl-8 w-44 text-xs" data-testid="board-search-input" />
         </div>
@@ -390,7 +384,22 @@ export function OrganizeBoard({ date, setDate, onDetail, onAssignDialog, refresh
       <div className="hidden lg:flex gap-3 items-start">
         {/* Colonna PULIZIE — sempre visibile */}
         <div className="w-72 shrink-0 max-h-[calc(100vh-15rem)] overflow-y-auto pr-1 space-y-4" data-testid="org-master-list">
-          <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground sticky top-0 bg-background py-1 z-10">Pulizie</p>
+          <div className="sticky top-0 bg-background z-10 pb-2 space-y-2 border-b border-border/60">
+            <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground pt-1">Pulizie</p>
+            {onNewTask && (
+              <Button onClick={onNewTask} size="sm" className="w-full h-8 bg-primary hover:bg-primary/90 text-primary-foreground" data-testid="col-new-cleaning-btn">
+                <Plus className="h-4 w-4 mr-1" />Nuova pulizia
+              </Button>
+            )}
+            <div className="flex gap-1">
+              {[{ key: 'all', label: 'Tutte' }, { key: 'unassigned', label: 'Da assegnare' }, { key: 'assigned', label: 'Assegnate' }].map(f => (
+                <button key={f.key} onClick={() => setFilter(f.key)}
+                  className={cn('px-2 py-1 rounded-full text-xs font-medium whitespace-nowrap',
+                    filter === f.key ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:text-foreground')}
+                  data-testid={`org-filter-${f.key}`}>{f.label}</button>
+              ))}
+            </div>
+          </div>
           {byZone.length === 0 && <p className="text-xs text-muted-foreground py-6 text-center border border-dashed border-border rounded-xl">Nessuna pulizia</p>}
           {byZone.map(([zone, list]) => (
             <div key={zone}>

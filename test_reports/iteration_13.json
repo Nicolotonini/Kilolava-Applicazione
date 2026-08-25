@@ -1,0 +1,41 @@
+{
+  "summary": "Testato Centro Gestione Segnalazioni end-to-end + modifiche Pulizie board. Backend: 21/22 pytest passati (test_segnalazioni_center.py) — coprono badge, counters, list+paginazione, CRUD segnalazione, triage, update category ricalcola responsibility, urgent riflesso in badge, tutti i tipi di task (delivery/maintenance/notify_client/internal), waiting_reason obbligatorio, resolve/close/reopen, più azioni sulla stessa segnalazione, gerarchia config default->cliente->struttura->item_exception, modalità automatica con automations selettive, flusso addetta (report cleaning → registra in centro), portal cliente (senza dati interni), my-tasks, e nessun blocco per ore in cleaning-tasks/{id}/assign. Frontend: nav Segnalazioni con badge=4 OK, KPI cards, tabs tipo/stato, ricerca, filtri, /cleaning-issues redirect → /segnalazioni funziona, dettaglio con category-select/responsibility-party/detail-timeline, settings gear. OrganizeBoard: colonna sticky con col-new-cleaning-btn + filtri org-filter-*, org-new-cleaning-btn in alto, drawer nuova pulizia con data precompilata = data board (2026-08-25 confermata). 1 bug CRITICO trovato: GET /api/logistics/tasks torna 500 quando esiste una delivery generata da segnalazione (article_id=None in _build_delivery_doc non valida contro LogisticsItemResponse.article_id: str).",
+  "backend_issues": {
+    "critical": [
+      {"endpoint": "GET /api/logistics/tasks", "issue": "Ritorna 500 se esiste anche una sola logistics_task creata da segnalazione. Causa: routes/segnalazioni.py _build_delivery_doc riga ~304 imposta items=[{'article_id': None, 'article_name': title, ...}] mentre server.py:2910 LogisticsItemResponse dichiara article_id: str (required). L'enrich in list_logistics_tasks fallisce con ValidationError su tutti i record. Fix: rendere article_id Optional[str]=None nel modello, oppure passare una stringa placeholder/uuid nel build_delivery_doc.", "priority": "CRITICAL"}
+    ],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Segnalazione detail dialog", "issues": ["Warning console: DialogContent senza DialogTitle e senza Description/aria-describedby (a11y). Non blocca, ma da correggere in NewSegnalazioneDialog / TaskDialog."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_segnalazioni_center.py",
+    "/app/test_reports/pytest/iter13_results.xml"
+  ],
+  "action_items": [
+    "FIX CRITICAL: Rendere article_id opzionale in LogisticsItemResponse oppure fornire un valore string non-null nelle deliveries create dal Centro Segnalazioni (routes/segnalazioni.py _build_delivery_doc). Attualmente rompe l'intera lista logistica.",
+    "Aggiungere DialogTitle/Description ai dialog del Centro Segnalazioni (NewSegnalazioneDialog, TaskDialog, ConfigDialog) per a11y."
+  ],
+  "critical_code_review_comments": [
+    "routes/segnalazioni.py è 1061 righe (>700): considerare split per config/tasks/detail in moduli separati.",
+    "get_segnalazione fa 2 find sulla stessa segnalazione (righe 845 e 850): rimuovere il secondo find (già letto dopo sync tasks; usare recompute + re-fetch condizionale).",
+    "_build_delivery_doc dovrebbe validare article_id opzionale a livello schema di logistics_tasks — il payload non passa la validation nel GET.",
+    "Manca endpoint DELETE per segnalazioni/task (cleanup solo via mongo diretto).",
+    "counters endpoint fa 6 count_documents sequenziali: si potrebbe unificare con un'aggregate su op_status."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_segnalazioni_center.py (nuovo)"
+  ],
+  "success_rate": {"backend": "95% (21/22)", "frontend": "100% delle verifiche UI selettori/data-testid"},
+  "test_credentials": "admin test_user@kilolava.com/TestPass123!, addetta_test@kilolava.com/AddettaTest123!, cliente_test@kilolava.com/ClienteTest123!",
+  "seed_data_creation": "Create durante i test alcune segnalazioni con prefisso TEST (auto-cleanup via mongo in test_zz_cleanup). Config struttura ripristinata a mode=inherit alla fine.",
+  "retest_needed": true,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Il bug su GET /api/logistics/tasks è deterministico: appena una segnalazione crea una delivery (task 'delivery' o automation missing_kilolava), la lista logistics torna 500 per tutti fino al fix. Nel test suite ho lasciato l'asserzione fallire per rendere visibile la regressione. Il test test_create_delivery_task_creates_logistics_task diventerà passing una volta corretto lo schema/valorizzazione article_id. Non ci sono altre regressioni: gerarchia config, modalità automatica, cleaning issue → centro, portal cliente, my-tasks, ore mai bloccate, tutti verificati.",
+  "rca of the issue": "GET /api/logistics/tasks (server.py:3046-3068) chiama _enrich_task che costruisce LogisticsItemResponse(article_id=str(...)). routes/segnalazioni.py::_build_delivery_doc scrive items=[{'article_id': None, 'article_name': title, 'quantity': 1}]. Pydantic v2 rifiuta None per un campo str non-Optional → 500 su GET list. Riproduzione: creare segnalazione missing con struttura + cliente, POST /api/segnalazioni/{id}/tasks type=delivery → GET /api/logistics/tasks fallisce. Mitigazione: (a) modificare _build_delivery_doc per usare str(uuid.uuid4()) o '' come article_id, oppure (b) LogisticsItemResponse.article_id: Optional[str] = None. Opzione (b) è più sicura (mantiene semantica 'articolo generico da consegna segnalazione')."
+}

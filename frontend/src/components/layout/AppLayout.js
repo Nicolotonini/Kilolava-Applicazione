@@ -7,8 +7,9 @@ import { NotificationBell } from '../NotificationBell';
 import {
   LayoutDashboard, Users, CalendarDays, Truck, Settings, LogOut, Menu, X,
   Sun, Moon, Shield, Sparkles, Wrench, FileText, ChevronDown, ChevronRight,
-  Eye, Building2, Shirt, Layers, Boxes, KeyRound,
+  Eye, Building2, Shirt, Layers, Boxes, KeyRound, AlertTriangle,
 } from 'lucide-react';
+import { useSegnalazioniBadge } from '../../hooks/useSegnalazioniBadge';
 import { Button } from '../ui/button';
 import { cn } from '../../lib/utils';
 
@@ -28,9 +29,9 @@ const NAV = [
     type: 'group', key: 'cleaning', icon: Sparkles, label: 'Pulizie', children: [
       { key: 'cleaning-overview', path: '/cleaning', label: 'Panoramica' },
       { key: 'cleaning-organize', path: '/cleaning-organize', label: 'Organizzazione' },
-      { key: 'cleaning-issues', path: '/cleaning-issues', label: 'Segnalazioni' },
     ],
   },
+  { type: 'item', key: 'segnalazioni', path: '/segnalazioni', icon: AlertTriangle, label: 'Segnalazioni' },
   { type: 'item', key: 'structure-inventory', path: '/structure-inventory', icon: Boxes, label: 'Magazzino Strutture' },
   { type: 'item', key: 'deliveries', path: '/logistics', icon: Truck, label: 'Consegne' },
   {
@@ -90,7 +91,7 @@ function getBreadcrumb(pathname, search) {
   if (pathname.startsWith('/structures/')) return { title: 'Dettaglio struttura', crumbs: [{ label: 'Strutture', to: '/structures' }] };
   if (pathname === '/cleaning') return { title: 'Panoramica', crumbs: [{ label: 'Pulizie' }] };
   if (pathname === '/cleaning-organize') return { title: 'Organizzazione', crumbs: [{ label: 'Pulizie' }] };
-  if (pathname === '/cleaning-issues') return { title: 'Segnalazioni', crumbs: [{ label: 'Pulizie' }] };
+  if (pathname === '/segnalazioni') return { title: 'Segnalazioni', crumbs: [] };
   if (pathname === '/checklist-templates') return { title: 'Checklist', crumbs: [{ label: 'Pulizie', to: '/cleaning' }] };
   if (pathname === '/structure-inventory') return { title: 'Magazzino Strutture', crumbs: [] };
   if (pathname === '/keys') return { title: 'Chiavi', crumbs: [{ label: 'Clienti e Strutture' }] };
@@ -122,6 +123,7 @@ const AppLayout = ({ children }) => {
   const [mobileAccountOpen, setMobileAccountOpen] = useState(false);
   const [openGroups, setOpenGroups] = useState({});
   const accountRef = useRef(null);
+  const segBadge = useSegnalazioniBadge();
 
   const isPathActive = (path) => {
     const [p, q] = path.split('?');
@@ -197,6 +199,18 @@ const AppLayout = ({ children }) => {
         >
           <entry.icon className={cn('h-5 w-5 flex-shrink-0', active ? 'text-primary' : 'text-foreground/50')} />
           <span className="truncate">{entry.label}</span>
+          {entry.key === 'segnalazioni' && segBadge.active > 0 && (
+            <span className="ml-auto flex items-center gap-1.5 flex-shrink-0">
+              {segBadge.urgent > 0 && (
+                <span className="text-xs font-bold text-red-600 bg-red-100 dark:bg-red-900/30 px-1.5 py-0.5 rounded-full" data-testid="nav-segnalazioni-urgent">
+                  {segBadge.urgent} urgenti
+                </span>
+              )}
+              <span className="text-xs font-bold bg-primary/10 text-primary px-2 py-0.5 rounded-full tabular-nums" data-testid="nav-segnalazioni-badge">
+                {segBadge.active}
+              </span>
+            </span>
+          )}
         </NavLink>
       );
     }

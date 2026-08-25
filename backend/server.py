@@ -2908,7 +2908,7 @@ class TaskStatusUpdate(BaseModel):
     completion_notes: Optional[str] = None
 
 class LogisticsItemResponse(BaseModel):
-    article_id: str
+    article_id: Optional[str] = None
     article_name: Optional[str] = None
     quantity: int
     item_type: str = "deliver"
@@ -4994,8 +4994,13 @@ async def report_cleaning_issue(
         "reporter_name": current_user.get("name", ""),
         "created_at": now,
     }
-    await db.cleaning_issues.insert_one(issue)
+    await db.cleaning_issues.insert_one(dict(issue))
     issue.pop("_id", None)
+    # Registra nel Centro Segnalazioni (la Pulizia è solo l'origine)
+    try:
+        await register_from_cleaning(issue, current_user)
+    except Exception:
+        logging.getLogger(__name__).exception("Registrazione Centro Segnalazioni fallita")
     await db.cleaning_tasks.update_one(
         {"id": task_id},
         {"$push": {"issues": {"id": issue["id"], "category": data.category, "note": data.note, "severity": data.severity,
@@ -7265,10 +7270,22 @@ from routes.export_routes import create_export_router  # noqa: E402
 from routes.billing_pdf import create_billing_pdf_router  # noqa: E402
 from routes.activity_log import create_activity_router, init_activity_middleware  # noqa: E402
 from routes.integrations import create_integrations_router  # noqa: E402
+from routes.segnalazioni import (  # noqa: E402
+    create_segnalazioni_router, init_segnalazioni_deps, register_from_cleaning, migrate_cleaning_issues,
+)
+init_segnalazioni_deps(
+    create_notification=create_notification,
+    notify_ops_users=notify_ops_users,
+    put_object=put_object,
+    app_name=APP_NAME,
+    local_today=local_today,
+    get_client_display_name=get_client_display_name,
+)
 api_router.include_router(create_export_router(get_current_user))
 api_router.include_router(create_billing_pdf_router(get_current_user))
 api_router.include_router(create_activity_router(get_current_user))
 api_router.include_router(create_integrations_router(get_current_user, is_ops_user))
+api_router.include_router(create_segnalazioni_router(get_current_user, is_ops_user))
 init_activity_middleware(app, SECRET_KEY, ALGORITHM)
 
 app.include_router(api_router)
@@ -7310,6 +7327,13 @@ async def startup_event():
         await seed_operational_zones()
     except Exception as e:
         logger.error(f"Zone seed failed: {e}")
+    # Migrazione segnalazioni storiche nel Centro Segnalazioni (idempotente)
+    try:
+        migrated = await migrate_cleaning_issues()
+        if migrated:
+            logger.info(f"Segnalazioni: migrati {migrated} record dallo storico Pulizie")
+    except Exception as e:
+        logger.error(f"Segnalazioni migration failed: {e}")
     # Start scheduler with overdue task check every 30 minutes
     try:
         scheduler_service.start_scheduler(_check_overdue_tasks)

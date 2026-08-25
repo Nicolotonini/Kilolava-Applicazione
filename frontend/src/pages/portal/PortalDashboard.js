@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { portalApi } from '../../lib/api';
+import api from '../../lib/api';
 import { Card, CardContent } from '../../components/ui/card';
 import { Button } from '../../components/ui/button';
 import {
@@ -22,6 +23,7 @@ const PortalDashboard = () => {
   const navigate = useNavigate();
   const [data, setData] = useState(null);
   const [structuresToday, setStructuresToday] = useState([]);
+  const [segnalazioni, setSegnalazioni] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -34,6 +36,7 @@ const PortalDashboard = () => {
     };
     load();
     portalApi.getMyStructuresToday?.().then(r => setStructuresToday(r.data)).catch(() => {});
+    api.get('/segnalazioni/portal').then(r => setSegnalazioni(r.data)).catch(() => {});
   }, []);
 
   if (loading) return <div className="text-center py-16 text-muted-foreground">Caricamento...</div>;
@@ -74,6 +77,30 @@ const PortalDashboard = () => {
                 </Card>
               );
             })}
+          </div>
+        </div>
+      )}
+
+      {/* Segnalazioni pubblicate */}
+      {segnalazioni.length > 0 && (
+        <div data-testid="portal-segnalazioni">
+          <h2 className="text-base md:text-lg font-heading font-semibold mb-2">Segnalazioni</h2>
+          <div className="space-y-2">
+            {segnalazioni.map(s => (
+              <Card key={s.id} className="border shadow-none">
+                <CardContent className="p-4 flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="font-semibold truncate">{s.structure_name || 'Struttura'}</p>
+                    <p className="text-sm text-muted-foreground">{s.message}</p>
+                  </div>
+                  <span className={cn('shrink-0 px-3 py-1.5 rounded-full text-xs font-semibold',
+                    s.status_label === 'Risolta' ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700')}
+                    data-testid={`portal-seg-status-${s.id}`}>
+                    {s.status_label}
+                  </span>
+                </CardContent>
+              </Card>
+            ))}
           </div>
         </div>
       )}

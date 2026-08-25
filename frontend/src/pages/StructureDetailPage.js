@@ -11,8 +11,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import {
   ArrowLeft, Building2, User, Sparkles, Shirt, Package, Wrench, Save, Plus,
   Trash2, Pencil, Bed, Home, Hotel, Briefcase, KeyRound, Camera, Boxes,
-  MapPin, DoorOpen, ChevronUp, ChevronDown, X, StickyNote, Film, Layers, Info,
+  MapPin, DoorOpen, ChevronUp, ChevronDown, X, StickyNote, Film, Layers, Info, AlertTriangle,
 } from 'lucide-react';
+import { GestioneSegnalazioniCard } from './segnalazioni/ConfigDialog';
 import { cn } from '../lib/utils';
 import { toast } from 'sonner';
 
@@ -173,6 +174,7 @@ const StructureDetailPage = () => {
     { key: 'services', label: 'Servizi', icon: Sparkles },
     { key: 'beds', label: 'Letti e Capacità', icon: Bed },
     { key: 'access', label: 'Accesso e Chiavi', icon: KeyRound },
+    { key: 'segnalazioni', label: 'Gestione Segnalazioni', icon: AlertTriangle, disabled: isNew },
     { key: 'photos', label: 'Foto / Video / Altro', icon: Camera, disabled: isNew },
     ...(form.has_units ? [{ key: 'units', label: `Unità (${units.length})`, icon: DoorOpen, disabled: isNew }] : []),
   ];
@@ -260,6 +262,9 @@ const StructureDetailPage = () => {
                 </div>
               )}
             </>
+          )}
+          {section === 'segnalazioni' && !isNew && (
+            <GestioneSegnalazioniCard scope="structure" id={structureId} />
           )}
           {section === 'photos' && !isNew && (
             <>

@@ -23,7 +23,7 @@ import CleanerView from './pages/CleanerView';
 import MaintenanceView from './pages/MaintenanceView';
 import CleaningPage from './pages/CleaningPage';
 import CleaningOrganizePage from './pages/CleaningOrganizePage';
-import CleaningIssuesPage from './pages/CleaningIssuesPage';
+import SegnalazioniPage from './pages/segnalazioni/SegnalazioniPage';
 import ChecklistTemplatesPage from './pages/ChecklistTemplatesPage';
 import MaintenanceIssuesPage from './pages/MaintenanceIssuesPage';
 import NotificationsPage from './pages/NotificationsPage';
@@ -183,7 +183,8 @@ function AppRoutes() {
         <Route path="private-laundry/history" element={<PrivateLaundryPage view="history" />} />
         <Route path="cleaning" element={<CleaningPage />} />
         <Route path="cleaning-organize" element={<CleaningOrganizePage />} />
-        <Route path="cleaning-issues" element={<CleaningIssuesPage />} />
+        <Route path="segnalazioni" element={<SegnalazioniPage />} />
+        <Route path="cleaning-issues" element={<Navigate to="/segnalazioni" replace />} />
         <Route path="checklist-templates" element={<ChecklistTemplatesPage />} />
         <Route path="users" element={<UsersPage />} />
         <Route path="integrations" element={<IntegrationsPage />} />
