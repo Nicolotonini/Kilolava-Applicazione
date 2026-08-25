@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useLanguage } from '../contexts/LanguageContext';
-import { logisticsApi, clientsApi, structuresApi, inventoryApi } from '../lib/api';
+import api, { logisticsApi, clientsApi, structuresApi, inventoryApi } from '../lib/api';
 import { ExportButton } from '../components/ExportButton';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
@@ -125,7 +126,9 @@ const LogisticsPage = () => {
   // Panels
   const [taskPanel, setTaskPanel] = useState(false);
   const [riderPanel, setRiderPanel] = useState(false);
-  const [detailPanel, setDetailPanel] = useState(null);
+  const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const editHandled = useRef(false);
   const [editTask, setEditTask] = useState(null);
   const [deleteDialog, setDeleteDialog] = useState({ open: false, type: '', id: '' });
 
@@ -230,6 +233,17 @@ const LogisticsPage = () => {
     });
     setTaskPanel(true);
   };
+
+  // Apertura in modifica da pagina dettaglio (?edit=taskId)
+  useEffect(() => {
+    const editId = searchParams.get('edit');
+    if (editId && !editHandled.current) {
+      editHandled.current = true;
+      api.get(`/logistics/tasks/${editId}`).then(r => openEditTask(r.data)).catch(() => {});
+      setSearchParams({}, { replace: true });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
 
   const saveTask = async () => {
     if (!taskForm.date) { toast.error('Data richiesta'); return; }
@@ -435,7 +449,7 @@ const LogisticsPage = () => {
                 key={task.id}
                 position={[task.latitude, task.longitude]}
                 icon={createColorIcon(MARKER_COLORS[task.status] || '#94a3b8')}
-                eventHandlers={{ click: () => setDetailPanel(task) }}
+                eventHandlers={{ click: () => navigate(`/logistics/${task.id}`) }}
               >
                 <Popup>
                   <div className="text-sm">
@@ -462,10 +476,8 @@ const LogisticsPage = () => {
             return (
               <Card
                 key={task.id}
-                className={cn("kilolava-card cursor-pointer hover:ring-1 hover:ring-[#F24E75]/30 transition-all",
-                  detailPanel?.id === task.id && "ring-1 ring-[#F24E75]"
-                )}
-                onClick={() => setDetailPanel(task)}
+                className="kilolava-card cursor-pointer card-hover"
+                onClick={() => navigate(`/logistics/${task.id}`)}
                 data-testid={`task-card-${task.id}`}
               >
                 <CardContent className="p-3">
@@ -525,95 +537,6 @@ const LogisticsPage = () => {
       </div>
 
       {/* Detail Panel */}
-      <SidePanel open={!!detailPanel} onClose={() => setDetailPanel(null)} title="Dettaglio Stop" wide>
-        {detailPanel && (
-          <div className="p-5 space-y-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <span className="text-lg font-semibold">{TYPE_LABELS[detailPanel.task_type]}</span>
-                <span className={cn("text-xs px-2 py-0.5 rounded-full font-medium", STATUS_COLORS[detailPanel.status])}>
-                  {STATUS_LABELS[detailPanel.status]}
-                </span>
-              </div>
-              <div className="flex items-center gap-1">
-                <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => { openEditTask(detailPanel); setDetailPanel(null); }}>
-                  <Pencil className="h-3.5 w-3.5" />
-                </Button>
-                <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => setDeleteDialog({ open: true, type: 'task', id: detailPanel.id })}>
-                  <Trash2 className="h-3.5 w-3.5" />
-                </Button>
-              </div>
-            </div>
-
-            {detailPanel.client_name && <div className="text-sm"><span className="text-muted-foreground">Cliente:</span> <span className="font-medium">{detailPanel.client_name}</span></div>}
-            {detailPanel.structure_name && <div className="text-sm"><span className="text-muted-foreground">Struttura:</span> <span className="font-medium">{detailPanel.structure_name}</span></div>}
-            {detailPanel.unit_name && <div className="text-sm"><span className="text-muted-foreground">Unita:</span> <span className="font-medium">{detailPanel.unit_name}</span></div>}
-            {detailPanel.address && <div className="text-sm flex items-center gap-1"><MapPin className="h-3.5 w-3.5 text-muted-foreground" />{detailPanel.address}</div>}
-            {detailPanel.time_window_start && <div className="text-sm flex items-center gap-1"><Clock className="h-3.5 w-3.5 text-muted-foreground" />{detailPanel.time_window_start}{detailPanel.time_window_end ? ` - ${detailPanel.time_window_end}` : ''}</div>}
-            {detailPanel.access_details && <div className="text-sm"><span className="text-muted-foreground">Accesso:</span> {detailPanel.access_details}</div>}
-            {detailPanel.notes && <div className="text-sm"><span className="text-muted-foreground">Note:</span> {detailPanel.notes}</div>}
-
-            {detailPanel.items?.length > 0 && (
-              <div>
-                <p className="text-xs font-medium text-muted-foreground uppercase mb-1.5">Articoli</p>
-                <div className="space-y-1">
-                  {detailPanel.items.map((it, i) => (
-                    <div key={i} className="flex items-center justify-between bg-muted/50 px-3 py-1.5 rounded text-sm">
-                      <span>{it.article_name || it.article_id}</span>
-                      <span className="font-medium">x{it.quantity} ({it.item_type === 'pickup' ? 'ritiro' : 'consegna'})</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Quick actions */}
-            <div className="pt-2 border-t border-border space-y-2">
-              <p className="text-xs font-medium text-muted-foreground uppercase">Azioni rapide</p>
-              {detailPanel.status === 'unassigned' && (
-                <div className="flex items-center gap-2">
-                  <Select onValueChange={v => { quickAssign(detailPanel.id, v); setDetailPanel(null); }}>
-                    <SelectTrigger className="h-8 flex-1"><SelectValue placeholder="Assegna a rider" /></SelectTrigger>
-                    <SelectContent>
-                      {riders.map(r => <SelectItem key={r.id} value={r.id}>{r.name}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
-                </div>
-              )}
-              <div className="flex gap-2 flex-wrap">
-                {detailPanel.status === 'assigned' && (
-                  <Button size="sm" className="h-8 gap-1 bg-amber-600 hover:bg-amber-700 text-white" onClick={() => { quickStatus(detailPanel.id, 'in_progress'); setDetailPanel(null); }}>
-                    <Play className="h-3 w-3" />Avvia
-                  </Button>
-                )}
-                {(detailPanel.status === 'in_progress' || detailPanel.status === 'assigned') && (
-                  <Button size="sm" className="h-8 gap-1 bg-green-600 hover:bg-green-700 text-white" onClick={() => { quickStatus(detailPanel.id, 'completed'); setDetailPanel(null); }}>
-                    <Check className="h-3 w-3" />Completato
-                  </Button>
-                )}
-                {detailPanel.status !== 'unassigned' && detailPanel.status !== 'problem' && (
-                  <Button size="sm" variant="outline" className="h-8 gap-1 text-red-600" onClick={() => { quickStatus(detailPanel.id, 'unassigned'); setDetailPanel(null); }}>
-                    Rimuovi assegnazione
-                  </Button>
-                )}
-              </div>
-            </div>
-
-            {detailPanel.problem_notes && (
-              <div className="bg-red-50 dark:bg-red-900/20 p-3 rounded-lg text-sm">
-                <p className="text-red-700 dark:text-red-400 font-medium">Problema segnalato</p>
-                <p className="text-red-600 dark:text-red-300">{detailPanel.problem_notes}</p>
-              </div>
-            )}
-            {detailPanel.completion_notes && (
-              <div className="bg-green-50 dark:bg-green-900/20 p-3 rounded-lg text-sm">
-                <p className="text-green-700 dark:text-green-400 font-medium">Note completamento</p>
-                <p>{detailPanel.completion_notes}</p>
-              </div>
-            )}
-          </div>
-        )}
-      </SidePanel>
 
       {/* Task Form Panel */}
       <SidePanel open={taskPanel} onClose={() => setTaskPanel(false)} title={editTask ? 'Modifica Stop' : 'Nuovo Stop'} wide>

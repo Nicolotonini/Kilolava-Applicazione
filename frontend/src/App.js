@@ -23,7 +23,11 @@ import CleanerView from './pages/CleanerView';
 import MaintenanceView from './pages/MaintenanceView';
 import CleaningPage from './pages/CleaningPage';
 import CleaningOrganizePage from './pages/CleaningOrganizePage';
+import CleaningTaskDetailPage from './pages/cleaning/CleaningTaskDetailPage';
+import MaintenanceIssueDetailPage from './pages/MaintenanceIssueDetailPage';
+import LogisticsTaskDetailPage from './pages/LogisticsTaskDetailPage';
 import SegnalazioniPage from './pages/segnalazioni/SegnalazioniPage';
+import SegnalazioneDetailPage from './pages/segnalazioni/SegnalazioneDetailPage';
 import ChecklistTemplatesPage from './pages/ChecklistTemplatesPage';
 import MaintenanceIssuesPage from './pages/MaintenanceIssuesPage';
 import NotificationsPage from './pages/NotificationsPage';
@@ -176,6 +180,9 @@ function AppRoutes() {
         <Route path="calendar" element={<CalendarPage />} />
         <Route path="inventory" element={<InventoryPage />} />
         <Route path="logistics" element={<LogisticsPage />} />
+        <Route path="logistics/:taskId" element={<LogisticsTaskDetailPage />} />
+        <Route path="maintenance/issue/:issueId" element={<MaintenanceIssueDetailPage />} />
+        <Route path="cleaning/task/:taskId" element={<CleaningTaskDetailPage />} />
         <Route path="deliveries" element={<Navigate to="/logistics" replace />} />
         <Route path="structure-inventory" element={<StructureInventoryPage />} />
         <Route path="keys" element={<KeysPage />} />
@@ -184,6 +191,7 @@ function AppRoutes() {
         <Route path="cleaning" element={<CleaningPage />} />
         <Route path="cleaning-organize" element={<CleaningOrganizePage />} />
         <Route path="segnalazioni" element={<SegnalazioniPage />} />
+        <Route path="segnalazioni/:segId" element={<SegnalazioneDetailPage />} />
         <Route path="cleaning-issues" element={<Navigate to="/segnalazioni" replace />} />
         <Route path="checklist-templates" element={<ChecklistTemplatesPage />} />
         <Route path="users" element={<UsersPage />} />

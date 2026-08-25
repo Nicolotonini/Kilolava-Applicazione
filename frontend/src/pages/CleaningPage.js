@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import api from '../lib/api';
 import { Card, CardContent } from '../components/ui/card';
 import { Button } from '../components/ui/button';
@@ -6,6 +7,7 @@ import { Input } from '../components/ui/input';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '../components/ui/dialog';
 import { Plus, Sparkles, Printer, Copy, FileText, Loader2 } from 'lucide-react';
 import { cn } from '../lib/utils';
+import { KpiCard } from '../components/kilolava/KpiCard';
 import { toast } from 'sonner';
 import { todayStr, tomorrowStr, isUnassigned } from './cleaning/shared';
 import { CompactTaskRow } from './cleaning/TaskRow';
@@ -21,6 +23,7 @@ const VIEW_KEY = 'klv_cleaning_day_view';
 const hasProblem = (t) => t.open_issues_count > 0 || t.status === 'issue_reported' || t.status === 'needs_review';
 
 export default function CleaningPage() {
+  const navigate = useNavigate();
   const [date, setDate] = useState(todayStr());
   const [tasks, setTasks] = useState(null);
   const [viewMode, setViewMode] = useState(() => sessionStorage.getItem(VIEW_KEY) || 'cleaner');
@@ -77,7 +80,7 @@ export default function CleaningPage() {
   };
 
   const actions = {
-    onDetail: (t) => setDetailTask(t),
+    onDetail: (t) => navigate(`/cleaning/task/${t.id}`),
     onEdit: (t) => setFormState({ task: t }),
     onAssign: (t) => setAssignTask(t),
     onDuplicate: (t) => setDupTask(t),
@@ -128,10 +131,10 @@ export default function CleaningPage() {
         <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-3" data-testid="overview-kpi">
           <KpiCard label="Pulizie" value={kpi.total} testId="kpi-total" />
           <KpiCard label="Assegnate" value={kpi.assigned} testId="kpi-assigned" />
-          <KpiCard label="Da assegnare" value={kpi.unassigned} valueCls={kpi.unassigned > 0 ? 'text-amber-600' : 'text-emerald-600'} testId="kpi-unassigned" />
-          <KpiCard label="Completate" value={kpi.completed} valueCls="text-emerald-600" testId="kpi-completed" />
-          <KpiCard label="In corso" value={kpi.in_progress} valueCls={kpi.in_progress > 0 ? 'text-amber-600' : 'text-muted-foreground'} testId="kpi-inprogress" />
-          <KpiCard label="Problemi" value={kpi.problems} valueCls={kpi.problems > 0 ? 'text-red-600' : 'text-muted-foreground'} testId="kpi-problems" />
+          <KpiCard label="Da assegnare" value={kpi.unassigned} accent={kpi.unassigned > 0 ? 'text-amber-600' : 'text-emerald-600'} testId="kpi-unassigned" />
+          <KpiCard label="Completate" value={kpi.completed} accent="text-emerald-600" testId="kpi-completed" />
+          <KpiCard label="In corso" value={kpi.in_progress} accent={kpi.in_progress > 0 ? 'text-amber-600' : 'text-muted-foreground'} testId="kpi-inprogress" />
+          <KpiCard label="Problemi" value={kpi.problems} accent={kpi.problems > 0 ? 'text-red-600' : 'text-muted-foreground'} testId="kpi-problems" />
         </div>
 
         <div className="flex items-center gap-2 flex-wrap">
@@ -190,16 +193,8 @@ export default function CleaningPage() {
   );
 }
 
-function KpiCard({ label, value, valueCls, testId }) {
-  return (
-    <Card className="border shadow-none">
-      <CardContent className="p-4">
-        <p className="text-xs uppercase tracking-wider text-muted-foreground">{label}</p>
-        <p className={cn('text-3xl font-semibold tabular-nums mt-1', valueCls)} data-testid={testId}>{value}</p>
-      </CardContent>
-    </Card>
-  );
-}
+function KpiCardLegacyRemoved() { return null; }
+/* KpiCard ora condivisa: components/kilolava/KpiCard */
 
 function DuplicateDayDialog({ date, tasks, onClose, onDone }) {
   const [target, setTarget] = useState(tomorrowStr());

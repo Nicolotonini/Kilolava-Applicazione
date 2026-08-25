@@ -2,7 +2,7 @@ import React from 'react';
 import { Shirt } from 'lucide-react';
 
 const PrivateLaundryPage = ({ view = 'jobs' }) => (
-  <div className="p-4 lg:p-8 max-w-5xl" data-testid={`private-laundry-${view}`}>
+  <div className="p-4 lg:p-6 max-w-5xl" data-testid={`private-laundry-${view}`}>
     <div className="text-center py-20 border border-dashed border-border rounded-xl">
       <Shirt className="h-8 w-8 text-muted-foreground/40 mx-auto mb-3" />
       <p className="text-sm font-medium">

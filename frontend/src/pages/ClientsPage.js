@@ -206,7 +206,7 @@ const ClientsPage = () => {
         <div className="flex items-center gap-2">
           <Button
             onClick={openCreateSheet}
-            className="bg-[#F24E75] hover:bg-[#E03B62] text-white h-9"
+            className="bg-primary hover:bg-primary/90 text-primary-foreground h-9"
             data-testid="add-client-btn"
           >
             <Plus className="h-4 w-4 mr-1.5" />

@@ -1,18 +1,20 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import api from '../../lib/api';
-import { Card, CardContent } from '../../components/ui/card';
 import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
 import { Plus, Settings, ClipboardList, AlertTriangle, SlidersHorizontal, Search, ChevronDown } from 'lucide-react';
 import { cn } from '../../lib/utils';
+import { PageHeader } from '../../components/kilolava/PageHeader';
+import { KpiCard, KpiGrid } from '../../components/kilolava/KpiCard';
+import { EmptyState, KpiSkeleton, ListSkeleton } from '../../components/kilolava/EmptyState';
 import { TYPE_META, PRIORITY_META, SEG_STATUS_META, ORIGIN_META, ageLabel } from './shared';
-import { SegnalazioneDetail } from './SegnalazioneDetail';
 import { NewSegnalazioneDialog } from './NewSegnalazioneDialog';
 import { SegnalazioniConfigDialog } from './ConfigDialog';
 import { MyTasksSheet } from './MyTasksSheet';
 
 const STATUS_PILLS = [
-  { key: 'active', label: 'Attive' },
+  { key: 'active', label: 'Tutte aperte' },
   { key: 'da_valutare', label: 'Da valutare' },
   { key: 'aperta', label: 'Aperte' },
   { key: 'in_corso', label: 'In corso' },
@@ -29,6 +31,7 @@ const VIEW_MODES = [
 ];
 
 export default function SegnalazioniPage() {
+  const navigate = useNavigate();
   const [typeFilter, setTypeFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('active');
   const [viewMode, setViewMode] = useState('list');
@@ -40,7 +43,6 @@ export default function SegnalazioniPage() {
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
-  const [detailId, setDetailId] = useState(null);
   const [newOpen, setNewOpen] = useState(false);
   const [configOpen, setConfigOpen] = useState(false);
   const [myTasksOpen, setMyTasksOpen] = useState(false);
@@ -100,13 +102,13 @@ export default function SegnalazioniPage() {
   }, [items, viewMode]);
 
   const kpi = counters?.kpi || {};
+  const openSeg = (id) => navigate(`/segnalazioni/${id}`);
 
   return (
     <div className="p-4 lg:p-6 space-y-5" data-testid="segnalazioni-page">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:justify-between">
-        <h1 className="text-xl lg:text-2xl font-heading font-semibold">Segnalazioni</h1>
-        <div className="flex items-center gap-2 flex-wrap">
+      <PageHeader
+        title="Segnalazioni"
+        actions={<>
           <Button variant="outline" onClick={() => setMyTasksOpen(true)} data-testid="my-tasks-btn">
             <ClipboardList className="h-4 w-4 mr-1.5" />I miei task
           </Button>
@@ -116,18 +118,20 @@ export default function SegnalazioniPage() {
           <Button variant="ghost" size="icon" className="h-9 w-9" onClick={() => setConfigOpen(true)} title="Impostazioni Segnalazioni" data-testid="segnalazioni-settings-btn">
             <Settings className="h-4 w-4" />
           </Button>
-        </div>
-      </div>
+        </>}
+      />
 
       {/* KPI */}
-      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3" data-testid="segnalazioni-kpi">
-        <KpiCard label="Da valutare" value={kpi.da_valutare} accent={kpi.da_valutare > 0 ? 'text-fuchsia-600' : ''} testId="kpi-da-valutare" />
-        <KpiCard label="Aperte" value={kpi.aperte} testId="kpi-aperte" />
-        <KpiCard label="In corso" value={kpi.in_corso} testId="kpi-in-corso" />
-        <KpiCard label="In attesa" value={kpi.in_attesa} testId="kpi-in-attesa" />
-        <KpiCard label="Urgenti" value={kpi.urgent} accent={kpi.urgent > 0 ? 'text-red-600' : ''} testId="kpi-urgenti" />
-        <KpiCard label="Risolte questo mese" value={kpi.resolved_month} accent="text-emerald-600" testId="kpi-risolte-mese" />
-      </div>
+      {counters === null ? <KpiSkeleton count={6} /> : (
+        <KpiGrid cols={6} testId="segnalazioni-kpi">
+          <KpiCard label="Da valutare" value={kpi.da_valutare} accent={kpi.da_valutare > 0 ? 'text-fuchsia-600' : ''} testId="kpi-da-valutare" />
+          <KpiCard label="Aperte" value={kpi.aperte} testId="kpi-aperte" />
+          <KpiCard label="In corso" value={kpi.in_corso} testId="kpi-in-corso" />
+          <KpiCard label="In attesa" value={kpi.in_attesa} testId="kpi-in-attesa" />
+          <KpiCard label="Urgenti" value={kpi.urgent} accent={kpi.urgent > 0 ? 'text-red-600' : ''} testId="kpi-urgenti" />
+          <KpiCard label="Risolte questo mese" value={kpi.resolved_month} accent="text-emerald-600" testId="kpi-risolte-mese" />
+        </KpiGrid>
+      )}
 
       {/* PRIMO LIVELLO: tipo */}
       <div className="flex gap-1 border-b border-border overflow-x-auto" data-testid="type-tabs">
@@ -206,14 +210,11 @@ export default function SegnalazioniPage() {
 
       {/* Lista */}
       {loading && items.length === 0 ? (
-        <p className="text-center py-10 text-muted-foreground">Caricamento...</p>
+        <ListSkeleton rows={6} />
       ) : items.length === 0 ? (
-        <div className="text-center py-16 border border-dashed border-border rounded-xl">
-          <AlertTriangle className="h-8 w-8 mx-auto text-muted-foreground/30 mb-3" />
-          <p className="text-sm text-muted-foreground">Nessuna segnalazione con questi filtri.</p>
-        </div>
+        <EmptyState icon={AlertTriangle} message="Nessuna segnalazione con questi filtri." />
       ) : viewMode === 'list' ? (
-        <SegTable items={items} onOpen={setDetailId} />
+        <SegTable items={items} onOpen={openSeg} />
       ) : (
         <div className="space-y-5">
           {grouped.map(([groupName, list]) => (
@@ -221,7 +222,7 @@ export default function SegnalazioniPage() {
               <p className="text-sm font-bold uppercase tracking-wider text-muted-foreground mb-1.5 flex items-center gap-2">
                 {groupName} <span className="text-xs font-semibold bg-muted px-1.5 py-0.5 rounded-full">{list.length}</span>
               </p>
-              <SegTable items={list} onOpen={setDetailId} hideCol={viewMode} />
+              <SegTable items={list} onOpen={openSeg} hideCol={viewMode} />
             </div>
           ))}
         </div>
@@ -236,22 +237,10 @@ export default function SegnalazioniPage() {
       )}
 
       {/* Dialogs */}
-      {detailId && <SegnalazioneDetail segId={detailId} onClose={() => setDetailId(null)} onChanged={refresh} />}
       {newOpen && <NewSegnalazioneDialog onClose={() => setNewOpen(false)} onCreated={() => { setNewOpen(false); refresh(); }} />}
       {configOpen && <SegnalazioniConfigDialog scope="company" onClose={() => setConfigOpen(false)} />}
-      {myTasksOpen && <MyTasksSheet onClose={() => setMyTasksOpen(false)} onOpenSeg={(id) => { setMyTasksOpen(false); setDetailId(id); }} />}
+      {myTasksOpen && <MyTasksSheet onClose={() => setMyTasksOpen(false)} onOpenSeg={openSeg} />}
     </div>
-  );
-}
-
-function KpiCard({ label, value, accent, testId }) {
-  return (
-    <Card className="border shadow-none">
-      <CardContent className="p-4">
-        <p className="text-xs uppercase tracking-wider text-muted-foreground">{label}</p>
-        <p className={cn('text-3xl font-semibold tabular-nums mt-1', accent)} data-testid={testId}>{value ?? '—'}</p>
-      </CardContent>
-    </Card>
   );
 }
 

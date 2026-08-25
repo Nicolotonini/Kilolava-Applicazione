@@ -57,6 +57,8 @@ export const PARTY_META = {
 
 export const MODE_LABELS = { manuale: 'Manuale', assistita: 'Assistita', automatica: 'Automatica', inherit: 'Eredita' };
 
+export const RULE_LABELS = { default: 'Default Kilolava', client: 'Cliente', structure: 'Struttura', item: 'Articolo', config: 'Configurazione' };
+
 export const ageLabel = (iso) => {
   if (!iso) return '—';
   const ms = Date.now() - new Date(iso).getTime();

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import api, { API_BASE } from '../lib/api';
 import { ExportButton } from '../components/ExportButton';
 import { Card, CardContent } from '../components/ui/card';
@@ -18,6 +19,7 @@ import {
   Zap, Wrench, Armchair, CircleAlert, Package, MoreHorizontal, Image
 } from 'lucide-react';
 import { cn } from '../lib/utils';
+import { EmptyState, ListSkeleton } from '../components/kilolava/EmptyState';
 
 const STATUS_CONFIG = {
   open: { label: 'Aperto', color: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300', dot: 'bg-red-400' },
@@ -63,7 +65,7 @@ const SidePanel = ({ open, onClose, title, children }) => {
 };
 
 // ===== ISSUE DETAIL VIEW =====
-const IssueDetail = ({ issue, onBack, onRefresh, staffList }) => {
+export const IssueDetail = ({ issue, onBack, onRefresh, staffList }) => {
   const [assigning, setAssigning] = useState(false);
   const [addingNote, setAddingNote] = useState(false);
   const [noteText, setNoteText] = useState('');
@@ -241,6 +243,7 @@ const IssueDetail = ({ issue, onBack, onRefresh, staffList }) => {
 
 // ===== MAIN PAGE =====
 const MaintenanceIssuesPage = () => {
+  const navigate = useNavigate();
   const [issues, setIssues] = useState([]);
   const [loading, setLoading] = useState(true);
   const [summary, setSummary] = useState(null);
@@ -307,11 +310,8 @@ const MaintenanceIssuesPage = () => {
     setPanel(true);
   };
 
-  const openDetail = async (issue) => {
-    try {
-      const res = await api.get(`/maintenance/issues/${issue.id}`);
-      setDetailIssue(res.data);
-    } catch (e) { toast.error('Errore'); }
+  const openDetail = (issue) => {
+    navigate(`/maintenance/issue/${issue.id}`);
   };
 
   const refreshDetail = async () => {
@@ -377,7 +377,7 @@ const MaintenanceIssuesPage = () => {
         </div>
         <div className="flex items-center gap-2">
           <ExportButton entity="maintenance" />
-          <Button onClick={openNew} className="h-8 bg-[#F24E75] hover:bg-[#E03B62] text-white gap-1" data-testid="new-issue-btn">
+          <Button onClick={openNew} className="h-9 bg-primary hover:bg-primary/90 text-primary-foreground gap-1" data-testid="new-issue-btn">
             <Plus className="h-4 w-4" />Nuovo issue
           </Button>
         </div>
@@ -438,12 +438,9 @@ const MaintenanceIssuesPage = () => {
 
       {/* Issues list */}
       {loading ? (
-        <div className="text-center py-12 text-muted-foreground">Caricamento...</div>
+        <ListSkeleton rows={5} />
       ) : filtered.length === 0 ? (
-        <div className="text-center py-12">
-          <AlertTriangle className="h-10 w-10 mx-auto mb-3 text-muted-foreground/30" />
-          <p className="text-muted-foreground">Nessun issue trovato</p>
-        </div>
+        <EmptyState icon={AlertTriangle} message="Nessun issue trovato" />
       ) : (
         <div className="space-y-2">
           {filtered.map(issue => {
@@ -486,10 +483,6 @@ const MaintenanceIssuesPage = () => {
       )}
 
       {/* Detail Panel */}
-      <SidePanel open={!!detailIssue} onClose={() => setDetailIssue(null)} title="">
-        {detailIssue && <IssueDetail issue={detailIssue} onBack={() => setDetailIssue(null)} onRefresh={refreshDetail} staffList={staff} />}
-      </SidePanel>
-
       {/* Create Panel */}
       <SidePanel open={panel} onClose={() => setPanel(false)} title="Nuovo Issue Manutenzione">
         <div className="p-5 space-y-4">

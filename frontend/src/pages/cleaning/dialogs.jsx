@@ -5,7 +5,8 @@ import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '../../components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../components/ui/select';
-import { Video, Package, CheckCircle2, Repeat, Loader2 } from 'lucide-react';
+import { Video, Package, CheckCircle2, Repeat, Loader2, Maximize2 } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { cn } from '../../lib/utils';
 import { toast } from 'sonner';
 import { STATUS_META, ISSUE_CAT, fmtDate, tomorrowStr, todayStr, checkinLabel, fmtDuration } from './shared';
@@ -53,6 +54,7 @@ function ChecklistProgress({ task }) {
 
 export function TaskDetailDialog({ taskId, onClose }) {
   const [task, setTask] = useState(null);
+  const navigate = useNavigate();
   useEffect(() => {
     api.get(`/cleaning-tasks/${taskId}`).then(r => setTask(r.data)).catch(() => {});
   }, [taskId]);
@@ -72,6 +74,11 @@ export function TaskDetailDialog({ taskId, onClose }) {
             <Badge className={cn('text-xs border-0', sm.cls)}>{sm.label}</Badge>
           </DialogTitle>
           <DialogDescription className="capitalize">{fmtDate(task.date)} {task.scheduled_time ? `· ${task.scheduled_time}` : ''} {task.client_name ? `· ${task.client_name}` : ''} {task.zone_name ? `· ${task.zone_name}` : ''}</DialogDescription>
+          <Button variant="outline" size="sm" className="w-fit h-7 text-xs mt-1"
+            onClick={() => { onClose(); navigate(`/cleaning/task/${task.id}`); }}
+            data-testid="open-full-detail-btn">
+            <Maximize2 className="h-3 w-3 mr-1.5" />Apri dettaglio completo
+          </Button>
         </DialogHeader>
         <div className="space-y-4 text-sm">
           <div className="grid grid-cols-2 gap-2 text-xs">

@@ -10,6 +10,7 @@ import {
 import { cn } from '../lib/utils';
 import { toast } from 'sonner';
 import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from '../components/ui/tooltip';
+import { EmptyState, ListSkeleton } from '../components/kilolava/EmptyState';
 
 const SERVICE_COLS = [
   { key: 'cleaning', label: 'Pulizie', icon: Sparkles, on: 'bg-sky-100 text-sky-600 dark:bg-sky-900/30 dark:text-sky-400' },
@@ -79,7 +80,7 @@ const StructuresListPage = () => {
 
   return (
     <TooltipProvider delayDuration={200}>
-    <div className="p-4 lg:p-8 space-y-5" data-testid="structures-list-page">
+    <div className="p-4 lg:p-6 space-y-5" data-testid="structures-list-page">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
@@ -108,12 +109,9 @@ const StructuresListPage = () => {
       </div>
 
       {loading ? (
-        <div className="text-center py-12 text-muted-foreground">Caricamento...</div>
+        <ListSkeleton rows={6} />
       ) : filtered.length === 0 ? (
-        <div className="text-center py-16 border border-dashed border-border rounded-xl">
-          <Building2 className="h-10 w-10 mx-auto text-muted-foreground/30 mb-3" />
-          <p className="text-muted-foreground">Nessuna struttura trovata</p>
-        </div>
+        <EmptyState icon={Building2} message="Nessuna struttura trovata" />
       ) : (
         <>
           {/* Desktop table */}

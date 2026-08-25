@@ -130,16 +130,20 @@ async def get_company_config() -> dict:
     return cfg
 
 
-def _overlay(base: dict, override: dict) -> dict:
+def _overlay(base: dict, override: dict, sources: dict = None, level: str = None) -> dict:
     out = dict(base)
     for k, v in (override or {}).items():
         if v not in (None, "", "inherit"):
             out[k] = v
+            if sources is not None:
+                sources[k] = level
     return out
 
 
 async def get_effective_config(structure_id: Optional[str], client_id: Optional[str] = None) -> dict:
     cfg = await get_company_config()
+    supply_sources = {k: "default" for k in cfg["supply"]}
+    maint_sources = {k: "default" for k in cfg["maintenance"]}
     item_exceptions = []
     struct = None
     if structure_id:
@@ -151,8 +155,8 @@ async def get_effective_config(structure_id: Optional[str], client_id: Optional[
         c = (cl or {}).get("segnalazioni_config") or {}
         if c.get("mode") and c["mode"] != "inherit":
             cfg["mode"] = c["mode"]
-        cfg["supply"] = _overlay(cfg["supply"], c.get("supply"))
-        cfg["maintenance"] = _overlay(cfg["maintenance"], c.get("maintenance"))
+        cfg["supply"] = _overlay(cfg["supply"], c.get("supply"), supply_sources, "client")
+        cfg["maintenance"] = _overlay(cfg["maintenance"], c.get("maintenance"), maint_sources, "client")
         for k, v in (c.get("automations") or {}).items():
             if v is not None:
                 cfg["automations"][k] = v
@@ -160,13 +164,15 @@ async def get_effective_config(structure_id: Optional[str], client_id: Optional[
     s = (struct or {}).get("segnalazioni_config") or {}
     if s.get("mode") and s["mode"] != "inherit":
         cfg["mode"] = s["mode"]
-    cfg["supply"] = _overlay(cfg["supply"], s.get("supply"))
-    cfg["maintenance"] = _overlay(cfg["maintenance"], s.get("maintenance"))
+    cfg["supply"] = _overlay(cfg["supply"], s.get("supply"), supply_sources, "structure")
+    cfg["maintenance"] = _overlay(cfg["maintenance"], s.get("maintenance"), maint_sources, "structure")
     for k, v in (s.get("automations") or {}).items():
         if v is not None:
             cfg["automations"][k] = v
     item_exceptions = (s.get("item_exceptions") or []) + item_exceptions
     cfg["item_exceptions"] = item_exceptions
+    cfg["supply_sources"] = supply_sources
+    cfg["maintenance_sources"] = maint_sources
     return cfg
 
 
@@ -179,9 +185,11 @@ def resolve_responsibility(cfg: dict, category_key: Optional[str], text: str) ->
     if not category_key:
         return None
     if category_key in SUPPLY_CATEGORIES:
-        return {"party": cfg["supply"].get(category_key, "da_valutare"), "source": "config"}
+        return {"party": cfg["supply"].get(category_key, "da_valutare"),
+                "source": (cfg.get("supply_sources") or {}).get(category_key, "default")}
     if category_key in MAINT_CATEGORIES:
-        return {"party": cfg["maintenance"].get(category_key, "da_valutare"), "source": "config"}
+        return {"party": cfg["maintenance"].get(category_key, "da_valutare"),
+                "source": (cfg.get("maintenance_sources") or {}).get(category_key, "default")}
     return None
 
 
@@ -861,6 +869,9 @@ def create_segnalazioni_router(get_current_user, is_ops_user):
         seg["mode"] = cfg["mode"]
         action = suggested_action(seg.get("type"), (resp or {}).get("party"))
         real_tasks = [t for t in tasks if t.get("status") != "annullata"]
+        # L'azione suggerita NON deve duplicare attività già esistenti dello stesso tipo
+        if action and any(t.get("type") == action["type"] for t in real_tasks):
+            action = None
         cleaning = None
         if seg.get("cleaning_task_id"):
             cleaning = await db.cleaning_tasks.find_one({"id": seg["cleaning_task_id"]},

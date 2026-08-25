@@ -340,11 +340,6 @@ export function OrganizeBoard({ date, setDate, onDetail, onAssignDialog, refresh
       <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:justify-between">
         <h1 className="text-xl lg:text-2xl font-heading font-semibold">Organizzazione Pulizie</h1>
         <div className="flex items-center gap-2 flex-wrap">
-          {onNewTask && (
-            <Button onClick={onNewTask} variant="outline" className="border-primary/40 text-primary hover:bg-primary/5" data-testid="org-new-cleaning-btn">
-              <Plus className="h-4 w-4 mr-1.5" />Nuova pulizia
-            </Button>
-          )}
           <Button onClick={propose} disabled={proposing} className="bg-primary hover:bg-primary/90 text-primary-foreground" data-testid="propose-btn">
             {proposing ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> : <Sparkles className="h-4 w-4 mr-1.5" />}Proponi organizzazione
           </Button>
@@ -363,13 +358,13 @@ export function OrganizeBoard({ date, setDate, onDetail, onAssignDialog, refresh
         </div>
       </div>
 
-      {/* Controlli */}
-      <div className="hidden lg:flex items-center gap-2 flex-wrap">
+      {/* Controlli board: ricerca addetta + zoom (a destra, riferiti alla board) */}
+      <div className="hidden lg:flex items-center gap-2 flex-wrap justify-end">
         <div className="relative">
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
           <Input value={search} onChange={e => doSearch(e.target.value)} placeholder="Cerca addetta..." className="h-8 pl-8 w-44 text-xs" data-testid="board-search-input" />
         </div>
-        <div className="flex items-center gap-1 ml-auto" data-testid="zoom-controls">
+        <div className="flex items-center gap-1" data-testid="zoom-controls">
           {[1, 0.8, 0.6].map(z => (
             <button key={z} onClick={() => setZoomAndSave(z)}
               className={cn('px-2.5 py-1 rounded-md text-xs font-medium tabular-nums',
@@ -468,6 +463,11 @@ export function OrganizeBoard({ date, setDate, onDetail, onAssignDialog, refresh
 
       {/* ===== Mobile: versione semplificata ===== */}
       <div className="lg:hidden space-y-4" data-testid="org-mobile-list">
+        {onNewTask && (
+          <Button onClick={onNewTask} size="sm" className="w-full h-9 bg-primary hover:bg-primary/90 text-primary-foreground" data-testid="mobile-new-cleaning-btn">
+            <Plus className="h-4 w-4 mr-1" />Nuova pulizia
+          </Button>
+        )}
         {byZone.map(([zone, list]) => (
           <div key={zone}>
             <p className="flex items-center gap-1 text-xs font-bold uppercase tracking-wider text-muted-foreground mb-1.5">

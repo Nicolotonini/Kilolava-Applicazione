@@ -92,6 +92,10 @@ function getBreadcrumb(pathname, search) {
   if (pathname === '/cleaning') return { title: 'Panoramica', crumbs: [{ label: 'Pulizie' }] };
   if (pathname === '/cleaning-organize') return { title: 'Organizzazione', crumbs: [{ label: 'Pulizie' }] };
   if (pathname === '/segnalazioni') return { title: 'Segnalazioni', crumbs: [] };
+  if (pathname.startsWith('/segnalazioni/')) return { title: 'Dettaglio segnalazione', crumbs: [{ label: 'Segnalazioni', to: '/segnalazioni' }] };
+  if (pathname.startsWith('/cleaning/task/')) return { title: 'Dettaglio pulizia', crumbs: [{ label: 'Pulizie', to: '/cleaning' }] };
+  if (pathname.startsWith('/maintenance/issue/')) return { title: 'Dettaglio manutenzione', crumbs: [{ label: 'Manutenzione', to: '/maintenance' }] };
+  if (pathname.startsWith('/logistics/')) return { title: 'Dettaglio consegna', crumbs: [{ label: 'Consegne', to: '/logistics' }] };
   if (pathname === '/checklist-templates') return { title: 'Checklist', crumbs: [{ label: 'Pulizie', to: '/cleaning' }] };
   if (pathname === '/structure-inventory') return { title: 'Magazzino Strutture', crumbs: [] };
   if (pathname === '/keys') return { title: 'Chiavi', crumbs: [{ label: 'Clienti e Strutture' }] };
@@ -519,7 +523,9 @@ const AppLayout = ({ children }) => {
           : 'pt-14 lg:pt-0'
       )}>
         <div className="min-h-screen">
-          {children || <Outlet />}
+          <div key={location.pathname} className="page-enter">
+            {children || <Outlet />}
+          </div>
         </div>
       </main>
     </div>

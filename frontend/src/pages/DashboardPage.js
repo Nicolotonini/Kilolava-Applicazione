@@ -83,7 +83,10 @@ const DashboardPage = () => {
   const attention = data?.attention || [];
 
   return (
-    <div className="p-4 lg:p-8 space-y-8" data-testid="dashboard-page">
+    <div className="p-4 lg:p-6 space-y-8" data-testid="dashboard-page">
+      <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:justify-between">
+        <h1 className="text-xl lg:text-2xl font-heading font-semibold">Dashboard</h1>
+      </div>
       {/* SECTION 1 — FATTURATO */}
       <section>
         <div className="flex items-center justify-between mb-4 gap-3 flex-wrap">

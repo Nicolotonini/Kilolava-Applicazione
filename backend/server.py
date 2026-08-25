@@ -3126,6 +3126,14 @@ async def create_logistics_task(
     return await _enrich_task(doc)
 
 
+@api_router.get("/logistics/tasks/{task_id}")
+async def get_logistics_task(task_id: str, current_user: dict = Depends(get_current_user)):
+    doc = await db.logistics_tasks.find_one({"id": task_id}, {"_id": 0})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Stop non trovato")
+    return await _enrich_task(doc)
+
+
 @api_router.put("/logistics/tasks/{task_id}", response_model=LogisticsTaskResponse)
 async def update_logistics_task(
     task_id: str,

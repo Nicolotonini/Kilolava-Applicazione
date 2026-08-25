@@ -5,6 +5,7 @@ import { Card, CardContent } from '../components/ui/card';
 import { Input } from '../components/ui/input';
 import { Search, Boxes, AlertTriangle } from 'lucide-react';
 import { cn } from '../lib/utils';
+import { EmptyState, ListSkeleton } from '../components/kilolava/EmptyState';
 
 const StructureInventoryPage = () => {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -26,7 +27,7 @@ const StructureInventoryPage = () => {
   );
 
   return (
-    <div className="p-4 lg:p-8 max-w-5xl space-y-5" data-testid="structure-inventory-page">
+    <div className="p-4 lg:p-6 max-w-5xl space-y-5" data-testid="structure-inventory-page">
       <h1 className="text-xl lg:text-2xl font-heading font-semibold">Magazzino Strutture</h1>
       {structureFilter && (
         <div className="flex items-center gap-2 text-sm bg-primary/5 border border-primary/20 rounded-lg px-3 py-2">
@@ -53,15 +54,10 @@ const StructureInventoryPage = () => {
       </div>
 
       {loading ? (
-        <p className="text-sm text-muted-foreground py-8 text-center">Caricamento...</p>
+        <ListSkeleton rows={5} />
       ) : filtered.length === 0 ? (
-        <div className="text-center py-16 border border-dashed border-border rounded-xl" data-testid="structure-stock-empty">
-          <Boxes className="h-8 w-8 text-muted-foreground/40 mx-auto mb-3" />
-          <p className="text-sm font-medium">Nessun magazzino struttura</p>
-          <p className="text-xs text-muted-foreground mt-1">
-            I saldi compaiono quando registri consegne e ritiri verso le strutture.
-          </p>
-        </div>
+        <EmptyState icon={Boxes} testId="structure-stock-empty"
+          message="Nessun magazzino struttura. I saldi compaiono quando registri consegne e ritiri verso le strutture." />
       ) : (
         <div className="space-y-3">
           {filtered.map((s) => (
