@@ -203,7 +203,7 @@ const StructureDetailPage = () => {
           {!isNew && (
             <Button
               variant="outline"
-              onClick={() => navigate(`/structure-inventory?structure_id=${structureId}`)}
+              onClick={() => navigate(`/magazzino/noleggio/${structureId}`)}
               className="border-primary/40 text-primary hover:bg-primary/5 hover:text-primary"
               data-testid="open-warehouse-btn"
             >

@@ -1,5 +1,5 @@
 import React from 'react';
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useSearchParams } from 'react-router-dom';
 import { Toaster } from './components/ui/sonner';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { LanguageProvider } from './contexts/LanguageContext';
@@ -36,7 +36,16 @@ import DocumentDetailPage from './pages/DocumentDetailPage';
 import NewDocumentPage from './pages/NewDocumentPage';
 import StructuresListPage from './pages/StructuresListPage';
 import StructureDetailPage from './pages/StructureDetailPage';
-import StructureInventoryPage from './pages/StructureInventoryPage';
+import MagazzinoOverviewPage from './pages/magazzino/MagazzinoOverviewPage';
+import NoleggioPage from './pages/magazzino/NoleggioPage';
+import NoleggioDetailPage from './pages/magazzino/NoleggioDetailPage';
+import FornitureListPage from './pages/magazzino/FornitureListPage';
+import FornitureDetailPage from './pages/magazzino/FornitureDetailPage';
+import PulizieStockPage from './pages/magazzino/PulizieStockPage';
+import ZainiPage from './pages/magazzino/ZainiPage';
+import ZainoDetailPage from './pages/magazzino/ZainoDetailPage';
+import MovimentiPage from './pages/magazzino/MovimentiPage';
+import CataloghiKitPage from './pages/magazzino/CataloghiKitPage';
 import PrivateLaundryPage from './pages/PrivateLaundryPage';
 import KeysPage from './pages/KeysPage';
 import ReportsPage from './pages/ReportsPage';
@@ -68,6 +77,13 @@ const MaintenanceRouteSwitch = () => {
       <MaintenanceIssuesPage />
     </AppLayout>
   );
+};
+
+// Legacy: /structure-inventory → nuovo sistema Magazzino
+const StructureInventoryRedirect = () => {
+  const [params] = useSearchParams();
+  const sid = params.get('structure_id');
+  return <Navigate to={sid ? `/magazzino/noleggio/${sid}` : '/magazzino'} replace />;
 };
 
 // Role-based home route resolver
@@ -184,7 +200,17 @@ function AppRoutes() {
         <Route path="maintenance/issue/:issueId" element={<MaintenanceIssueDetailPage />} />
         <Route path="cleaning/task/:taskId" element={<CleaningTaskDetailPage />} />
         <Route path="deliveries" element={<Navigate to="/logistics" replace />} />
-        <Route path="structure-inventory" element={<StructureInventoryPage />} />
+        <Route path="structure-inventory" element={<StructureInventoryRedirect />} />
+        <Route path="magazzino" element={<MagazzinoOverviewPage />} />
+        <Route path="magazzino/noleggio" element={<NoleggioPage />} />
+        <Route path="magazzino/noleggio/:structureId" element={<NoleggioDetailPage />} />
+        <Route path="magazzino/forniture" element={<FornitureListPage />} />
+        <Route path="magazzino/forniture/:structureId" element={<FornitureDetailPage />} />
+        <Route path="magazzino/pulizie" element={<PulizieStockPage />} />
+        <Route path="magazzino/zaini" element={<ZainiPage />} />
+        <Route path="magazzino/zaini/:zainoId" element={<ZainoDetailPage />} />
+        <Route path="magazzino/movimenti" element={<MovimentiPage />} />
+        <Route path="cataloghi-kit" element={<CataloghiKitPage />} />
         <Route path="keys" element={<KeysPage />} />
         <Route path="private-laundry/jobs" element={<PrivateLaundryPage view="jobs" />} />
         <Route path="private-laundry/history" element={<PrivateLaundryPage view="history" />} />

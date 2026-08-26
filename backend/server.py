@@ -7280,7 +7280,10 @@ from routes.activity_log import create_activity_router, init_activity_middleware
 from routes.integrations import create_integrations_router  # noqa: E402
 from routes.segnalazioni import (  # noqa: E402
     create_segnalazioni_router, init_segnalazioni_deps, register_from_cleaning, migrate_cleaning_issues,
+    get_effective_config as seg_effective_config, resolve_responsibility as seg_resolve_resp,
+    suggest_category as seg_suggest_category,
 )
+from routes.magazzino import create_magazzino_router, init_magazzino_deps, seed_magazzino  # noqa: E402
 init_segnalazioni_deps(
     create_notification=create_notification,
     notify_ops_users=notify_ops_users,
@@ -7294,6 +7297,14 @@ api_router.include_router(create_billing_pdf_router(get_current_user))
 api_router.include_router(create_activity_router(get_current_user))
 api_router.include_router(create_integrations_router(get_current_user, is_ops_user))
 api_router.include_router(create_segnalazioni_router(get_current_user, is_ops_user))
+init_magazzino_deps(
+    local_today=local_today,
+    get_client_display_name=get_client_display_name,
+    get_effective_config=seg_effective_config,
+    resolve_responsibility=seg_resolve_resp,
+    suggest_category=seg_suggest_category,
+)
+api_router.include_router(create_magazzino_router(get_current_user, is_ops_user))
 init_activity_middleware(app, SECRET_KEY, ALGORITHM)
 
 app.include_router(api_router)
@@ -7342,6 +7353,11 @@ async def startup_event():
             logger.info(f"Segnalazioni: migrati {migrated} record dallo storico Pulizie")
     except Exception as e:
         logger.error(f"Segnalazioni migration failed: {e}")
+    # Seed cataloghi Magazzino (idempotente)
+    try:
+        await seed_magazzino()
+    except Exception as e:
+        logger.error(f"Magazzino seed failed: {e}")
     # Start scheduler with overdue task check every 30 minutes
     try:
         scheduler_service.start_scheduler(_check_overdue_tasks)

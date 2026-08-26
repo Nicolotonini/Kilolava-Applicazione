@@ -503,6 +503,7 @@ class SegnalazioneCreate(BaseModel):
     structure_id: Optional[str] = None
     client_id: Optional[str] = None
     origin_type: Optional[str] = None
+    origin_label: Optional[str] = None
 
 
 class SegnalazioneUpdate(BaseModel):
@@ -836,7 +837,7 @@ def create_segnalazioni_router(get_current_user, is_ops_user):
                 client_name = _deps["get_client_display_name"](cl)
         seg = build_segnalazione(
             title=data.title, description=data.description, seg_type=data.type, priority=data.priority,
-            origin_type=origin, origin_label={"manager": "Manager/Admin", "client": "Cliente",
+            origin_type=origin, origin_label=data.origin_label or {"manager": "Manager/Admin", "client": "Cliente",
                                               "maintenance": "Manutentore", "rider": "Rider",
                                               "warehouse": "Magazzino", "delivery": "Consegna"}.get(origin, origin),
             user=current_user, structure=structure, client_name=client_name,
