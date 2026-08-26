@@ -24,7 +24,7 @@ export default function ZainiPage() {
 
   return (
     <div className="p-4 lg:p-6 space-y-5" data-testid="zaini-page">
-      <PageHeader title="Zaini Operativi" subtitle="Ubicazioni mobili delle Addette: dotazione, controlli e reintegri"
+      <PageHeader title="Zaini Operatrici" subtitle="Ubicazioni mobili collegate al Magazzino Generale: dotazione, controlli e reintegri"
         actions={
           <Button onClick={() => setNewOpen(true)} className="bg-primary text-primary-foreground hover:bg-primary/90" data-testid="new-zaino-btn">
             <Plus className="h-4 w-4 mr-1.5" />Nuovo zaino
@@ -47,7 +47,7 @@ export default function ZainiPage() {
             </thead>
             <tbody>
               {rows.map(z => (
-                <tr key={z.id} onClick={() => navigate(`/magazzino/zaini/${z.id}`)}
+                <tr key={z.id} onClick={() => navigate(`/magazzino-generale/zaini/${z.id}`)}
                   className="border-t border-border hover:bg-accent/40 cursor-pointer row-hover" data-testid={`zaino-row-${z.id}`}>
                   <td className="px-3 py-2.5 font-mono text-sm font-bold text-primary">{z.code}</td>
                   <td className="px-3 py-2.5 font-medium">{z.name || '—'}</td>
@@ -67,7 +67,7 @@ export default function ZainiPage() {
           </table>
           <div className="lg:hidden divide-y divide-border/60">
             {rows.map(z => (
-              <div key={z.id} onClick={() => navigate(`/magazzino/zaini/${z.id}`)}
+              <div key={z.id} onClick={() => navigate(`/magazzino-generale/zaini/${z.id}`)}
                 className="p-3 space-y-1 cursor-pointer active:bg-accent/40" data-testid={`zaino-card-${z.id}`}>
                 <div className="flex items-center gap-2">
                   <span className="font-mono text-sm font-bold text-primary">{z.code}</span>
@@ -83,7 +83,7 @@ export default function ZainiPage() {
           </div>
         </div>
       )}
-      {newOpen && <NewZainoDialog onClose={() => setNewOpen(false)} onDone={(z) => { setNewOpen(false); load(); navigate(`/magazzino/zaini/${z.id}`); }} />}
+      {newOpen && <NewZainoDialog onClose={() => setNewOpen(false)} onDone={(z) => { setNewOpen(false); load(); navigate(`/magazzino-generale/zaini/${z.id}`); }} />}
     </div>
   );
 }

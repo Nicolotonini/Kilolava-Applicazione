@@ -32,7 +32,7 @@ export default function NoleggioPage() {
 
   return (
     <div className="p-4 lg:p-6 space-y-5" data-testid="noleggio-page">
-      <PageHeader title="Noleggio Strutture" subtitle="Biancheria a noleggio fisicamente presente nelle Strutture"
+      <PageHeader title="Lavanderia a Noleggio" subtitle="Biancheria a noleggio fisicamente presente nelle Strutture: copre le prossime Pulizie?"
         actions={
           <select value={zoneId} onChange={e => setZoneId(e.target.value)}
             className="h-9 rounded-md border border-border bg-background px-2 text-sm" data-testid="noleggio-zone-filter">
@@ -57,7 +57,7 @@ export default function NoleggioPage() {
             </thead>
             <tbody>
               {rows.map(r => (
-                <tr key={r.structure_id} onClick={() => navigate(`/magazzino/noleggio/${r.structure_id}`)}
+                <tr key={r.structure_id} onClick={() => navigate(`/magazzino-strutture/noleggio/${r.structure_id}`)}
                   className="border-t border-border hover:bg-accent/40 cursor-pointer row-hover" data-testid={`noleggio-row-${r.structure_id}`}>
                   <td className="px-3 py-2.5">
                     <p className="font-semibold">{r.structure_name}</p>
@@ -82,7 +82,7 @@ export default function NoleggioPage() {
           </table>
           <div className="lg:hidden divide-y divide-border/60">
             {rows.map(r => (
-              <div key={r.structure_id} onClick={() => navigate(`/magazzino/noleggio/${r.structure_id}`)}
+              <div key={r.structure_id} onClick={() => navigate(`/magazzino-strutture/noleggio/${r.structure_id}`)}
                 className="p-3 space-y-1 cursor-pointer active:bg-accent/40" data-testid={`noleggio-card-${r.structure_id}`}>
                 <div className="flex items-center gap-2">
                   <p className="font-semibold flex-1 truncate">{r.structure_name}</p>

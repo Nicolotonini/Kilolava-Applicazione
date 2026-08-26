@@ -5,7 +5,7 @@ export const MOVEMENT_TYPE_LABELS = {
   reso: 'Reso', annullamento: 'Annullamento', altro: 'Altro',
 };
 
-export const DOMAIN_LABELS = { noleggio: 'Noleggio Strutture', forniture: 'Forniture', pulizie: 'Magazzino Pulizie' };
+export const DOMAIN_LABELS = { noleggio: 'Lavanderia a Noleggio', forniture: 'Forniture / Consumabili', pulizie: 'Prodotti Pulizie' };
 
 export const ZAINO_STATUS_META = {
   disponibile: { label: 'Disponibile', tone: 'neutral' },
@@ -24,7 +24,7 @@ export const FABBISOGNO_STATUS_META = {
 
 export const locLabel = (loc) => {
   if (!loc) return '—';
-  return loc.label || { central: 'Magazzino', external: 'Esterno' }[loc.type] || loc.type;
+  return loc.label || { central: 'Magazzino Generale', external: 'Esterno' }[loc.type] || loc.type;
 };
 
 export const fmtDT = (iso) => (iso ? new Date(iso).toLocaleString('it-IT', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—');

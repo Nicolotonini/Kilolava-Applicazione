@@ -4,6 +4,7 @@ import { useLanguage } from '../contexts/LanguageContext';
 import { clientsApi, structuresApi, unitsApi, operationsApi, inventoryApi } from '../lib/api';
 import api from '../lib/api';
 import { GestioneSegnalazioniCard } from './segnalazioni/ConfigDialog';
+import { PrivateLaundryPriceCard } from '../components/PrivateLaundryPriceCard';
 import { Card, CardContent } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
@@ -1245,6 +1246,7 @@ const ClientDetailPage = () => {
 
       {activeTab === 'fatturazione' && (
         <div className="space-y-4">
+          <PrivateLaundryPriceCard clientId={clientId} />
           <div className="flex items-center justify-between flex-wrap gap-2">
             <Select value={billingMonth} onValueChange={setBillingMonth}>
               <SelectTrigger className="h-8 w-[190px] text-xs" data-testid="billing-month-select"><SelectValue /></SelectTrigger>

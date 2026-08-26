@@ -9,6 +9,7 @@ import { DetailSkeleton } from '../../components/kilolava/EmptyState';
 import { StatusBadge } from '../../components/kilolava/badges';
 import { MovementDialog, InventoryDialog } from './MovementDialog';
 import { MovementsTable } from './MovimentiPage';
+import { MediaStrip } from '../../components/kilolava/MediaViewer';
 import { FABBISOGNO_STATUS_META, fmtD } from './shared';
 
 export default function NoleggioDetailPage() {
@@ -41,7 +42,7 @@ export default function NoleggioDetailPage() {
 
   return (
     <div className="p-4 lg:p-6 space-y-6" data-testid="noleggio-detail-page">
-      <DetailHeader backTo="/magazzino/noleggio" backLabel="Noleggio Strutture"
+      <DetailHeader backTo="/magazzino-strutture/noleggio" backLabel="Lavanderia a Noleggio"
         title={s.name}
         meta={<>
           {s.klv_code && <span className="font-mono text-xs font-bold text-primary">{s.klv_code}</span>}
@@ -130,11 +131,29 @@ export default function NoleggioDetailPage() {
               </div>
             </DetailSection>
           )}
+
+          <DetailSection title="Storico fotografico Magazzino" testId="section-foto">
+            {(data.photos || []).length === 0 ? (
+              <p className="text-sm text-muted-foreground rounded-xl border border-dashed border-border px-4 py-3">Le foto del magazzino scattate a fine Pulizia compariranno qui.</p>
+            ) : (
+              <div className="space-y-2">
+                {data.photos.map((p, i) => (
+                  <div key={p.id || i} className="flex items-center gap-3">
+                    <MediaStrip media={[p]} size="w-16 h-16" testIdPrefix={`nol-photo-${i}`} />
+                    <div className="text-sm">
+                      <p className="font-medium capitalize">{fmtD(p.date)}</p>
+                      <p className="text-xs text-muted-foreground">{p.uploaded_by_name || ''}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </DetailSection>
         </div>
       </div>
 
-      {movOpen && <MovementDialog defaultDomain="noleggio" lockDomain defaultType="carico"
-        defaultDestination={{ type: 'structure', id: structureId }}
+      {movOpen && <MovementDialog defaultDomain="noleggio" lockDomain defaultType="trasferimento"
+        defaultOrigin={{ type: 'central', id: null }} defaultDestination={{ type: 'structure', id: structureId }}
         onClose={() => setMovOpen(false)} onDone={() => { setMovOpen(false); load(); }} />}
       {invOpen && <InventoryDialog domain="noleggio" locationType="structure" locationId={structureId}
         items={data.items} title={s.name}

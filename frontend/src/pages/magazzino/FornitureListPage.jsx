@@ -28,7 +28,7 @@ export default function FornitureListPage() {
             <option value="">Tutti i rioni</option>
             {zones.map(z => <option key={z.id} value={z.id}>{z.name}</option>)}
           </select>
-          <StructurePicker onPick={(id) => navigate(`/magazzino/forniture/${id}`)} />
+          <StructurePicker onPick={(id) => navigate(`/magazzino-strutture/forniture/${id}`)} />
         </>} />
       {rows === null ? <ListSkeleton rows={6} /> : rows.length === 0 ? (
         <EmptyState icon={Package} message="Nessuna struttura configurata. Apri una struttura con 'Configura struttura' e imposta articoli, minimo e ideale." />
@@ -47,7 +47,7 @@ export default function FornitureListPage() {
             </thead>
             <tbody>
               {rows.map(r => (
-                <tr key={r.structure_id} onClick={() => navigate(`/magazzino/forniture/${r.structure_id}`)}
+                <tr key={r.structure_id} onClick={() => navigate(`/magazzino-strutture/forniture/${r.structure_id}`)}
                   className="border-t border-border hover:bg-accent/40 cursor-pointer row-hover" data-testid={`forniture-row-${r.structure_id}`}>
                   <td className="px-3 py-2.5">
                     <p className="font-semibold">{r.structure_name}</p>
@@ -66,7 +66,7 @@ export default function FornitureListPage() {
           </table>
           <div className="lg:hidden divide-y divide-border/60">
             {rows.map(r => (
-              <div key={r.structure_id} onClick={() => navigate(`/magazzino/forniture/${r.structure_id}`)}
+              <div key={r.structure_id} onClick={() => navigate(`/magazzino-strutture/forniture/${r.structure_id}`)}
                 className="p-3 space-y-1 cursor-pointer active:bg-accent/40" data-testid={`forniture-card-${r.structure_id}`}>
                 <div className="flex items-center gap-2">
                   <p className="font-semibold flex-1 truncate">{r.structure_name}</p>

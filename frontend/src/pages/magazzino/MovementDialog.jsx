@@ -9,6 +9,7 @@ import { MOVEMENT_TYPE_LABELS, DOMAIN_LABELS } from './shared';
 
 const LOC_TYPES = [
   ['external', 'Esterno'],
+  ['central', 'Magazzino Generale'],
   ['structure', 'Struttura / Casa'],
   ['zaino', 'Zaino'],
 ];

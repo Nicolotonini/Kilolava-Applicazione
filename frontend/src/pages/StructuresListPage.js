@@ -76,7 +76,7 @@ const StructuresListPage = () => {
   const goStructure = (id) => navigate(`/structures/${id}`);
   const goClient = (e, clientId) => { e.stopPropagation(); navigate(`/clients/${clientId}`); };
   const goAccess = (e, id) => { e.stopPropagation(); navigate(`/structures/${id}?section=access`); };
-  const goWarehouse = (e, id) => { e.stopPropagation(); navigate(`/magazzino/noleggio/${id}`); };
+  const goWarehouse = (e, id) => { e.stopPropagation(); navigate(`/magazzino-strutture/noleggio/${id}`); };
 
   return (
     <TooltipProvider delayDuration={200}>

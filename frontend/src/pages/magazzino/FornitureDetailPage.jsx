@@ -70,7 +70,7 @@ export default function FornitureDetailPage() {
 
   return (
     <div className="p-4 lg:p-6 space-y-6" data-testid="forniture-detail-page">
-      <DetailHeader backTo="/magazzino/forniture" backLabel="Forniture / Consumabili"
+      <DetailHeader backTo="/magazzino-strutture/forniture" backLabel="Forniture / Consumabili"
         title={s.name}
         meta={<>
           {s.klv_code && <span className="font-mono text-xs font-bold text-primary">{s.klv_code}</span>}
@@ -202,7 +202,7 @@ export default function FornitureDetailPage() {
       </div>
 
       {movOpen && <MovementDialog defaultDomain="forniture" lockDomain defaultType="consegna"
-        defaultDestination={{ type: 'structure', id: structureId }}
+        defaultOrigin={{ type: 'central', id: null }} defaultDestination={{ type: 'structure', id: structureId }}
         onClose={() => setMovOpen(false)} onDone={() => { setMovOpen(false); load(); }} />}
       {invOpen && <InventoryDialog domain="forniture" locationType="structure" locationId={structureId}
         items={data.items} title={s.name}

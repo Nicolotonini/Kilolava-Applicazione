@@ -7,7 +7,7 @@ import { NotificationBell } from '../NotificationBell';
 import {
   LayoutDashboard, Users, CalendarDays, Truck, Settings, LogOut, Menu, X,
   Sun, Moon, Shield, Sparkles, Wrench, FileText, ChevronDown, ChevronRight,
-  Eye, Building2, Shirt, Layers, Boxes, KeyRound, AlertTriangle,
+  Eye, Building2, Shirt, Layers, Boxes, KeyRound, AlertTriangle, Warehouse,
 } from 'lucide-react';
 import { useSegnalazioniBadge } from '../../hooks/useSegnalazioniBadge';
 import { Button } from '../ui/button';
@@ -33,16 +33,33 @@ const NAV = [
   },
   { type: 'item', key: 'segnalazioni', path: '/segnalazioni', icon: AlertTriangle, label: 'Segnalazioni' },
   {
-    type: 'group', key: 'magazzino', icon: Boxes, label: 'Magazzino', children: [
-      { key: 'magazzino-overview', path: '/magazzino', label: 'Panoramica' },
-      { key: 'magazzino-noleggio', path: '/magazzino/noleggio', label: 'Noleggio Strutture' },
-      { key: 'magazzino-forniture', path: '/magazzino/forniture', label: 'Forniture / Consumabili' },
-      { key: 'magazzino-pulizie', path: '/magazzino/pulizie', label: 'Magazzino Pulizie' },
-      { key: 'magazzino-zaini', path: '/magazzino/zaini', label: 'Zaini Operativi' },
-      { key: 'magazzino-movimenti', path: '/magazzino/movimenti', label: 'Movimenti' },
+    type: 'group', key: 'consegne', icon: Truck, label: 'Consegne', children: [
+      { key: 'consegne-overview', path: '/consegne', label: 'Panoramica' },
+      { key: 'consegne-da-organizzare', path: '/consegne/da-organizzare', label: 'Da organizzare' },
+      { key: 'consegne-organizzazione', path: '/consegne/organizzazione', label: 'Organizzazione' },
+      { key: 'consegne-oggi', path: '/consegne/oggi', label: 'Oggi' },
+      { key: 'consegne-storico', path: '/consegne/storico', label: 'Storico' },
     ],
   },
-  { type: 'item', key: 'deliveries', path: '/logistics', icon: Truck, label: 'Consegne' },
+  {
+    type: 'group', key: 'magazzino-strutture', icon: Boxes, label: 'Magazzino nelle Strutture', children: [
+      { key: 'ms-overview', path: '/magazzino-strutture', label: 'Panoramica' },
+      { key: 'ms-noleggio', path: '/magazzino-strutture/noleggio', label: 'Lavanderia a Noleggio' },
+      { key: 'ms-forniture', path: '/magazzino-strutture/forniture', label: 'Forniture / Consumabili' },
+      { key: 'ms-kit-pulizie', path: '/magazzino-strutture/kit-pulizie', label: 'Kit Pulizie Strutture' },
+      { key: 'ms-movimenti', path: '/magazzino-strutture/movimenti', label: 'Movimenti' },
+    ],
+  },
+  {
+    type: 'group', key: 'magazzino-generale', icon: Warehouse, label: 'Magazzino Generale', children: [
+      { key: 'mg-overview', path: '/magazzino-generale', label: 'Panoramica' },
+      { key: 'mg-noleggio', path: '/magazzino-generale/noleggio', label: 'Lavanderia a Noleggio' },
+      { key: 'mg-forniture', path: '/magazzino-generale/forniture', label: 'Forniture / Consumabili' },
+      { key: 'mg-pulizie', path: '/magazzino-generale/pulizie', label: 'Prodotti Pulizie' },
+      { key: 'mg-zaini', path: '/magazzino-generale/zaini', label: 'Zaini Operatrici' },
+      { key: 'mg-movimenti', path: '/magazzino-generale/movimenti', label: 'Movimenti' },
+    ],
+  },
   {
     type: 'group', key: 'private-laundry', icon: Shirt, label: 'Lavanderia Privata', children: [
       { key: 'pl-jobs', path: '/private-laundry/jobs', label: 'Lavorazioni' },
@@ -104,22 +121,32 @@ function getBreadcrumb(pathname, search) {
   if (pathname === '/segnalazioni') return { title: 'Segnalazioni', crumbs: [] };
   if (pathname.startsWith('/segnalazioni/')) return { title: 'Dettaglio segnalazione', crumbs: [{ label: 'Segnalazioni', to: '/segnalazioni' }] };
   if (pathname.startsWith('/cleaning/task/')) return { title: 'Dettaglio pulizia', crumbs: [{ label: 'Pulizie', to: '/cleaning' }] };
-  if (pathname.startsWith('/maintenance/issue/')) return { title: 'Dettaglio manutenzione', crumbs: [{ label: 'Manutenzione', to: '/maintenance' }] };
-  if (pathname.startsWith('/logistics/')) return { title: 'Dettaglio consegna', crumbs: [{ label: 'Consegne', to: '/logistics' }] };
+  if (pathname.startsWith('/maintenance/issue/')) return { title: 'Dettaglio intervento', crumbs: [{ label: 'Manutenzioni', to: '/maintenance' }] };
+  if (pathname.startsWith('/logistics/')) return { title: 'Dettaglio consegna', crumbs: [{ label: 'Consegne', to: '/consegne' }] };
   if (pathname === '/checklist-templates') return { title: 'Checklist', crumbs: [{ label: 'Pulizie', to: '/cleaning' }] };
-  if (pathname === '/magazzino') return { title: 'Panoramica', crumbs: [{ label: 'Magazzino' }] };
-  if (pathname === '/magazzino/noleggio') return { title: 'Noleggio Strutture', crumbs: [{ label: 'Magazzino' }] };
-  if (pathname.startsWith('/magazzino/noleggio/')) return { title: 'Noleggio in struttura', crumbs: [{ label: 'Noleggio Strutture', to: '/magazzino/noleggio' }] };
-  if (pathname === '/magazzino/forniture') return { title: 'Forniture / Consumabili', crumbs: [{ label: 'Magazzino' }] };
-  if (pathname.startsWith('/magazzino/forniture/')) return { title: 'Forniture struttura', crumbs: [{ label: 'Forniture / Consumabili', to: '/magazzino/forniture' }] };
-  if (pathname === '/magazzino/pulizie') return { title: 'Magazzino Pulizie', crumbs: [{ label: 'Magazzino' }] };
-  if (pathname.startsWith('/magazzino/pulizie/')) return { title: 'Pulizie in casa', crumbs: [{ label: 'Magazzino Pulizie', to: '/magazzino/pulizie' }] };
-  if (pathname === '/magazzino/zaini') return { title: 'Zaini Operativi', crumbs: [{ label: 'Magazzino' }] };
-  if (pathname.startsWith('/magazzino/zaini/')) return { title: 'Dettaglio zaino', crumbs: [{ label: 'Zaini Operativi', to: '/magazzino/zaini' }] };
-  if (pathname === '/magazzino/movimenti') return { title: 'Movimenti', crumbs: [{ label: 'Magazzino' }] };
+  if (pathname === '/magazzino-strutture') return { title: 'Panoramica', crumbs: [{ label: 'Magazzino nelle Strutture' }] };
+  if (pathname === '/magazzino-strutture/noleggio') return { title: 'Lavanderia a Noleggio', crumbs: [{ label: 'Magazzino nelle Strutture' }] };
+  if (pathname.startsWith('/magazzino-strutture/noleggio/')) return { title: 'Noleggio in struttura', crumbs: [{ label: 'Lavanderia a Noleggio', to: '/magazzino-strutture/noleggio' }] };
+  if (pathname === '/magazzino-strutture/forniture') return { title: 'Forniture / Consumabili', crumbs: [{ label: 'Magazzino nelle Strutture' }] };
+  if (pathname.startsWith('/magazzino-strutture/forniture/')) return { title: 'Forniture struttura', crumbs: [{ label: 'Forniture / Consumabili', to: '/magazzino-strutture/forniture' }] };
+  if (pathname === '/magazzino-strutture/kit-pulizie') return { title: 'Kit Pulizie Strutture', crumbs: [{ label: 'Magazzino nelle Strutture' }] };
+  if (pathname.startsWith('/magazzino-strutture/kit-pulizie/')) return { title: 'Kit Pulizie della struttura', crumbs: [{ label: 'Kit Pulizie Strutture', to: '/magazzino-strutture/kit-pulizie' }] };
+  if (pathname === '/magazzino-strutture/movimenti') return { title: 'Movimenti Strutture', crumbs: [{ label: 'Magazzino nelle Strutture' }] };
+  if (pathname === '/magazzino-generale') return { title: 'Panoramica', crumbs: [{ label: 'Magazzino Generale' }] };
+  if (pathname === '/magazzino-generale/noleggio') return { title: 'Lavanderia a Noleggio', crumbs: [{ label: 'Magazzino Generale' }] };
+  if (pathname === '/magazzino-generale/forniture') return { title: 'Forniture / Consumabili', crumbs: [{ label: 'Magazzino Generale' }] };
+  if (pathname === '/magazzino-generale/pulizie') return { title: 'Prodotti Pulizie', crumbs: [{ label: 'Magazzino Generale' }] };
+  if (pathname === '/magazzino-generale/zaini') return { title: 'Zaini Operatrici', crumbs: [{ label: 'Magazzino Generale' }] };
+  if (pathname.startsWith('/magazzino-generale/zaini/')) return { title: 'Dettaglio zaino', crumbs: [{ label: 'Zaini Operatrici', to: '/magazzino-generale/zaini' }] };
+  if (pathname === '/magazzino-generale/movimenti') return { title: 'Movimenti Generale', crumbs: [{ label: 'Magazzino Generale' }] };
   if (pathname === '/cataloghi-kit') return { title: 'Cataloghi & Kit', crumbs: [{ label: 'Sistema' }] };
   if (pathname === '/keys') return { title: 'Chiavi', crumbs: [{ label: 'Clienti e Strutture' }] };
-  if (pathname === '/logistics') return { title: 'Consegne', crumbs: [] };
+  if (pathname.startsWith('/consegne/fermata/')) return { title: 'Dettaglio fermata', crumbs: [{ label: 'Consegne', to: '/consegne' }] };
+  if (pathname === '/consegne') return { title: 'Panoramica', crumbs: [{ label: 'Consegne' }] };
+  if (pathname === '/consegne/da-organizzare') return { title: 'Da organizzare', crumbs: [{ label: 'Consegne' }] };
+  if (pathname === '/consegne/organizzazione') return { title: 'Organizzazione', crumbs: [{ label: 'Consegne' }] };
+  if (pathname === '/consegne/oggi') return { title: 'Oggi', crumbs: [{ label: 'Consegne' }] };
+  if (pathname === '/consegne/storico') return { title: 'Storico', crumbs: [{ label: 'Consegne' }] };
   if (pathname === '/private-laundry/jobs') return { title: 'Lavorazioni', crumbs: [{ label: 'Lavanderia Privata' }] };
   if (pathname === '/private-laundry/history') return { title: 'Storico', crumbs: [{ label: 'Lavanderia Privata' }] };
   if (pathname === '/inventory') return { title: INVENTORY_TAB_LABELS[tab] || 'Magazzino Noleggio', crumbs: [{ label: 'Lavanderia a Noleggio' }] };
@@ -158,7 +185,7 @@ const AppLayout = ({ children }) => {
       if (curTab === 'register') return navTab === 'movements';
       return curTab === navTab;
     }
-    if (p === '/magazzino') return location.pathname === '/magazzino';
+    if (p === '/magazzino-strutture' || p === '/magazzino-generale' || p === '/consegne') return location.pathname === p;
     return location.pathname === p || location.pathname.startsWith(p + '/');
   };
 

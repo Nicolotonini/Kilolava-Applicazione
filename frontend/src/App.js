@@ -1,5 +1,5 @@
 import React from 'react';
-import { BrowserRouter, Routes, Route, Navigate, useSearchParams } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useSearchParams, useParams } from 'react-router-dom';
 import { Toaster } from './components/ui/sonner';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { LanguageProvider } from './contexts/LanguageContext';
@@ -13,8 +13,13 @@ import ClientsPage from './pages/ClientsPage';
 import ClientDetailPage from './pages/ClientDetailPage';
 import CalendarPage from './pages/CalendarPage';
 import InventoryPage from './pages/InventoryPage';
-import LogisticsPage from './pages/LogisticsPage';
 import RiderViewPage from './pages/RiderViewPage';
+import ConsegnePanoramicaPage from './pages/consegne/ConsegnePanoramicaPage';
+import DaOrganizzarePage from './pages/consegne/DaOrganizzarePage';
+import OrganizzazionePage from './pages/consegne/OrganizzazionePage';
+import ConsegneOggiPage from './pages/consegne/ConsegneOggiPage';
+import ConsegneStoricoPage from './pages/consegne/ConsegneStoricoPage';
+import FermataDetailPage from './pages/consegne/FermataDetailPage';
 import SettingsPage from './pages/SettingsPage';
 import ActivityLogPage from './pages/ActivityLogPage';
 import UsersPage from './pages/UsersPage';
@@ -25,7 +30,6 @@ import CleaningPage from './pages/CleaningPage';
 import CleaningOrganizePage from './pages/CleaningOrganizePage';
 import CleaningTaskDetailPage from './pages/cleaning/CleaningTaskDetailPage';
 import MaintenanceIssueDetailPage from './pages/MaintenanceIssueDetailPage';
-import LogisticsTaskDetailPage from './pages/LogisticsTaskDetailPage';
 import SegnalazioniPage from './pages/segnalazioni/SegnalazioniPage';
 import SegnalazioneDetailPage from './pages/segnalazioni/SegnalazioneDetailPage';
 import ChecklistTemplatesPage from './pages/ChecklistTemplatesPage';
@@ -36,18 +40,21 @@ import DocumentDetailPage from './pages/DocumentDetailPage';
 import NewDocumentPage from './pages/NewDocumentPage';
 import StructuresListPage from './pages/StructuresListPage';
 import StructureDetailPage from './pages/StructureDetailPage';
-import MagazzinoOverviewPage from './pages/magazzino/MagazzinoOverviewPage';
+import StruttureOverviewPage from './pages/magazzino/StruttureOverviewPage';
+import GeneraleOverviewPage from './pages/magazzino/GeneraleOverviewPage';
+import CentralStockPage from './pages/magazzino/CentralStockPage';
+import KitPulizieListPage from './pages/magazzino/KitPulizieListPage';
+import KitPulizieDetailPage from './pages/magazzino/KitPulizieDetailPage';
 import NoleggioPage from './pages/magazzino/NoleggioPage';
 import NoleggioDetailPage from './pages/magazzino/NoleggioDetailPage';
 import FornitureListPage from './pages/magazzino/FornitureListPage';
 import FornitureDetailPage from './pages/magazzino/FornitureDetailPage';
-import PulizieStockPage from './pages/magazzino/PulizieStockPage';
-import PulizieDetailPage from './pages/magazzino/PulizieDetailPage';
 import ZainiPage from './pages/magazzino/ZainiPage';
 import ZainoDetailPage from './pages/magazzino/ZainoDetailPage';
 import MovimentiPage from './pages/magazzino/MovimentiPage';
 import CataloghiKitPage from './pages/magazzino/CataloghiKitPage';
-import PrivateLaundryPage from './pages/PrivateLaundryPage';
+import LavorazioniPage from './pages/lavanderia/LavorazioniPage';
+import LavanderiaStoricoPage from './pages/lavanderia/LavanderiaStoricoPage';
 import KeysPage from './pages/KeysPage';
 import ReportsPage from './pages/ReportsPage';
 
@@ -84,7 +91,12 @@ const MaintenanceRouteSwitch = () => {
 const StructureInventoryRedirect = () => {
   const [params] = useSearchParams();
   const sid = params.get('structure_id');
-  return <Navigate to={sid ? `/magazzino/noleggio/${sid}` : '/magazzino'} replace />;
+  return <Navigate to={sid ? `/magazzino-strutture/noleggio/${sid}` : '/magazzino-strutture'} replace />;
+};
+
+const LegacyDetailRedirect = ({ base }) => {
+  const params = useParams();
+  return <Navigate to={`${base}/${params.id}`} replace />;
 };
 
 // Role-based home route resolver
@@ -196,26 +208,47 @@ function AppRoutes() {
         <Route path="clients/:clientId" element={<ClientDetailPage />} />
         <Route path="calendar" element={<CalendarPage />} />
         <Route path="inventory" element={<InventoryPage />} />
-        <Route path="logistics" element={<LogisticsPage />} />
-        <Route path="logistics/:taskId" element={<LogisticsTaskDetailPage />} />
+        <Route path="consegne" element={<ConsegnePanoramicaPage />} />
+        <Route path="consegne/da-organizzare" element={<DaOrganizzarePage />} />
+        <Route path="consegne/organizzazione" element={<OrganizzazionePage />} />
+        <Route path="consegne/oggi" element={<ConsegneOggiPage />} />
+        <Route path="consegne/storico" element={<ConsegneStoricoPage />} />
+        <Route path="consegne/fermata/:fermataId" element={<FermataDetailPage />} />
+        <Route path="logistics" element={<Navigate to="/consegne" replace />} />
+        <Route path="logistics/:id" element={<LegacyDetailRedirect base="/consegne/fermata" />} />
         <Route path="maintenance/issue/:issueId" element={<MaintenanceIssueDetailPage />} />
         <Route path="cleaning/task/:taskId" element={<CleaningTaskDetailPage />} />
-        <Route path="deliveries" element={<Navigate to="/logistics" replace />} />
+        <Route path="deliveries" element={<Navigate to="/consegne" replace />} />
         <Route path="structure-inventory" element={<StructureInventoryRedirect />} />
-        <Route path="magazzino" element={<MagazzinoOverviewPage />} />
-        <Route path="magazzino/noleggio" element={<NoleggioPage />} />
-        <Route path="magazzino/noleggio/:structureId" element={<NoleggioDetailPage />} />
-        <Route path="magazzino/forniture" element={<FornitureListPage />} />
-        <Route path="magazzino/forniture/:structureId" element={<FornitureDetailPage />} />
-        <Route path="magazzino/pulizie" element={<PulizieStockPage />} />
-        <Route path="magazzino/pulizie/:structureId" element={<PulizieDetailPage />} />
-        <Route path="magazzino/zaini" element={<ZainiPage />} />
-        <Route path="magazzino/zaini/:zainoId" element={<ZainoDetailPage />} />
-        <Route path="magazzino/movimenti" element={<MovimentiPage />} />
+        <Route path="magazzino-strutture" element={<StruttureOverviewPage />} />
+        <Route path="magazzino-strutture/noleggio" element={<NoleggioPage />} />
+        <Route path="magazzino-strutture/noleggio/:structureId" element={<NoleggioDetailPage />} />
+        <Route path="magazzino-strutture/forniture" element={<FornitureListPage />} />
+        <Route path="magazzino-strutture/forniture/:structureId" element={<FornitureDetailPage />} />
+        <Route path="magazzino-strutture/kit-pulizie" element={<KitPulizieListPage />} />
+        <Route path="magazzino-strutture/kit-pulizie/:structureId" element={<KitPulizieDetailPage />} />
+        <Route path="magazzino-strutture/movimenti" element={<MovimentiPage scope="strutture" />} />
+        <Route path="magazzino-generale" element={<GeneraleOverviewPage />} />
+        <Route path="magazzino-generale/noleggio" element={<CentralStockPage domain="noleggio" />} />
+        <Route path="magazzino-generale/forniture" element={<CentralStockPage domain="forniture" />} />
+        <Route path="magazzino-generale/pulizie" element={<CentralStockPage domain="pulizie" />} />
+        <Route path="magazzino-generale/zaini" element={<ZainiPage />} />
+        <Route path="magazzino-generale/zaini/:zainoId" element={<ZainoDetailPage />} />
+        <Route path="magazzino-generale/movimenti" element={<MovimentiPage scope="generale" />} />
+        <Route path="magazzino" element={<Navigate to="/magazzino-strutture" replace />} />
+        <Route path="magazzino/noleggio" element={<Navigate to="/magazzino-strutture/noleggio" replace />} />
+        <Route path="magazzino/noleggio/:id" element={<LegacyDetailRedirect base="/magazzino-strutture/noleggio" />} />
+        <Route path="magazzino/forniture" element={<Navigate to="/magazzino-strutture/forniture" replace />} />
+        <Route path="magazzino/forniture/:id" element={<LegacyDetailRedirect base="/magazzino-strutture/forniture" />} />
+        <Route path="magazzino/pulizie" element={<Navigate to="/magazzino-strutture/kit-pulizie" replace />} />
+        <Route path="magazzino/pulizie/:id" element={<LegacyDetailRedirect base="/magazzino-strutture/kit-pulizie" />} />
+        <Route path="magazzino/zaini" element={<Navigate to="/magazzino-generale/zaini" replace />} />
+        <Route path="magazzino/zaini/:id" element={<LegacyDetailRedirect base="/magazzino-generale/zaini" />} />
+        <Route path="magazzino/movimenti" element={<Navigate to="/magazzino-strutture/movimenti" replace />} />
         <Route path="cataloghi-kit" element={<CataloghiKitPage />} />
         <Route path="keys" element={<KeysPage />} />
-        <Route path="private-laundry/jobs" element={<PrivateLaundryPage view="jobs" />} />
-        <Route path="private-laundry/history" element={<PrivateLaundryPage view="history" />} />
+        <Route path="private-laundry/jobs" element={<LavorazioniPage />} />
+        <Route path="private-laundry/history" element={<LavanderiaStoricoPage />} />
         <Route path="cleaning" element={<CleaningPage />} />
         <Route path="cleaning-organize" element={<CleaningOrganizePage />} />
         <Route path="segnalazioni" element={<SegnalazioniPage />} />

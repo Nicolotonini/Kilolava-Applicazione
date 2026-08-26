@@ -180,3 +180,28 @@ frontend/src/pages/
 - [ ] Audit: popolare entity_id per le POST di creazione leggendo l'id dal response body (opzionale, minor)
 - [ ] Backup Google Drive in Excel (rimandato dall'utente — riprendere quando avrà credenziali Google)
 - [ ] Fatture in Cloud API integration
+
+---
+
+## Phase 26 (Giugno 2026) — Consegne + Lavanderia Privata + Manutenzioni — COMPLETATO (iteration_18: 18/18 backend + frontend 100%)
+
+### Consegne (centro logistico)
+- Backend `routes/consegne.py` montato su `/api/consegne`: richieste logistiche = collection `fabbisogni` (i bottoni "Crea richiesta" di Magazzino/Zaini/Kit alimentano direttamente Consegne, nessun doppione); fermate = `logistics_tasks` (migrazione automatica task legacy → modello fermate con `lines`, idempotente allo startup, storico preservato).
+- Endpoints: overview (KPI+attention), richieste (CRUD+annulla), proposte (raggruppamento per destinazione), fermate (crea da richieste multiple, fermate-compatibili anti-doppione, assegna rider, route-order, start, problema, foto conferma su Object Storage, completa con quantità effettive, annulla → richieste tornano aperte), mie-fermate per rider.
+- Completamento fermata → movimenti stock via `apply_movement` (esteso con `delivery_id` — fix del testing agent) con referenza incrociata fermata↔movimento, stock centrale − / struttura +, zero duplicazioni. Warning stock insufficiente (stock_ok=false) non bloccante.
+- Frontend `/pages/consegne/`: Panoramica (KPI + attention), Da organizzare (gruppi per destinazione, crea fermata, aggiungi a fermata compatibile, nuova richiesta manuale, warning stock e gate lavanderia), Organizzazione (colonna sticky da assegnare + colonne rider, drag&drop + select mobile, warning sovraccarico >8 non bloccante, riordino giro), Oggi (per rider con progress), Storico (filtri data/stato/rider), FermataDetail (azioni complete). Vecchie pagine LogisticsPage/LogisticsTaskDetailPage/PrivateLaundryPage eliminate, redirect /logistics → /consegne.
+
+### Lavanderia Privata
+- Backend `routes/lavanderia.py` su `/api/lavanderia`: jobs (arrivo cliente/struttura/sacchi/note/foto), pronta (senza peso, crea automaticamente richiesta logistica kind=lavanderia_privata), GATE peso+foto bilancia (final_weight_kg, weighed_at/by, scale_photo su Object Storage) obbligatorio prima che la richiesta sia aggregabile in fermata (400 "Pesatura necessaria"), consegna automatica al completamento fermata (delivered_at, delivery_id, rider_id), history.
+- Prezzi: €3/kg standard in app_settings (PUT /lavanderia/settings, card in Impostazioni) + override per cliente (clients.private_laundry_price_per_kg, card in scheda Cliente → Fatturazione), total = peso × prezzo, price_source standard/cliente.
+- Frontend: LavorazioniPage (filtri Tutte/Da lavorare/Pronte/Da pesare/In consegna, dialog pesatura con foto obbligatoria), LavanderiaStoricoPage (KPI kg/€, tabella con rider e link fermata).
+
+### Manutenzioni
+- Stati: open/assigned/in_progress/on_hold/completed/cancelled (+resolved/closed legacy in storico). Endpoint dedicati: start, hold (motivo obbligatorio: cliente/materiale/ricambio/fornitore/autorizzazione/altro), complete (nota risoluzione obbligatoria → segnalazione collegata "risolta", task sync), cancel (segnalazione RESTA aperta), materials (descrizione/qty/disponibile/da portare/note), materials-request (→ richiesta logistica kind=manutenzione, idempotente). Campo `title`, audit completo in `history`. Endpoint /status generico rifiuta on_hold/completed/cancelled.
+- Frontend MaintenanceIssuesPage riscritta: tab Interventi | Storico, titolo nel form, dettaglio con azioni Avvia/In attesa/Completa/Annulla, sezione Materiali + Crea richiesta logistica, link segnalazione collegata. Fix: ripristinato decoratore mancante PUT /logistics/tasks/{id}/status.
+
+### Utenti test
+- Rider: rider_test@kilolava.com / RiderTest123! (vedi test_credentials.md)
+
+### Spike Tracker (stesso giorno, separato)
+- SPIKE TECNICO TRACKER completato: Samsung SmartTag = PARZIALE (device visibile via SmartThings API, coordinate NON esposte, SmartThings Find solo partner program per produttori); UGREEN/Apple Find My = NON DISPONIBILE (nessuna Owner Location API). Conclusione: OPZIONE 4 (+5: tracker GPS con API tipo Teltonika/Queclink + Traccar se la Mappa resta un obiettivo). Artefatti: /app/spike_tracker/samsung_smarttag_test.py (richiede SMARTTHINGS_TOKEN env, utente fornirà PAT per prova empirica) e /app/spike_tracker/REPORT_SPIKE_TRACKER.md. NON costruire Mappa Operativa finché l'utente non decide.

@@ -3199,6 +3199,9 @@ async def assign_logistics_task(
             "logistics_assigned", "normal", "logistics_task", task_id
         )
     return await _enrich_task(updated)
+
+
+@api_router.put("/logistics/tasks/{task_id}/status", response_model=LogisticsTaskResponse)
 async def update_task_status(
     task_id: str,
     status_update: TaskStatusUpdate,
@@ -5909,7 +5912,8 @@ async def apply_proposal(data: ProposalApply, current_user: dict = Depends(get_c
 
 # ============== MAINTENANCE MODULE ==============
 
-MAINT_STATUSES = ["open", "assigned", "in_progress", "resolved", "closed"]
+MAINT_STATUSES = ["open", "assigned", "in_progress", "on_hold", "completed", "cancelled", "resolved", "closed"]
+MAINT_HOLD_REASONS = ["cliente", "materiale", "ricambio", "fornitore", "autorizzazione", "altro"]
 MAINT_PRIORITIES = ["low", "medium", "high", "urgent"]
 MAINT_CATEGORIES = ["electrical", "plumbing", "furniture", "damage", "missing_item", "broken_item", "missing_supplies", "maintenance", "other"]
 
@@ -6011,6 +6015,7 @@ async def get_maintenance_issue(issue_id: str, current_user: dict = Depends(get_
 
 
 class MaintenanceIssueCreate(BaseModel):
+    title: Optional[str] = None
     client_id: Optional[str] = None
     structure_id: Optional[str] = None
     unit_id: Optional[str] = None
@@ -6038,6 +6043,9 @@ async def create_maintenance_issue(data: MaintenanceIssueCreate, current_user: d
     issue = {
         "id": str(uuid.uuid4()),
         "source": "manual",
+        "title": (data.title or "").strip() or None,
+        "materials": [],
+        "started_at": None,
         "cleaning_task_id": None,
         "cleaning_issue_id": None,
         "client_id": data.client_id,
@@ -6079,6 +6087,7 @@ async def create_maintenance_issue(data: MaintenanceIssueCreate, current_user: d
 
 
 class MaintenanceIssueUpdate(BaseModel):
+    title: Optional[str] = None
     category: Optional[str] = None
     description: Optional[str] = None
     priority: Optional[str] = None
@@ -6099,7 +6108,7 @@ async def update_maintenance_issue(issue_id: str, data: MaintenanceIssueUpdate, 
     update = {"updated_at": now}
     history_entries = []
 
-    for field in ["category", "description", "internal_notes", "scheduled_date"]:
+    for field in ["title", "category", "description", "internal_notes", "scheduled_date"]:
         val = getattr(data, field, None)
         if val is not None:
             update[field] = val
@@ -6166,6 +6175,8 @@ async def update_maint_status(issue_id: str, data: MaintStatusUpdate, current_us
         raise HTTPException(status_code=403, detail="Non autorizzato")
     if data.status not in MAINT_STATUSES:
         raise HTTPException(status_code=400, detail="Stato non valido")
+    if data.status in ("on_hold", "completed", "cancelled"):
+        raise HTTPException(status_code=400, detail="Usa le azioni dedicate: metti in attesa, completa o annulla")
 
     now = now_iso()
     old_status = issue.get("status", "open")
@@ -6188,6 +6199,181 @@ async def update_maint_status(issue_id: str, data: MaintStatusUpdate, current_us
     )
     updated = await db.maintenance_issues.find_one({"id": issue_id}, {"_id": 0})
     return await _enrich_maint_issue(updated)
+
+
+# --- Interventi Manutenzione: flusso Da fare → In corso → In attesa → Completata / Annullata ---
+
+def _maint_hist(current_user: dict, action: str, detail: str) -> dict:
+    return {"action": action, "by": current_user["id"], "by_name": current_user.get("name", ""), "at": now_iso(), "detail": detail}
+
+
+async def _get_maint_for_action(issue_id: str, current_user: dict) -> dict:
+    issue = await db.maintenance_issues.find_one({"id": issue_id}, {"_id": 0})
+    if not issue:
+        raise HTTPException(status_code=404, detail="Intervento non trovato")
+    if current_user["role"] == UserRole.MAINTENANCE and issue.get("assigned_to") != current_user["id"]:
+        raise HTTPException(status_code=403, detail="Non autorizzato")
+    if not is_ops_user(current_user) and current_user["role"] != UserRole.MAINTENANCE:
+        raise HTTPException(status_code=403, detail="Non autorizzato")
+    return issue
+
+
+class MaintHoldPayload(BaseModel):
+    reason: str
+    note: Optional[str] = None
+
+
+class MaintCompletePayload(BaseModel):
+    resolution_notes: str
+    materials_note: Optional[str] = None
+
+
+class MaintCancelPayload(BaseModel):
+    reason: Optional[str] = None
+
+
+class MaintMaterialItem(BaseModel):
+    description: str
+    qty: int = 1
+    available: bool = True
+    to_bring: bool = False
+    note: Optional[str] = None
+
+
+class MaintMaterialsPayload(BaseModel):
+    materials: List[MaintMaterialItem]
+
+
+@api_router.put("/maintenance/issues/{issue_id}/start")
+async def start_maintenance(issue_id: str, current_user: dict = Depends(get_current_user)):
+    issue = await _get_maint_for_action(issue_id, current_user)
+    if issue.get("status") in ("completed", "cancelled", "resolved", "closed"):
+        raise HTTPException(status_code=400, detail="Intervento già chiuso")
+    now = now_iso()
+    upd = {"status": "in_progress", "updated_at": now, "hold_reason": None}
+    if not issue.get("started_at"):
+        upd["started_at"] = now
+    await db.maintenance_issues.update_one({"id": issue_id}, {
+        "$set": upd, "$push": {"history": _maint_hist(current_user, "started", "Intervento avviato")}})
+    return await _enrich_maint_issue(await db.maintenance_issues.find_one({"id": issue_id}, {"_id": 0}))
+
+
+@api_router.put("/maintenance/issues/{issue_id}/hold")
+async def hold_maintenance(issue_id: str, data: MaintHoldPayload, current_user: dict = Depends(get_current_user)):
+    issue = await _get_maint_for_action(issue_id, current_user)
+    if issue.get("status") in ("completed", "cancelled", "resolved", "closed"):
+        raise HTTPException(status_code=400, detail="Intervento già chiuso")
+    if data.reason not in MAINT_HOLD_REASONS:
+        raise HTTPException(status_code=400, detail="Motivo attesa obbligatorio: " + ", ".join(MAINT_HOLD_REASONS))
+    now = now_iso()
+    reason_label = data.reason.capitalize()
+    await db.maintenance_issues.update_one({"id": issue_id}, {
+        "$set": {"status": "on_hold", "updated_at": now,
+                 "hold_reason": {"reason": data.reason, "note": data.note or "", "at": now,
+                                 "by": current_user["id"], "by_name": current_user.get("name", "")}},
+        "$push": {"history": _maint_hist(current_user, "on_hold", f"In attesa — {reason_label}" + (f": {data.note}" if data.note else ""))}})
+    return await _enrich_maint_issue(await db.maintenance_issues.find_one({"id": issue_id}, {"_id": 0}))
+
+
+@api_router.put("/maintenance/issues/{issue_id}/complete")
+async def complete_maintenance(issue_id: str, data: MaintCompletePayload, current_user: dict = Depends(get_current_user)):
+    issue = await _get_maint_for_action(issue_id, current_user)
+    if issue.get("status") in ("completed", "cancelled", "resolved", "closed"):
+        raise HTTPException(status_code=400, detail="Intervento già chiuso")
+    if not data.resolution_notes or not data.resolution_notes.strip():
+        raise HTTPException(status_code=400, detail="La nota di risoluzione è obbligatoria per completare l'intervento")
+    now = now_iso()
+    upd = {"status": "completed", "completed_at": now, "resolved_at": now,
+           "completed_by": current_user["id"], "completed_by_name": current_user.get("name", ""),
+           "resolution_notes": data.resolution_notes.strip(), "updated_at": now, "hold_reason": None}
+    if data.materials_note:
+        upd["materials_note"] = data.materials_note
+    await db.maintenance_issues.update_one({"id": issue_id}, {
+        "$set": upd, "$push": {"history": _maint_hist(current_user, "completed", f"Completato: {data.resolution_notes.strip()[:120]}")}})
+    # Segnalazione collegata → Risolta (default, non chiusura definitiva)
+    seg_id = issue.get("segnalazione_id")
+    if seg_id:
+        from routes.segnalazioni import recompute_seg, tl
+        await db.segnalazione_tasks.update_many(
+            {"segnalazione_id": seg_id, "linked_id": issue_id, "status": {"$nin": ["completata", "annullata"]}},
+            {"$set": {"status": "completata", "completed_at": now, "updated_at": now}})
+        seg = await db.segnalazioni.find_one({"id": seg_id}, {"_id": 0, "status": 1})
+        if seg and seg.get("status") not in ("risolta", "chiusa"):
+            await db.segnalazioni.update_one({"id": seg_id}, {
+                "$set": {"status": "risolta", "resolved_at": now, "updated_at": now},
+                "$push": {"timeline": tl(current_user, "risolta", f"Intervento manutenzione completato: {data.resolution_notes.strip()[:100]}")}})
+        await recompute_seg(seg_id)
+    return await _enrich_maint_issue(await db.maintenance_issues.find_one({"id": issue_id}, {"_id": 0}))
+
+
+@api_router.put("/maintenance/issues/{issue_id}/cancel")
+async def cancel_maintenance(issue_id: str, data: MaintCancelPayload, current_user: dict = Depends(get_current_user)):
+    issue = await _get_maint_for_action(issue_id, current_user)
+    if not is_ops_user(current_user):
+        raise HTTPException(status_code=403, detail="Solo Admin/Manager possono annullare")
+    if issue.get("status") in ("completed", "cancelled", "resolved", "closed"):
+        raise HTTPException(status_code=400, detail="Intervento già chiuso")
+    now = now_iso()
+    await db.maintenance_issues.update_one({"id": issue_id}, {
+        "$set": {"status": "cancelled", "cancelled_at": now, "cancel_reason": data.reason or "", "updated_at": now},
+        "$push": {"history": _maint_hist(current_user, "cancelled", "Annullato" + (f": {data.reason}" if data.reason else ""))}})
+    # Il task collegato in Segnalazioni viene annullato; la segnalazione RESTA aperta (problema non risolto)
+    seg_id = issue.get("segnalazione_id")
+    if seg_id:
+        from routes.segnalazioni import recompute_seg
+        await db.segnalazione_tasks.update_many(
+            {"segnalazione_id": seg_id, "linked_id": issue_id, "status": {"$nin": ["completata", "annullata"]}},
+            {"$set": {"status": "annullata", "updated_at": now}})
+        await recompute_seg(seg_id)
+    return await _enrich_maint_issue(await db.maintenance_issues.find_one({"id": issue_id}, {"_id": 0}))
+
+
+@api_router.put("/maintenance/issues/{issue_id}/materials")
+async def set_maintenance_materials(issue_id: str, data: MaintMaterialsPayload, current_user: dict = Depends(get_current_user)):
+    issue = await _get_maint_for_action(issue_id, current_user)
+    if issue.get("status") in ("completed", "cancelled", "resolved", "closed"):
+        raise HTTPException(status_code=400, detail="Intervento già chiuso")
+    now = now_iso()
+    materials = [m.model_dump() for m in data.materials]
+    await db.maintenance_issues.update_one({"id": issue_id}, {
+        "$set": {"materials": materials, "updated_at": now},
+        "$push": {"history": _maint_hist(current_user, "materials", f"Materiali aggiornati ({len(materials)})")}})
+    return await _enrich_maint_issue(await db.maintenance_issues.find_one({"id": issue_id}, {"_id": 0}))
+
+
+@api_router.post("/maintenance/issues/{issue_id}/materials-request")
+async def create_materials_request(issue_id: str, current_user: dict = Depends(get_current_user)):
+    issue = await _get_maint_for_action(issue_id, current_user)
+    items = [{"name": m["description"] + (f" — {m['note']}" if m.get("note") else ""), "qty": m.get("qty", 1)}
+             for m in (issue.get("materials") or []) if m.get("to_bring")]
+    if not items:
+        raise HTTPException(status_code=400, detail="Nessun materiale segnato come 'da portare'")
+    if issue.get("materials_richiesta_id"):
+        existing = await db.fabbisogni.find_one({"id": issue["materials_richiesta_id"], "status": {"$in": ["aperta", "in_consegna"]}}, {"_id": 0, "id": 1})
+        if existing:
+            raise HTTPException(status_code=400, detail="Esiste già una richiesta logistica aperta per questo intervento")
+    now = now_iso()
+    s = await db.structures.find_one({"id": issue.get("structure_id")}, {"_id": 0, "name": 1, "klv_code": 1}) if issue.get("structure_id") else None
+    fab = {
+        "id": str(uuid.uuid4()), "kind": "manutenzione",
+        "structure_id": issue.get("structure_id"), "structure_name": (s or {}).get("name"),
+        "klv_code": (s or {}).get("klv_code"), "zaino_id": None, "zaino_code": None,
+        "client_id": issue.get("client_id"), "client_name": None,
+        "destination_label": (issue.get("title") or "Intervento manutenzione")[:60],
+        "items": items, "date_needed": issue.get("scheduled_date"), "time_window": None,
+        "priority": {"low": "low", "medium": "normal", "high": "high", "urgent": "urgent"}.get(issue.get("priority"), "normal"),
+        "status": "aperta", "note": f"Materiale per intervento manutenzione",
+        "source": {"type": "manutenzione", "id": issue_id}, "source_id": issue_id,
+        "maintenance_issue_id": issue_id, "fermata_id": None,
+        "created_by": current_user["id"], "created_by_name": current_user.get("name", ""),
+        "created_at": now, "updated_at": now,
+    }
+    await db.fabbisogni.insert_one(fab)
+    fab.pop("_id", None)
+    await db.maintenance_issues.update_one({"id": issue_id}, {
+        "$set": {"materials_richiesta_id": fab["id"], "updated_at": now},
+        "$push": {"history": _maint_hist(current_user, "materials_request", f"Richiesta logistica creata ({len(items)} articoli)")}})
+    return fab
 
 
 # --- Photo Upload for Maintenance ---
@@ -7284,6 +7470,8 @@ from routes.segnalazioni import (  # noqa: E402
     suggest_category as seg_suggest_category,
 )
 from routes.magazzino import create_magazzino_router, init_magazzino_deps, seed_magazzino  # noqa: E402
+from routes.consegne import create_consegne_router, init_consegne_deps, migrate_fermate  # noqa: E402
+from routes.lavanderia import create_lavanderia_router, init_lavanderia_deps  # noqa: E402
 init_segnalazioni_deps(
     create_notification=create_notification,
     notify_ops_users=notify_ops_users,
@@ -7306,6 +7494,18 @@ init_magazzino_deps(
     suggest_category=seg_suggest_category,
 )
 api_router.include_router(create_magazzino_router(get_current_user, is_ops_user))
+init_consegne_deps(
+    get_client_display_name=get_client_display_name,
+    create_notification=create_notification,
+    local_today=local_today,
+    put_object=put_object,
+)
+api_router.include_router(create_consegne_router(get_current_user, is_ops_user), prefix="/consegne")
+init_lavanderia_deps(
+    get_client_display_name=get_client_display_name,
+    put_object=put_object,
+)
+api_router.include_router(create_lavanderia_router(get_current_user, is_ops_user), prefix="/lavanderia")
 init_activity_middleware(app, SECRET_KEY, ALGORITHM)
 
 app.include_router(api_router)
@@ -7359,6 +7559,11 @@ async def startup_event():
         await seed_magazzino()
     except Exception as e:
         logger.error(f"Magazzino seed failed: {e}")
+    # Migrazione consegne legacy → modello Fermate (idempotente)
+    try:
+        await migrate_fermate()
+    except Exception as e:
+        logger.error(f"Migrazione fermate failed: {e}")
     # Start scheduler with overdue task check every 30 minutes
     try:
         scheduler_service.start_scheduler(_check_overdue_tasks)

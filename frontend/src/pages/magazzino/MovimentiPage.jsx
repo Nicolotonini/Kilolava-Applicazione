@@ -55,20 +55,32 @@ export function MovementsTable({ items, compact, onStorno }) {
   );
 }
 
-export default function MovimentiPage() {
+export default function MovimentiPage({ scope }) {
   const [data, setData] = useState(null);
-  const [filters, setFilters] = useState({ domain: '', movement_type: '', product: '', date_from: '', date_to: '' });
+  const [filters, setFilters] = useState({ domain: '', movement_type: '', product: '', date_from: '', date_to: '', structure_id: '', client_id: '', zone_id: '', user: '' });
+  const [structures, setStructures] = useState([]);
+  const [clients, setClients] = useState([]);
+  const [zones, setZones] = useState([]);
   const [page, setPage] = useState(1);
   const [movOpen, setMovOpen] = useState(false);
 
+  useEffect(() => {
+    api.get('/structures').then(r => setStructures(r.data)).catch(() => {});
+    if (scope === 'strutture') {
+      api.get('/clients').then(r => setClients(r.data)).catch(() => {});
+      api.get('/zones').then(r => setZones(r.data)).catch(() => {});
+    }
+  }, [scope]);
+
   const load = useCallback((pg = 1, append = false) => {
     const params = { page: pg, limit: 50 };
+    if (scope) params.scope = scope;
     Object.entries(filters).forEach(([k, v]) => { if (v) params[k] = v; });
     api.get('/magazzino/movimenti', { params }).then(r => {
       setData(prev => append && prev ? { ...r.data, items: [...prev.items, ...r.data.items] } : r.data);
       setPage(pg);
     }).catch(() => setData({ items: [], total: 0 }));
-  }, [filters]);
+  }, [filters, scope]);
   useEffect(() => { load(1); }, [load]);
 
   const storno = async (m) => {
@@ -82,7 +94,11 @@ export default function MovimentiPage() {
 
   return (
     <div className="p-4 lg:p-6 space-y-5" data-testid="movimenti-page">
-      <PageHeader title="Movimenti Magazzino" subtitle="Storico completo: ogni cambio quantità è un movimento"
+      <PageHeader
+        title={scope === 'strutture' ? 'Movimenti — Strutture' : scope === 'generale' ? 'Movimenti — Generale' : 'Movimenti Magazzino'}
+        subtitle={scope === 'strutture' ? 'Solo i movimenti che coinvolgono una Struttura: consegne, ritiri, consumi e rettifiche nelle case'
+          : scope === 'generale' ? 'Stock centrale, zaini e trasferimenti da/verso le Strutture'
+            : 'Storico completo: ogni cambio quantità è un movimento'}
         actions={
           <Button onClick={() => setMovOpen(true)} className="bg-primary text-primary-foreground hover:bg-primary/90" data-testid="new-movement-btn">
             <Plus className="h-4 w-4 mr-1.5" />Nuovo movimento
@@ -101,6 +117,27 @@ export default function MovimentiPage() {
         </select>
         <Input value={filters.product} onChange={e => setFilters(f => ({ ...f, product: e.target.value }))}
           placeholder="Articolo..." className="h-8 w-40 text-sm" data-testid="filter-product" />
+        <select value={filters.structure_id} onChange={e => setFilters(f => ({ ...f, structure_id: e.target.value }))}
+          className="h-8 rounded-md border border-border bg-background px-2 text-sm max-w-[180px]" data-testid="filter-structure">
+          <option value="">Tutte le strutture</option>
+          {structures.map(s => <option key={s.id} value={s.id}>{s.klv_code ? `${s.klv_code} — ` : ''}{s.name}</option>)}
+        </select>
+        {scope === 'strutture' && (
+          <select value={filters.client_id} onChange={e => setFilters(f => ({ ...f, client_id: e.target.value }))}
+            className="h-8 rounded-md border border-border bg-background px-2 text-sm max-w-[160px]" data-testid="filter-client">
+            <option value="">Tutti i clienti</option>
+            {clients.map(c => <option key={c.id} value={c.id}>{c.display_name || c.name}</option>)}
+          </select>
+        )}
+        {scope === 'strutture' && (
+          <select value={filters.zone_id} onChange={e => setFilters(f => ({ ...f, zone_id: e.target.value }))}
+            className="h-8 rounded-md border border-border bg-background px-2 text-sm" data-testid="filter-zone">
+            <option value="">Tutti i rioni</option>
+            {zones.map(z => <option key={z.id} value={z.id}>{z.name}</option>)}
+          </select>
+        )}
+        <Input value={filters.user} onChange={e => setFilters(f => ({ ...f, user: e.target.value }))}
+          placeholder="Utente..." className="h-8 w-32 text-sm" data-testid="filter-user" />
         <input type="date" value={filters.date_from} onChange={e => setFilters(f => ({ ...f, date_from: e.target.value }))}
           className="h-8 rounded-md border border-border bg-background px-2 text-sm" data-testid="filter-from" />
         <input type="date" value={filters.date_to} onChange={e => setFilters(f => ({ ...f, date_to: e.target.value }))}

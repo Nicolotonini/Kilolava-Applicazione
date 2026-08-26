@@ -18,6 +18,7 @@ import { toast } from 'sonner';
 import { Globe, Palette, User, FileSpreadsheet, RefreshCw, KeyRound } from 'lucide-react';
 import { Input } from '../components/ui/input';
 import { ZonesSettingsCard } from '../components/ZonesSettingsCard';
+import { PrivateLaundrySettingsCard } from '../components/PrivateLaundryPriceCard';
 
 const SettingsPage = () => {
   const { user, updateUser } = useAuth();
@@ -177,6 +178,9 @@ const SettingsPage = () => {
           </div>
         </CardContent>
       </Card>
+
+      {/* Lavanderia Privata */}
+      <PrivateLaundrySettingsCard />
 
       {/* Key Boxes capacity */}
       <Card className="kilolava-card" data-testid="keybox-settings-card">

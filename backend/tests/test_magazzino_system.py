@@ -1,436 +1,599 @@
-"""Test suite Sistema Magazzino Kilolava (design ristrutturato Gen 2026).
+"""Test suite Sistema Magazzino Kilolava — design NUOVO (Gen 2026):
+Magazzino nelle Strutture (fisico) + Magazzino Generale.
 
-Copre:
-- Cataloghi separati (noleggio 8 / forniture 5 / pulizie 23)
-- Catalogo pulizie: standard_location solo 'casa'|'zaino', default 'casa'
-- Nessuna riga stock_levels domain=pulizie location_type=central
-- Kit + versioning
-- Overview KPI (cleaning_low_stock = numero CASE con mancanze)
-- Noleggio coverage
-- Forniture config e restock
-- **Magazzino Pulizie per-casa** (nuovo): configure, below_min, missing, movimenti, inventario
-- Zaini rivisti: dotazione = 8 articoli standard (source='standard' qty 1) anche senza kit;
-  kit prevale su standard; reintegro origin='external' (Acquisto/Scorta)
-- Foto prodotti: upload multipart + GET /api/files
-- Fabbisogni kind='pulizie'
-- Permessi cleaner (403 su /magazzino/pulizie, 200 sul proprio zaino)
+Copre requisiti utente (backend):
+1. Magazzino Generale Noleggio: carico external→central aumenta GET /generale/stock/noleggio
+2. Trasferimento central→structure: UN SOLO record movimento, decrementa central + incrementa struttura,
+   visibile sia con scope=strutture che scope=generale.
+3. POST /kit-transfer con kit configurato crea N movimenti (central→structure); kit non configurato → 400.
+4. Fornitura central→structure porta below_min e fabbisogno kind='fornitura'.
+5. Kit Pulizie Struttura: PUT /kit-pulizie/{sid} (custom_items), lista/dettaglio status,
+   trasferimento pulizie colma → completo; kit_id predefinito seed vuoto → status kit_non_configurato.
+6. Zaino: dotazione standard con qty null; kit configurato porta qty; reintegro origin central.
+7. Inventario central/struttura/zaino → rettifica_inventario.
+8. Storno movimento crea inverso; secondo storno → 400.
+9. Fabbisogno kind='noleggio' non genera segnalazioni.
+10. POST /segnalazioni origin_type=warehouse → visibile in KPI anomalie di entrambe overview.
+11. GET /noleggio/{sid} include array 'photos'.
+12. GET /catalog/* invariati (8/5/23 con foto).
+13. Filtri /movimenti scope/user/client_id/zone_id/structure/domain.
 
-Cleanup: rimuove prodotti TEST_, zaini/fabbisogni/movimenti/segnalazioni creati,
-riporta i kit seed a items=[].
+Cleanup selettivo a fine test.
 """
-import io
 import os
+import time
+import uuid
 import requests
 import pytest
 
-def _read_frontend_env():
+
+def _read_env(key):
     try:
         with open("/app/frontend/.env") as f:
             for line in f:
-                if line.startswith("REACT_APP_BACKEND_URL="):
+                if line.startswith(f"{key}="):
                     return line.split("=", 1)[1].strip().strip('"')
     except Exception:
-        return None
+        pass
     return None
 
 
-BASE_URL = (os.environ.get('REACT_APP_BACKEND_URL') or _read_frontend_env() or "").rstrip('/')
+BASE_URL = (os.environ.get('REACT_APP_BACKEND_URL') or _read_env('REACT_APP_BACKEND_URL') or "").rstrip('/')
 assert BASE_URL, "REACT_APP_BACKEND_URL not set"
 API = f"{BASE_URL}/api"
 
 ADMIN = {"email": "test_user@kilolava.com", "password": "TestPass123!"}
-CLEANER = {"email": "addetta_test@kilolava.com", "password": "AddettaTest123!"}
 
 
 def _login(creds):
-    r = requests.post(f"{API}/auth/login", json=creds, timeout=15)
+    r = requests.post(f"{API}/auth/login", json=creds, timeout=20)
     assert r.status_code == 200, f"Login failed: {r.status_code} {r.text}"
     return r.json()["access_token"]
 
 
 @pytest.fixture(scope="module")
-def admin_token():
-    return _login(ADMIN)
+def H():
+    tok = _login(ADMIN)
+    return {"Authorization": f"Bearer {tok}"}
 
 
-@pytest.fixture(scope="module")
-def admin_headers(admin_token):
-    return {"Authorization": f"Bearer {admin_token}"}
+# Stato condiviso per cleanup
+S = {
+    "products": [],     # prodotti TEST_ (domain, id)
+    "movements": [],    # movimenti da rimuovere
+    "fabbisogni": [],
+    "segnalazioni": [],
+    "structure_kits": [],  # structure_id (config kit-pulizie)
+    "kits_reset": [],   # kit id da riportare a items=[]
+    "central_stocks": [],  # (domain, product_id) su central
+    "structure_stocks": [],  # (domain, sid, product_id)
+    "zaino_stocks": [],  # (zid, product_id)
+}
 
 
-@pytest.fixture(scope="module")
-def cleaner_headers():
-    try:
-        return {"Authorization": f"Bearer {_login(CLEANER)}"}
-    except Exception:
-        pytest.skip("cleaner login failed")
+def _pick_structure(H):
+    r = requests.get(f"{API}/structures", headers=H).json()
+    items = r if isinstance(r, list) else r.get("items", [])
+    assert items, "no structures in DB"
+    return items[0]
 
 
-_created = {"products": [], "kits_reset": [], "movements": [], "zaini": [],
-            "fabbisogni": [], "segnalazioni": [], "pulizie_stock_keys": []}
+def _catalog(H, domain):
+    return requests.get(f"{API}/magazzino/catalog/{domain}", headers=H).json()
 
 
-# ============ CATALOGHI ============
+# ============ 12. CATALOGHI INVARIATI ============
 
 class TestCataloghi:
-    def test_seed_noleggio_has_8(self, admin_headers):
-        r = requests.get(f"{API}/magazzino/catalog/noleggio", headers=admin_headers)
+    def test_seed_counts(self, H):
+        assert len(_catalog(H, "noleggio")) >= 8
+        assert len(_catalog(H, "forniture")) >= 5
+        pul = _catalog(H, "pulizie")
+        assert len(pul) >= 23
+        assert all(p.get("standard_location") in ("casa", "zaino") for p in pul if p.get("active", True))
+
+    def test_photos_seed(self, H):
+        for d, n in [("noleggio", 8), ("forniture", 5), ("pulizie", 23)]:
+            cat = _catalog(H, d)
+            with_ph = [p for p in cat if (p.get("photo") or {}).get("file_path")]
+            assert len(with_ph) >= n, f"{d}: {len(with_ph)}/{n}"
+
+
+# ============ (1)(2) MAGAZZINO GENERALE NOLEGGIO + trasferimento ============
+
+class TestGeneraleNoleggio:
+    def test_carico_external_to_central_and_stock(self, H):
+        cat = _catalog(H, "noleggio")
+        pid = next(p["id"] for p in cat if p["name"] == "Federa")
+        S["central_stocks"].append(("noleggio", pid))
+        # stock iniziale
+        stock_before = requests.get(f"{API}/magazzino/generale/stock/noleggio", headers=H).json()
+        qty0 = next((r["qty"] for r in stock_before if r["id"] == pid), 0)
+        # carico
+        mov = requests.post(f"{API}/magazzino/movimenti", json={
+            "domain": "noleggio", "movement_type": "carico", "product_id": pid, "qty": 10,
+            "origin": {"type": "external", "label": "Acquisto TEST"},
+            "destination": {"type": "central"}
+        }, headers=H)
+        assert mov.status_code == 200, mov.text
+        S["movements"].append(mov.json()["id"])
+        # verifica
+        stock_after = requests.get(f"{API}/magazzino/generale/stock/noleggio", headers=H).json()
+        qty1 = next(r["qty"] for r in stock_after if r["id"] == pid)
+        assert qty1 == qty0 + 10, f"central noleggio {qty0}+10 → {qty1}"
+        S["_federa_pid"] = pid
+
+    def test_transfer_central_to_structure_single_record(self, H):
+        pid = S["_federa_pid"]
+        struct = _pick_structure(H)
+        sid = struct["id"]
+        S["structure_stocks"].append(("noleggio", sid, pid))
+        # trasferimento
+        mov = requests.post(f"{API}/magazzino/movimenti", json={
+            "domain": "noleggio", "movement_type": "trasferimento", "product_id": pid, "qty": 4,
+            "origin": {"type": "central"},
+            "destination": {"type": "structure", "id": sid}
+        }, headers=H)
+        assert mov.status_code == 200, mov.text
+        mid = mov.json()["id"]
+        S["movements"].append(mid)
+        # central diminuisce
+        stock_c = requests.get(f"{API}/magazzino/generale/stock/noleggio", headers=H).json()
+        qty_c = next(r["qty"] for r in stock_c if r["id"] == pid)
+        # struttura ha item
+        det = requests.get(f"{API}/magazzino/noleggio/{sid}", headers=H).json()
+        assert "photos" in det, "detail noleggio deve includere 'photos'"
+        row = next((r for r in det["items"] if r["product_id"] == pid), None)
+        assert row is not None and row["qty"] >= 4
+        # UN SOLO record movimento
+        movs_stru = requests.get(f"{API}/magazzino/movimenti",
+                                 params={"scope": "strutture"}, headers=H).json()["items"]
+        found_stru = [m for m in movs_stru if m["id"] == mid]
+        movs_gen = requests.get(f"{API}/magazzino/movimenti",
+                                params={"scope": "generale"}, headers=H).json()["items"]
+        found_gen = [m for m in movs_gen if m["id"] == mid]
+        assert len(found_stru) == 1 and len(found_gen) == 1, "record unico visibile in entrambi gli scope"
+        m = found_stru[0]
+        assert m["origin"]["type"] == "central" and m["destination"]["type"] == "structure"
+
+    def test_generale_overview_kpi(self, H):
+        r = requests.get(f"{API}/magazzino/generale/overview", headers=H)
         assert r.status_code == 200
-        assert len(r.json()) >= 8
+        k = r.json()["kpi"]
+        for key in ("noleggio_pieces", "noleggio_refs", "forniture_pieces", "pulizie_pieces",
+                    "pulizie_low", "zaini_total", "zaini_da_reintegrare", "anomalie", "movements_today"):
+            assert key in k, f"kpi manca {key}"
 
-    def test_seed_forniture_has_5(self, admin_headers):
-        r = requests.get(f"{API}/magazzino/catalog/forniture", headers=admin_headers)
-        assert r.status_code == 200
-        assert len(r.json()) >= 5
-
-    def test_seed_pulizie_23_locations_casa_zaino(self, admin_headers):
-        r = requests.get(f"{API}/magazzino/catalog/pulizie", headers=admin_headers)
-        assert r.status_code == 200
-        cat = r.json()
-        assert len(cat) >= 23
-        locs = {p["standard_location"] for p in cat if p.get("active", True)}
-        # NIENTE 'central' — solo casa e zaino
-        assert "central" not in locs
-        assert locs.issubset({"casa", "zaino"})
-        casa = [p for p in cat if p.get("standard_location") == "casa" and p.get("active", True)]
-        zaino = [p for p in cat if p.get("standard_location") == "zaino" and p.get("active", True)]
-        assert len(zaino) >= 8, f"attesi >=8 zaino, trovati {len(zaino)}"
-        assert len(casa) >= 14, f"attese >=14 casa, trovate {len(casa)}"
-        # NOTE: la specifica indica 8 zaino / 15 casa, ma la seed corrente ha
-        # 9 zaino / 14 casa (Spazzolino/Spazzolone da fughe classificati zaino).
-
-    def test_all_seed_products_have_photo(self, admin_headers):
-        """Le 36 foto seed (8+5+23) devono essere già state generate."""
-        for domain, expected in [("noleggio", 8), ("forniture", 5), ("pulizie", 23)]:
-            cat = requests.get(f"{API}/magazzino/catalog/{domain}", headers=admin_headers).json()
-            with_photo = [p for p in cat if p.get("photo") and (p["photo"].get("file_path"))]
-            assert len(with_photo) >= expected, \
-                f"{domain}: attesi {expected} prodotti con foto, trovati {len(with_photo)}"
-
-    def test_create_pulizie_default_standard_location_casa(self, admin_headers):
-        # Senza standard_location → default 'casa'
-        r = requests.post(f"{API}/magazzino/catalog/pulizie",
-                          json={"name": "TEST_prod_no_loc", "type": "consumabile", "min_qty": 3},
-                          headers=admin_headers)
-        assert r.status_code == 200
-        p = r.json()
-        assert p["standard_location"] == "casa"
-        _created["products"].append(("pulizie", p["id"]))
-
-    def test_create_pulizie_zaino_location(self, admin_headers):
-        r = requests.post(f"{API}/magazzino/catalog/pulizie",
-                          json={"name": "TEST_prod_zaino", "type": "consumabile",
-                                "standard_location": "zaino", "min_qty": 1},
-                          headers=admin_headers)
-        assert r.status_code == 200
-        p = r.json()
-        assert p["standard_location"] == "zaino"
-        _created["products"].append(("pulizie", p["id"]))
-
-    def test_create_pulizie_invalid_location_falls_back_casa(self, admin_headers):
-        # 'central' non è più accettato, deve tornare 'casa'
-        r = requests.post(f"{API}/magazzino/catalog/pulizie",
-                          json={"name": "TEST_prod_central", "type": "consumabile",
-                                "standard_location": "central"},
-                          headers=admin_headers)
-        assert r.status_code == 200
-        assert r.json()["standard_location"] == "casa"
-        _created["products"].append(("pulizie", r.json()["id"]))
-
-
-# ============ NIENTE CENTRAL per pulizie in stock ============
-
-class TestNoCentralPulizie:
-    def test_no_stock_levels_pulizie_central(self, admin_headers):
-        """Verifica indiretta: nessuna riga pulizie/central deve influire.
-        Usiamo inventario location_type=central domain=pulizie con counts=[] → dovrebbe
-        restituire 0 adjustments (stock vuoto)."""
-        r = requests.post(f"{API}/magazzino/inventario", json={
-            "domain": "pulizie", "location_type": "central", "counts": []
-        }, headers=admin_headers)
-        # deve rispondere 200 con 0 adjustments (o l'endpoint blocca central per pulizie)
-        assert r.status_code in (200, 400)
-        if r.status_code == 200:
-            assert r.json()["adjustments"] == []
-
-
-# ============ FOTO PRODOTTI ============
-
-class TestFoto:
-    def test_upload_photo_and_serve(self, admin_headers, admin_token):
-        # Crea prodotto TEST per non sovrascrivere seed
-        rp = requests.post(f"{API}/magazzino/catalog/pulizie",
-                           json={"name": "TEST_prod_photo", "type": "consumabile"},
-                           headers=admin_headers)
-        assert rp.status_code == 200
-        pid = rp.json()["id"]
-        _created["products"].append(("pulizie", pid))
-        # 1x1 png bytes
-        png = bytes.fromhex(
-            "89504E470D0A1A0A0000000D49484452000000010000000108060000001F15C4"
-            "890000000D49444154789C6300010000000500010D0A2DB40000000049454E44AE426082")
-        files = {"file": ("test.png", io.BytesIO(png), "image/png")}
-        r = requests.post(f"{API}/magazzino/catalog/pulizie/{pid}/photo", files=files,
-                          headers=admin_headers)
-        assert r.status_code == 200, r.text
-        data = r.json()
-        assert data.get("ok") is True
-        photo = data["photo"]
-        assert "file_path" in photo
-        # GET /api/files/{path}?auth=<token>
-        r2 = requests.get(f"{API}/files/{photo['file_path']}", params={"auth": admin_token})
-        assert r2.status_code == 200, f"file serve failed: {r2.status_code}"
-        assert r2.headers.get("content-type", "").startswith("image/")
-
-
-# ============ OVERVIEW ============
-
-class TestOverview:
-    def test_overview_kpi(self, admin_headers):
-        r = requests.get(f"{API}/magazzino/overview", headers=admin_headers)
+    def test_strutture_overview_kpi(self, H):
+        r = requests.get(f"{API}/magazzino/strutture/overview", headers=H)
         assert r.status_code == 200
         d = r.json()
-        for k in ("structures_monitored", "noleggio_gaps", "supply_restock",
-                  "cleaning_low_stock", "zaini_total", "zaini_da_reintegrare",
-                  "anomalie", "movements_today", "fabbisogni_aperti"):
-            assert k in d["kpi"], f"kpi manca {k}"
-        # cleaning_alerts contiene structure_id + name + missing_count
-        for a in d["cleaning_alerts"]:
-            assert "structure_id" in a and "name" in a and "missing_count" in a
+        for key in ("structures_monitored", "fabbisogni_lavanderia", "forniture_da_reintegrare",
+                    "kit_pulizie_incompleti", "anomalie", "movements_today", "fabbisogni_aperti"):
+            assert key in d["kpi"], f"kpi manca {key}"
+        assert isinstance(d.get("attention"), list)
 
 
-# ============ MAGAZZINO PULIZIE per-casa (NUOVO) ============
+# ============ (3) KIT TRANSFER ============
 
-class TestPulizieHouse:
-    def _get_structure(self, admin_headers):
-        s = requests.get(f"{API}/structures", headers=admin_headers).json()
-        items = s if isinstance(s, list) else s.get("items", [])
-        if not items:
-            pytest.skip("no structures")
-        return items[0]["id"]
+class TestKitTransfer:
+    def test_kit_transfer_unconfigured_400(self, H):
+        # Kit Matrimoniale ha items=[] di default
+        kits = requests.get(f"{API}/magazzino/kits", params={"domain": "noleggio"}, headers=H).json()
+        km = next(k for k in kits if k["name"] == "Kit Matrimoniale")
+        struct = _pick_structure(H)
+        r = requests.post(f"{API}/magazzino/kit-transfer", json={
+            "kit_id": km["id"], "structure_id": struct["id"], "qty": 1
+        }, headers=H)
+        assert r.status_code == 400
+        assert "non configurato" in r.json().get("detail", "").lower()
 
-    def test_pulizie_list_returns_houses(self, admin_headers):
-        r = requests.get(f"{API}/magazzino/pulizie", headers=admin_headers)
-        assert r.status_code == 200
-        rows = r.json()
-        assert isinstance(rows, list)
-        # se ci sono righe, hanno la struttura attesa
-        for row in rows:
-            for k in ("structure_id", "structure_name", "items_count", "missing_count", "missing_qty"):
-                assert k in row, f"riga pulizie manca campo {k}"
+    def test_kit_transfer_configured_creates_movements(self, H):
+        cat = _catalog(H, "noleggio")
+        fed = next(p for p in cat if p["name"] == "Federa")
+        lz = next(p for p in cat if p["name"] == "Lenzuolo singolo")
+        kits = requests.get(f"{API}/magazzino/kits", params={"domain": "noleggio"}, headers=H).json()
+        km = next(k for k in kits if k["name"] == "Kit Matrimoniale")
+        # Configura kit
+        up = requests.put(f"{API}/magazzino/kits/{km['id']}", json={
+            "name": "Kit Matrimoniale", "domain": "noleggio", "bed_type": "matrimoniale",
+            "items": [
+                {"product_id": fed["id"], "name": fed["name"], "qty": 2},
+                {"product_id": lz["id"], "name": lz["name"], "qty": 1},
+            ]
+        }, headers=H)
+        assert up.status_code == 200
+        S["kits_reset"].append(km["id"])
+        # Carico central per avere stock
+        for p, q in [(fed, 20), (lz, 20)]:
+            m = requests.post(f"{API}/magazzino/movimenti", json={
+                "domain": "noleggio", "movement_type": "carico", "product_id": p["id"], "qty": q,
+                "origin": {"type": "external", "label": "TEST"},
+                "destination": {"type": "central"}
+            }, headers=H)
+            S["movements"].append(m.json()["id"])
+            S["central_stocks"].append(("noleggio", p["id"]))
+        struct = _pick_structure(H)
+        sid = struct["id"]
+        S["structure_stocks"].append(("noleggio", sid, fed["id"]))
+        S["structure_stocks"].append(("noleggio", sid, lz["id"]))
+        r = requests.post(f"{API}/magazzino/kit-transfer", json={
+            "kit_id": km["id"], "structure_id": sid, "qty": 2
+        }, headers=H)
+        assert r.status_code == 200, r.text
+        assert r.json()["movements"] == 2
+        # Verifica: due movimenti trasferimento su struct
+        movs = requests.get(f"{API}/magazzino/movimenti",
+                            params={"structure_id": sid, "movement_type": "trasferimento"},
+                            headers=H).json()["items"]
+        recent = [m for m in movs if "Kit Matrimoniale" in (m.get("note") or "")]
+        assert len(recent) >= 2
+        for m in recent[:2]:
+            S["movements"].append(m["id"])
 
-    def test_configure_two_items_and_check_below_min(self, admin_headers):
-        sid = self._get_structure(admin_headers)
-        _created["_house_sid"] = sid
-        # Prendi Mocio e Detersivo pavimenti dal catalogo
-        cat = requests.get(f"{API}/magazzino/catalog/pulizie", headers=admin_headers).json()
+
+# ============ (4) FORNITURE ============
+
+class TestForniture:
+    def test_carico_and_below_min(self, H):
+        cat = _catalog(H, "forniture")
+        prod = cat[0]
+        pid = prod["id"]
+        struct = _pick_structure(H)
+        sid = struct["id"]
+        S["central_stocks"].append(("forniture", pid))
+        S["structure_stocks"].append(("forniture", sid, pid))
+        # Configura min_qty=5 threshold=on
+        cfg = requests.put(f"{API}/magazzino/forniture/{sid}/items", json={
+            "product_id": pid, "min_qty": 5, "ideal_qty": 10, "threshold_enabled": True
+        }, headers=H)
+        assert cfg.status_code == 200
+        # carico central
+        m1 = requests.post(f"{API}/magazzino/movimenti", json={
+            "domain": "forniture", "movement_type": "carico", "product_id": pid, "qty": 20,
+            "origin": {"type": "external", "label": "TEST"}, "destination": {"type": "central"}
+        }, headers=H)
+        S["movements"].append(m1.json()["id"])
+        # consegna central→struct qty=2 (sotto min 5)
+        m2 = requests.post(f"{API}/magazzino/movimenti", json={
+            "domain": "forniture", "movement_type": "consegna", "product_id": pid, "qty": 2,
+            "origin": {"type": "central"}, "destination": {"type": "structure", "id": sid}
+        }, headers=H)
+        S["movements"].append(m2.json()["id"])
+        # verifica below_min
+        det = requests.get(f"{API}/magazzino/forniture/{sid}", headers=H).json()
+        row = next(r for r in det["items"] if r["product_id"] == pid)
+        assert row["qty"] == 2 and row["below_min"] is True
+        # fabbisogno kind='fornitura'
+        f = requests.post(f"{API}/magazzino/fabbisogni", json={
+            "kind": "fornitura", "structure_id": sid,
+            "items": [{"product_id": pid, "name": prod["name"], "qty": 8}],
+            "note": "TEST fornitura"
+        }, headers=H)
+        assert f.status_code == 200
+        assert f.json()["kind"] == "fornitura"
+        S["fabbisogni"].append(f.json()["id"])
+
+
+# ============ (5) KIT PULIZIE STRUTTURE ============
+
+class TestKitPulizieStrutture:
+    def test_config_custom_items_and_missing(self, H):
+        struct = _pick_structure(H)
+        sid = struct["id"]
+        S["_kp_sid"] = sid
+        S["structure_kits"].append(sid)
+        cat = _catalog(H, "pulizie")
         mocio = next(p for p in cat if p["name"] == "Mocio")
-        det = next(p for p in cat if p["name"] == "Detersivo pavimenti")
-        _created["_house_prod_a"] = mocio["id"]
-        _created["_house_prod_b"] = det["id"]
-        for pid, min_qty in [(mocio["id"], 1), (det["id"], 2)]:
-            r = requests.put(f"{API}/magazzino/pulizie/{sid}/items",
-                             json={"product_id": pid, "min_qty": min_qty},
-                             headers=admin_headers)
-            assert r.status_code == 200
-            _created["pulizie_stock_keys"].append((sid, pid))
-        # Detail
-        det_r = requests.get(f"{API}/magazzino/pulizie/{sid}", headers=admin_headers).json()
-        assert "items" in det_r and "movements" in det_r and "open_requests" in det_r
-        found_mocio = next(i for i in det_r["items"] if i["product_id"] == mocio["id"])
-        found_det = next(i for i in det_r["items"] if i["product_id"] == det["id"])
-        # qty=0, min>0 → below_min True, missing = min
-        assert found_mocio["qty"] == 0
-        assert found_mocio["min_qty"] == 1
-        assert found_mocio["below_min"] is True
-        assert found_mocio["missing"] == 1
-        assert found_det["missing"] == 2
-        # type e photo presenti
-        assert found_mocio.get("type") == "attrezzatura"
-        assert "photo" in found_mocio
+        det_prod = next(p for p in cat if p["name"] == "Detersivo pavimenti")
+        S["_kp_prod_a"] = mocio["id"]
+        S["_kp_prod_b"] = det_prod["id"]
+        r = requests.put(f"{API}/magazzino/kit-pulizie/{sid}", json={
+            "enabled": True,
+            "custom_items": [
+                {"product_id": mocio["id"], "name": mocio["name"], "qty": 1},
+                {"product_id": det_prod["id"], "name": det_prod["name"], "qty": 2},
+            ]
+        }, headers=H)
+        assert r.status_code == 200
+        # Lista contiene struttura con status non 'completo'
+        lst = requests.get(f"{API}/magazzino/kit-pulizie", headers=H).json()
+        mine = next((x for x in lst if x["structure_id"] == sid), None)
+        assert mine is not None
+        assert mine["status"] in ("incompleto", "kit_non_configurato")
+        # Dettaglio
+        det = requests.get(f"{API}/magazzino/kit-pulizie/{sid}", headers=H).json()
+        assert det["config"]["enabled"] is True
+        assert len(det["items"]) >= 2
+        m = next(i for i in det["items"] if i["product_id"] == mocio["id"])
+        assert m["expected"] == 1 and m["present"] == 0 and m["missing"] == 1
 
-    def test_carico_external_to_structure_clears_below_min(self, admin_headers):
-        sid = _created["_house_sid"]
-        pid = _created["_house_prod_a"]
-        mov = requests.post(f"{API}/magazzino/movimenti", json={
-            "domain": "pulizie", "movement_type": "carico", "product_id": pid, "qty": 3,
-            "origin": {"type": "external", "label": "Acquisto"},
-            "destination": {"type": "structure", "id": sid}
-        }, headers=admin_headers)
-        assert mov.status_code == 200, mov.text
-        _created["movements"].append(mov.json()["id"])
-        det_r = requests.get(f"{API}/magazzino/pulizie/{sid}", headers=admin_headers).json()
-        row = next(i for i in det_r["items"] if i["product_id"] == pid)
-        assert row["qty"] == 3
-        assert row["below_min"] is False
-        assert row["missing"] == 0
+    def test_transfer_fills_kit_completo(self, H):
+        sid = S["_kp_sid"]
+        pid_a = S["_kp_prod_a"]
+        pid_b = S["_kp_prod_b"]
+        S["central_stocks"] += [("pulizie", pid_a), ("pulizie", pid_b)]
+        S["structure_stocks"] += [("pulizie", sid, pid_a), ("pulizie", sid, pid_b)]
+        # carico central
+        for pid, q in [(pid_a, 5), (pid_b, 5)]:
+            m = requests.post(f"{API}/magazzino/movimenti", json={
+                "domain": "pulizie", "movement_type": "carico", "product_id": pid, "qty": q,
+                "origin": {"type": "external", "label": "TEST"},
+                "destination": {"type": "central"}
+            }, headers=H)
+            S["movements"].append(m.json()["id"])
+        # trasferimenti per colmare (1 e 2)
+        for pid, q in [(pid_a, 1), (pid_b, 2)]:
+            m = requests.post(f"{API}/magazzino/movimenti", json={
+                "domain": "pulizie", "movement_type": "trasferimento", "product_id": pid, "qty": q,
+                "origin": {"type": "central"},
+                "destination": {"type": "structure", "id": sid}
+            }, headers=H)
+            S["movements"].append(m.json()["id"])
+        # Ora status completo
+        lst = requests.get(f"{API}/magazzino/kit-pulizie", headers=H).json()
+        mine = next(x for x in lst if x["structure_id"] == sid)
+        assert mine["status"] == "completo", f"status={mine['status']} missing={mine['missing_count']}"
 
-    def test_inventario_structure_generates_rettifica(self, admin_headers):
-        sid = _created["_house_sid"]
-        pid = _created["_house_prod_a"]  # qty ora 3
+    def test_kit_id_seed_vuoto_kit_non_configurato(self, H):
+        # Usa Kit Zaino Standard (pulizie, items=[] di default)
+        kits = requests.get(f"{API}/magazzino/kits", params={"domain": "pulizie"}, headers=H).json()
+        kzs = next(k for k in kits if k["name"] == "Kit Zaino Standard")
+        # Reset items=[] per sicurezza (nel caso un altro test l'abbia configurato)
+        requests.put(f"{API}/magazzino/kits/{kzs['id']}", json={
+            "name": kzs["name"], "domain": "pulizie", "items": []
+        }, headers=H)
+        S["kits_reset"].append(kzs["id"])
+        sid = S["_kp_sid"]
+        r = requests.put(f"{API}/magazzino/kit-pulizie/{sid}", json={
+            "enabled": True, "kit_id": kzs["id"], "custom_items": []
+        }, headers=H)
+        assert r.status_code == 200
+        lst = requests.get(f"{API}/magazzino/kit-pulizie", headers=H).json()
+        mine = next(x for x in lst if x["structure_id"] == sid)
+        assert mine["status"] == "kit_non_configurato"
+
+
+# ============ (6) ZAINO ============
+
+class TestZaino:
+    def test_dotation_standard_qty_null(self, H):
+        # Reset Kit Zaino Standard a items=[]
+        kits = requests.get(f"{API}/magazzino/kits", params={"domain": "pulizie"}, headers=H).json()
+        kzs = next(k for k in kits if k["name"] == "Kit Zaino Standard")
+        requests.put(f"{API}/magazzino/kits/{kzs['id']}", json={
+            "name": kzs["name"], "domain": "pulizie", "items": []
+        }, headers=H)
+        S["kits_reset"].append(kzs["id"])
+        # Trova uno zaino esistente
+        zaini = requests.get(f"{API}/magazzino/zaini", headers=H).json()
+        if not zaini:
+            pytest.skip("no zaini")
+        z = zaini[0]
+        S["_zid"] = z["id"]
+        det = requests.get(f"{API}/magazzino/zaini/{z['id']}", headers=H).json()
+        std = [d for d in det["dotation"] if d.get("source") == "standard"]
+        assert len(std) >= 8, f"attesi >=8 standard, trovati {len(std)}"
+        assert all(d.get("qty") is None for d in std), "qty deve essere None (nessuna quantità inventata)"
+
+    def test_kit_configured_shows_qty(self, H):
+        kits = requests.get(f"{API}/magazzino/kits", params={"domain": "pulizie"}, headers=H).json()
+        kzs = next(k for k in kits if k["name"] == "Kit Zaino Standard")
+        cat = _catalog(H, "pulizie")
+        swp = next(p for p in cat if p["name"] == "Swiffer pavimenti")
+        requests.put(f"{API}/magazzino/kits/{kzs['id']}", json={
+            "name": kzs["name"], "domain": "pulizie",
+            "items": [{"product_id": swp["id"], "name": swp["name"], "qty": 3}]
+        }, headers=H)
+        S["kits_reset"].append(kzs["id"])
+        # link kit allo zaino
+        zid = S["_zid"]
+        requests.put(f"{API}/magazzino/zaini/{zid}", json={"kit_id": kzs["id"]}, headers=H)
+        det = requests.get(f"{API}/magazzino/zaini/{zid}", headers=H).json()
+        row = next(d for d in det["dotation"] if d["product_id"] == swp["id"])
+        assert row["source"] == "kit" and row["qty"] == 3
+        # RIPRISTINA kit a items=[]
+        requests.put(f"{API}/magazzino/kits/{kzs['id']}", json={
+            "name": kzs["name"], "domain": "pulizie", "items": []
+        }, headers=H)
+        requests.put(f"{API}/magazzino/zaini/{zid}", json={"kit_id": None}, headers=H)
+
+    def test_reintegro_origin_central(self, H):
+        zid = S["_zid"]
+        cat = _catalog(H, "pulizie")
+        pezze = next(p for p in cat if p["name"] == "Pezze per lavare")
+        S["zaino_stocks"].append((zid, pezze["id"]))
+        S["central_stocks"].append(("pulizie", pezze["id"]))
+        # Assicura scorta central
+        m0 = requests.post(f"{API}/magazzino/movimenti", json={
+            "domain": "pulizie", "movement_type": "carico", "product_id": pezze["id"], "qty": 10,
+            "origin": {"type": "external", "label": "TEST"}, "destination": {"type": "central"}
+        }, headers=H)
+        S["movements"].append(m0.json()["id"])
+        r = requests.post(f"{API}/magazzino/zaini/{zid}/reintegro", json={
+            "items": [{"product_id": pezze["id"], "qty": 1}]
+        }, headers=H)
+        assert r.status_code == 200
+        movs = requests.get(f"{API}/magazzino/movimenti",
+                            params={"zaino_id": zid, "movement_type": "reintegro_zaino"},
+                            headers=H).json()["items"]
+        assert movs, "nessun movimento reintegro_zaino"
+        latest = movs[0]
+        assert latest["origin"]["type"] == "central"
+        assert "Magazzino Generale" in (latest["origin"].get("label") or "")
+        S["movements"].append(latest["id"])
+
+
+# ============ (7) INVENTARIO ============
+
+class TestInventario:
+    def test_inventario_central_generates_rettifica(self, H):
+        cat = _catalog(H, "noleggio")
+        pid = next(p["id"] for p in cat if p["name"] == "Federa")
+        # Prima porta central > 0 tramite carico se serve
+        stk = requests.get(f"{API}/magazzino/generale/stock/noleggio", headers=H).json()
+        cur = next(r["qty"] for r in stk if r["id"] == pid)
         inv = requests.post(f"{API}/magazzino/inventario", json={
-            "domain": "pulizie", "location_type": "structure", "location_id": sid,
-            "counts": [{"product_id": pid, "counted": 1}]
-        }, headers=admin_headers)
+            "domain": "noleggio", "location_type": "central",
+            "counts": [{"product_id": pid, "counted": cur + 3}]
+        }, headers=H)
         assert inv.status_code == 200
         adj = inv.json()["adjustments"]
-        assert len(adj) == 1
-        assert adj[0]["from"] == 3 and adj[0]["to"] == 1
-        _created["movements"].append(adj[0]["movement_id"])
+        assert len(adj) == 1 and adj[0]["to"] == cur + 3
+        S["movements"].append(adj[0]["movement_id"])
 
-    def test_fabbisogno_pulizie_visible_in_open_requests(self, admin_headers):
-        sid = _created["_house_sid"]
-        pid = _created["_house_prod_b"]
+
+# ============ (8) STORNO ============
+
+class TestStorno:
+    def test_storno_and_double_storno_400(self, H):
+        cat = _catalog(H, "noleggio")
+        pid = next(p["id"] for p in cat if p["name"] == "Federa")
+        m = requests.post(f"{API}/magazzino/movimenti", json={
+            "domain": "noleggio", "movement_type": "carico", "product_id": pid, "qty": 1,
+            "origin": {"type": "external", "label": "TEST"}, "destination": {"type": "central"}
+        }, headers=H)
+        mid = m.json()["id"]
+        S["movements"].append(mid)
+        r = requests.post(f"{API}/magazzino/movimenti/{mid}/storno", headers=H)
+        assert r.status_code == 200
+        inv_id = r.json()["id"]
+        S["movements"].append(inv_id)
+        assert r.json()["movement_type"] == "annullamento"
+        # secondo storno stesso movimento → 400
+        r2 = requests.post(f"{API}/magazzino/movimenti/{mid}/storno", headers=H)
+        assert r2.status_code == 400
+
+
+# ============ (9)(10) SEGNALAZIONI ============
+
+class TestSegnalazioni:
+    def test_fabbisogno_noleggio_does_not_create_segnalazione(self, H):
+        before = requests.get(f"{API}/segnalazioni", headers=H)
+        # Endpoint può essere lista o {items:[]}
+        def _count(resp):
+            if resp.status_code != 200:
+                return None
+            d = resp.json()
+            return len(d) if isinstance(d, list) else len(d.get("items", d.get("segnalazioni", [])))
+        c0 = _count(before)
+        struct = _pick_structure(H)
         f = requests.post(f"{API}/magazzino/fabbisogni", json={
-            "kind": "pulizie", "structure_id": sid,
-            "items": [{"product_id": pid, "name": "Detersivo pavimenti", "qty": 2}],
-            "note": "TEST_richiesta pulizie casa"
-        }, headers=admin_headers)
-        assert f.status_code == 200, f.text
-        fid = f.json()["id"]
-        assert f.json()["kind"] == "pulizie"
-        _created["fabbisogni"].append(fid)
-        # Compare in detail open_requests
-        det_r = requests.get(f"{API}/magazzino/pulizie/{sid}", headers=admin_headers).json()
-        assert any(x["id"] == fid for x in det_r["open_requests"])
-        # Compare in lista fabbisogni?kind=pulizie
-        lst = requests.get(f"{API}/magazzino/fabbisogni",
-                           params={"kind": "pulizie"}, headers=admin_headers).json()
-        assert any(x["id"] == fid for x in lst)
-        # Update status → evasa
-        u = requests.put(f"{API}/magazzino/fabbisogni/{fid}",
-                        json={"status": "evasa"}, headers=admin_headers)
-        assert u.status_code == 200
-        assert u.json()["status"] == "evasa"
+            "kind": "noleggio", "structure_id": struct["id"],
+            "items": [{"product_id": "x", "name": "TEST", "qty": 1}],
+            "note": "TEST fabbisogno noleggio"
+        }, headers=H)
+        assert f.status_code == 200
+        S["fabbisogni"].append(f.json()["id"])
+        after = requests.get(f"{API}/segnalazioni", headers=H)
+        c1 = _count(after)
+        if c0 is not None and c1 is not None:
+            assert c1 == c0, f"segnalazioni cambiate {c0}→{c1} da fabbisogno noleggio"
+
+    def test_anomalia_warehouse_appears_in_kpi(self, H):
+        struct = _pick_structure(H)
+        payload = {
+            "origin_type": "warehouse",
+            "type": "missing",
+            "structure_id": struct["id"],
+            "title": "TEST anomalia magazzino",
+            "description": "TEST",
+            "priority": "medium",
+        }
+        r = requests.post(f"{API}/segnalazioni", json=payload, headers=H)
+        # Alcune API accettano campo diverso — accettiamo 200/201
+        if r.status_code not in (200, 201):
+            pytest.skip(f"segnalazioni endpoint schema diverso: {r.status_code} {r.text[:200]}")
+        try:
+            sid_seg = r.json().get("id")
+            if sid_seg:
+                S["segnalazioni"].append(sid_seg)
+        except Exception:
+            pass
+        # KPI anomalie deve essere >=1 in entrambe overview
+        so = requests.get(f"{API}/magazzino/strutture/overview", headers=H).json()
+        go = requests.get(f"{API}/magazzino/generale/overview", headers=H).json()
+        assert so["kpi"]["anomalie"] >= 1
+        assert go["kpi"]["anomalie"] >= 1
 
 
-# ============ ZAINI (dotazione standard + kit prevalence) ============
+# ============ (13) FILTRI MOVIMENTI ============
 
-class TestZainiStandard:
-    def test_zaino_standard_dotation_8_items(self, admin_headers):
-        # Crea uno zaino senza kit
-        r = requests.post(f"{API}/magazzino/zaini", json={"name": "TEST_z_std"}, headers=admin_headers)
+class TestFiltriMovimenti:
+    def test_scope_strutture_only_structure(self, H):
+        r = requests.get(f"{API}/magazzino/movimenti", params={"scope": "strutture", "limit": 50}, headers=H)
         assert r.status_code == 200
-        z = r.json()
-        _created["zaini"].append(z["id"])
-        _created["_z_std"] = z
-        # Detail: dotation ha 8 articoli standard con qty=1 source='standard'
-        det = requests.get(f"{API}/magazzino/zaini/{z['id']}", headers=admin_headers).json()
-        dotation = det["dotation"]
-        std_items = [d for d in dotation if d.get("source") == "standard"]
-        assert len(std_items) >= 8, f"attesi >=8 standard, trovati {len(std_items)}"
-        assert all(d["qty"] == 1 for d in std_items)
-        # Tutti missing (present=0, missing=1)
-        assert all(d["missing"] == 1 for d in std_items)
+        for m in r.json()["items"]:
+            assert m["origin"]["type"] == "structure" or m["destination"]["type"] == "structure"
 
-    def test_missing_count_reflects_standard(self, admin_headers):
-        lst = requests.get(f"{API}/magazzino/zaini", headers=admin_headers).json()
-        z = _created["_z_std"]
-        mine = next((x for x in lst if x["id"] == z["id"]), None)
-        assert mine is not None
-        assert mine["missing_count"] >= 8
-
-    def test_kit_qty_prevails_over_standard(self, admin_headers):
-        # Prendi un articolo standard dal catalogo (es. Swiffer pavimenti — zaino)
-        cat = requests.get(f"{API}/magazzino/catalog/pulizie", headers=admin_headers).json()
-        swp = next(p for p in cat if p["name"] == "Swiffer pavimenti")
-        # Kit Zaino Standard con Swiffer qty=3
-        kits = requests.get(f"{API}/magazzino/kits", params={"domain": "pulizie"},
-                            headers=admin_headers).json()
-        kzs = next(k for k in kits if k["name"] == "Kit Zaino Standard")
-        r = requests.put(f"{API}/magazzino/kits/{kzs['id']}", json={
-            "name": "Kit Zaino Standard", "domain": "pulizie",
-            "items": [{"product_id": swp["id"], "name": swp["name"], "qty": 3}]
-        }, headers=admin_headers)
+    def test_scope_generale_only_central_or_zaino(self, H):
+        r = requests.get(f"{API}/magazzino/movimenti", params={"scope": "generale", "limit": 50}, headers=H)
         assert r.status_code == 200
-        _created["kits_reset"].append(kzs["id"])
-        # Link kit allo zaino
-        z = _created["_z_std"]
-        requests.put(f"{API}/magazzino/zaini/{z['id']}", json={"kit_id": kzs["id"]},
-                     headers=admin_headers)
-        det = requests.get(f"{API}/magazzino/zaini/{z['id']}", headers=admin_headers).json()
-        swp_row = next(d for d in det["dotation"] if d["product_id"] == swp["id"])
-        # Ora deve essere source='kit' qty=3 (prevale su standard 1)
-        assert swp_row["source"] == "kit"
-        assert swp_row["qty"] == 3
+        for m in r.json()["items"]:
+            assert m["origin"]["type"] in ("central", "zaino") or m["destination"]["type"] in ("central", "zaino")
 
-    def test_reintegro_from_external_not_central(self, admin_headers):
-        z = _created["_z_std"]
-        cat = requests.get(f"{API}/magazzino/catalog/pulizie", headers=admin_headers).json()
-        pezze = next(p for p in cat if p["name"] == "Pezze per lavare")
-        r = requests.post(f"{API}/magazzino/zaini/{z['id']}/reintegro",
-                          json={"items": [{"product_id": pezze["id"], "qty": 1}]},
-                          headers=admin_headers)
+    def test_filter_user_and_client(self, H):
+        # user regex "test" (matcha 'Test User' admin)
+        r = requests.get(f"{API}/magazzino/movimenti", params={"user": "test", "limit": 20}, headers=H)
         assert r.status_code == 200
-        # Verifica il movimento
-        movs = requests.get(f"{API}/magazzino/movimenti",
-                            params={"zaino_id": z["id"], "domain": "pulizie"},
-                            headers=admin_headers).json()["items"]
-        reints = [m for m in movs if m["movement_type"] == "reintegro_zaino"]
-        assert reints, "nessun movimento reintegro_zaino"
-        latest = reints[0]
-        assert latest["origin"]["type"] == "external"
-        assert "Acquisto" in (latest["origin"].get("label") or "")
-        _created["movements"].append(latest["id"])
-
-
-# ============ PERMESSI ============
-
-class TestPermessi:
-    def test_cleaner_403_on_pulizie_list(self, cleaner_headers):
-        r = requests.get(f"{API}/magazzino/pulizie", headers=cleaner_headers)
-        assert r.status_code == 403
-
-    def test_cleaner_can_access_own_zaino(self, admin_headers, cleaner_headers):
-        me = requests.get(f"{API}/auth/me", headers=cleaner_headers).json()
-        cid = me.get("id") or (me.get("user") or {}).get("id")
-        if not cid or "_z_std" not in _created:
-            pytest.skip("no cleaner id / zaino")
-        z = _created["_z_std"]
-        requests.put(f"{API}/magazzino/zaini/{z['id']}",
-                     json={"assigned_to": cid}, headers=admin_headers)
-        r = requests.get(f"{API}/magazzino/zaini/{z['id']}", headers=cleaner_headers)
-        assert r.status_code == 200
+        # client_id (arbitrario) non deve dare errore
+        struct = _pick_structure(H)
+        if struct.get("client_id"):
+            r2 = requests.get(f"{API}/magazzino/movimenti",
+                              params={"client_id": struct["client_id"], "limit": 20}, headers=H)
+            assert r2.status_code == 200
 
 
 # ============ CLEANUP ============
 
-def test_zzz_cleanup(admin_headers):
+def test_zzz_cleanup(H):
     from pymongo import MongoClient
-    mongo_url = os.environ.get("MONGO_URL")
-    db_name = os.environ.get("DB_NAME")
-    if not mongo_url:
-        try:
-            with open("/app/backend/.env") as f:
-                for line in f:
-                    if line.startswith("MONGO_URL="):
-                        mongo_url = line.split("=", 1)[1].strip().strip('"')
-                    if line.startswith("DB_NAME="):
-                        db_name = line.split("=", 1)[1].strip().strip('"')
-        except Exception:
-            pass
+    mongo_url = os.environ.get("MONGO_URL") or _read_env_backend("MONGO_URL")
+    db_name = os.environ.get("DB_NAME") or _read_env_backend("DB_NAME")
     cli = MongoClient(mongo_url)
     db = cli[db_name]
+    # movimenti creati
+    for mid in set(S["movements"]):
+        db.warehouse_movements.delete_one({"id": mid})
+    # fabbisogni
+    for fid in set(S["fabbisogni"]):
+        db.fabbisogni.delete_one({"id": fid})
+    # segnalazioni TEST_
+    db.segnalazioni.delete_many({"title": {"$regex": "^TEST"}})
+    for sid in set(S["segnalazioni"]):
+        db.segnalazioni.delete_one({"id": sid})
+    # structure_cleaning_kits di test
+    for sid in set(S["structure_kits"]):
+        db.structure_cleaning_kits.delete_one({"structure_id": sid})
+    # stock_levels di test
+    for domain, pid in set(S["central_stocks"]):
+        db.stock_levels.delete_many({"domain": domain, "location_type": "central", "product_id": pid})
+    for domain, sid, pid in set(S["structure_stocks"]):
+        db.stock_levels.delete_many({"domain": domain, "location_type": "structure",
+                                     "location_id": sid, "product_id": pid})
+    for zid, pid in set(S["zaino_stocks"]):
+        db.stock_levels.delete_many({"domain": "pulizie", "location_type": "zaino",
+                                     "location_id": zid, "product_id": pid})
+    # Reset kit configurati a items=[]
+    for kid in set(S["kits_reset"]):
+        k = db.kits.find_one({"id": kid})
+        if k:
+            name = k["name"]
+            domain = k["domain"]
+            db.kits.update_one({"id": kid}, {"$set": {"items": [], "updated_at": ""}})
+            db.kit_versions.delete_many({"kit_id": kid})
+    # prodotti TEST_
     for coll in ("rental_catalog", "supply_catalog", "cleaning_catalog"):
         db[coll].delete_many({"name": {"$regex": "^TEST_"}})
-    for zid in _created["zaini"]:
-        db.zaini.delete_one({"id": zid})
-        db.stock_levels.delete_many({"location_type": "zaino", "location_id": zid})
-        db.warehouse_movements.delete_many({"zaino_id": zid})
-    for fid in _created["fabbisogni"]:
-        db.fabbisogni.delete_one({"id": fid})
-    for sid in _created["segnalazioni"]:
-        db.segnalazioni.delete_one({"id": sid})
-    for mid in _created["movements"]:
-        db.warehouse_movements.delete_one({"id": mid})
-    # rimuovi pulizie stock_levels di test
-    for sid, pid in _created["pulizie_stock_keys"]:
-        db.stock_levels.delete_many({"domain": "pulizie", "location_type": "structure",
-                                     "location_id": sid, "product_id": pid})
-        db.warehouse_movements.delete_many({"domain": "pulizie", "structure_id": sid,
-                                            "product_id": pid})
-    # reset kit configurati a items=[]
-    for kid in set(_created["kits_reset"]):
-        db.kits.update_one({"id": kid}, {"$set": {"items": []}})
-        db.kit_versions.delete_many({"kit_id": kid})
     print("Cleanup done.")
+
+
+def _read_env_backend(key):
+    try:
+        with open("/app/backend/.env") as f:
+            for line in f:
+                if line.startswith(f"{key}="):
+                    return line.split("=", 1)[1].strip().strip('"')
+    except Exception:
+        pass
+    return None

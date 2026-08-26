@@ -62,7 +62,7 @@ export default function ZainoDetailPage() {
 
   return (
     <div className="p-4 lg:p-6 space-y-6" data-testid="zaino-detail-page">
-      <DetailHeader backTo="/magazzino/zaini" backLabel="Zaini Operativi"
+      <DetailHeader backTo="/magazzino-generale/zaini" backLabel="Zaini Operatrici"
         title={<span><span className="font-mono text-primary">{z.code}</span>{z.name ? ` — ${z.name}` : ''}</span>}
         meta={<span>Ultimo controllo: {fmtDT(z.last_check_at)}</span>}
         badges={<StatusBadge tone={ZAINO_STATUS_META[z.status]?.tone} testId="zaino-status-badge">{ZAINO_STATUS_META[z.status]?.label || z.status}</StatusBadge>}
@@ -193,8 +193,8 @@ export default function ZainoDetailPage() {
         </div>
       </div>
 
-      {movOpen && <MovementDialog defaultDomain="pulizie" lockDomain defaultType="carico"
-        defaultOrigin={{ type: 'external', id: null }} defaultDestination={{ type: 'zaino', id: zainoId }}
+      {movOpen && <MovementDialog defaultDomain="pulizie" lockDomain defaultType="trasferimento"
+        defaultOrigin={{ type: 'central', id: null }} defaultDestination={{ type: 'zaino', id: zainoId }}
         onClose={() => setMovOpen(false)} onDone={() => { setMovOpen(false); load(); }} />}
       {checkOpen && <CheckDialog zaino={z} onClose={() => setCheckOpen(false)} onDone={() => { setCheckOpen(false); load(); }} />}
       {reintOpen && <ReintegroDialog zaino={z} onClose={() => setReintOpen(false)} onDone={() => { setReintOpen(false); load(); }} />}
@@ -261,7 +261,7 @@ function ReintegroDialog({ zaino, onClose, onDone }) {
       const r = await api.post(`/magazzino/zaini/${zaino.id}/reintegro`, {
         items: items.map(i => ({ product_id: i.product_id, qty: Number(i.qty) })),
       });
-      toast.success(`Reintegro registrato: ${r.data.movements} carichi allo zaino`);
+      toast.success(`Reintegro registrato: ${r.data.movements} trasferimenti dal Magazzino Generale`);
       onDone();
     } catch (e) { toast.error(e.response?.data?.detail || 'Errore'); }
     finally { setSaving(false); }
@@ -272,7 +272,7 @@ function ReintegroDialog({ zaino, onClose, onDone }) {
       <DialogContent className="max-w-md" data-testid="zaino-reintegro-dialog">
         <DialogHeader>
           <DialogTitle>Reintegra zaino — {zaino.code}</DialogTitle>
-          <DialogDescription>Carico allo zaino da acquisto o scorta esterna (movimenti tracciati).</DialogDescription>
+          <DialogDescription>Trasferimento interno dal Magazzino Generale allo zaino (non è una Consegna al Cliente).</DialogDescription>
         </DialogHeader>
         <div className="space-y-1.5">
           {items.map((it, i) => (

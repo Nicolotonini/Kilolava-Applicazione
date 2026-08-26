@@ -252,6 +252,10 @@ async def sync_linked_task(t: dict) -> dict:
                 new_status = "completata"
             elif ms == "in_progress":
                 new_status = "in_corso"
+            elif ms == "on_hold":
+                new_status = "in_attesa"
+            elif ms == "cancelled":
+                new_status = "annullata"
     elif t.get("type") == "delivery" and t.get("linked_id"):
         d = await db.logistics_tasks.find_one({"id": t["linked_id"]}, {"_id": 0, "status": 1})
         if d:
@@ -260,6 +264,8 @@ async def sync_linked_task(t: dict) -> dict:
                 new_status = "completata"
             elif ds == "in_progress":
                 new_status = "in_corso"
+            elif ds == "cancelled":
+                new_status = "annullata"
     if new_status and new_status != t.get("status"):
         upd = {"status": new_status, "updated_at": now_iso()}
         if new_status == "completata":
@@ -961,6 +967,7 @@ def create_segnalazioni_router(get_current_user, is_ops_user):
         if data.type == "maintenance":
             maint = {
                 "id": str(uuid.uuid4()), "source": "segnalazione",
+                "title": task["title"], "materials": [], "started_at": None,
                 "cleaning_task_id": seg.get("cleaning_task_id"), "cleaning_issue_id": seg_id,
                 "segnalazione_id": seg_id,
                 "client_id": seg.get("client_id"), "structure_id": seg.get("structure_id"), "unit_id": seg.get("unit_id"),

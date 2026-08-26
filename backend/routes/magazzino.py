@@ -77,9 +77,21 @@ async def seed_magazzino():
              "type": t, "standard_location": loc, "min_qty": None,
              "created_at": now, "updated_at": now}
             for n, t, loc in SEED_CLEANING])
-    # Migrazione: il magazzino pulizie centrale non esiste più (prodotti solo nelle case e negli zaini)
     await db.cleaning_catalog.update_many({"standard_location": "central"}, {"$set": {"standard_location": "casa"}})
-    await db.stock_levels.delete_many({"domain": "pulizie", "location_type": "central"})
+    # Migrazione Kit Pulizie Strutture: dotazioni per-casa esistenti → configurazione kit della struttura
+    pul_rows = await db.stock_levels.find({"domain": "pulizie", "location_type": "structure", "min_qty": {"$gt": 0}}, {"_id": 0}).to_list(2000)
+    by_sid = {}
+    for r in pul_rows:
+        if r.get("location_id"):
+            by_sid.setdefault(r["location_id"], []).append(r)
+    for sid, rws in by_sid.items():
+        if await db.structure_cleaning_kits.find_one({"structure_id": sid}):
+            continue
+        prods = {p["id"]: p async for p in db.cleaning_catalog.find({"id": {"$in": [r["product_id"] for r in rws]}}, {"_id": 0, "id": 1, "name": 1})}
+        await db.structure_cleaning_kits.insert_one({
+            "id": str(uuid.uuid4()), "structure_id": sid, "enabled": True, "kit_id": None,
+            "custom_items": [{"product_id": r["product_id"], "name": (prods.get(r["product_id"]) or {}).get("name", ""), "qty": r["min_qty"]} for r in rws],
+            "created_at": now_iso(), "updated_at": now_iso()})
     seed_kits = [
         ("Kit Matrimoniale", "noleggio", "matrimoniale"),
         ("Kit Singolo", "noleggio", "singolo"),
@@ -122,7 +134,8 @@ def _loc_tracked(loc: dict) -> bool:
 
 async def apply_movement(*, domain: str, movement_type: str, product: dict, qty: int,
                          origin: dict, destination: dict, user: dict, note: str = "",
-                         structure_id: str = None, zaino_id: str = None, reverses: str = None) -> dict:
+                         structure_id: str = None, zaino_id: str = None, reverses: str = None,
+                         delivery_id: str = None) -> dict:
     now = now_iso()
     mov = {
         "id": str(uuid.uuid4()), "at": now, "domain": domain, "movement_type": movement_type,
@@ -130,6 +143,7 @@ async def apply_movement(*, domain: str, movement_type: str, product: dict, qty:
         "origin": origin or {"type": "external", "label": "Esterno"},
         "destination": destination or {"type": "external", "label": "Esterno"},
         "structure_id": structure_id, "zaino_id": zaino_id,
+        "delivery_id": delivery_id,
         "user_id": (user or {}).get("id"), "user_name": (user or {}).get("name", ""),
         "note": note or "", "reversed_by": None, "reverses": reverses,
         "created_at": now,
@@ -312,6 +326,18 @@ class FabbisognoUpdate(BaseModel):
     status: str
 
 
+class KitPulizieConfigPayload(BaseModel):
+    enabled: Optional[bool] = None
+    kit_id: Optional[str] = None
+    custom_items: Optional[List[dict]] = None
+
+
+class KitTransferPayload(BaseModel):
+    kit_id: str
+    structure_id: str
+    qty: int = 1
+
+
 def create_magazzino_router(get_current_user, is_ops_user):
     router = APIRouter(prefix="/magazzino", tags=["magazzino"])
 
@@ -474,6 +500,248 @@ def create_magazzino_router(get_current_user, is_ops_user):
                                  "missing_count": cnt} for sid, cnt in list(low_by_struct.items())[:8]],
         }
 
+    # ---------- Magazzino nelle Strutture / Magazzino Generale ----------
+
+    async def _kit_pulizie_expected(cfg: dict):
+        """Ritorna (items previsti, kit_non_configurato, etichetta)."""
+        if cfg.get("custom_items"):
+            return list(cfg["custom_items"]), False, "Personalizzato"
+        if cfg.get("kit_id"):
+            kit = await db.kits.find_one({"id": cfg["kit_id"]}, {"_id": 0})
+            items = (kit or {}).get("items") or []
+            return list(items), len(items) == 0, (kit or {}).get("name", "Kit")
+        return [], False, None
+
+    @router.get("/strutture/overview")
+    async def strutture_overview(current_user: dict = Depends(get_current_user)):
+        require_ops(current_user)
+        today = _deps["local_today"]()
+        by_bed = await noleggio_kits()
+        by_struct = await upcoming_tasks_by_structure()
+        attention = {}
+
+        def att(sid):
+            return attention.setdefault(sid, {"structure_id": sid, "lavanderia": None, "forniture_missing": 0,
+                                              "kit": None, "next_cleaning": None})
+
+        noleggio_gaps = 0
+        for sid, tasks in by_struct.items():
+            stock = await stock_map("noleggio", "structure", sid)
+            cov = evaluate_coverage(task_kit_needs(tasks[0], by_bed), stock)
+            a = att(sid)
+            a["next_cleaning"] = tasks[0]["date"]
+            if cov["unconfigured_kits"]:
+                a["lavanderia"] = "kit_non_configurato"
+                noleggio_gaps += 1
+            elif not cov["covered"]:
+                a["lavanderia"] = "gap"
+                a["lavanderia_missing"] = [{"name": m["name"], "missing": m["missing"]} for m in cov["missing_items"][:4]]
+                noleggio_gaps += 1
+            else:
+                a["lavanderia"] = "ok"
+
+        supply_rows = await db.stock_levels.find({"domain": "forniture", "location_type": "structure",
+                                                  "threshold_enabled": True}, {"_id": 0}).to_list(2000)
+        forn_structs = set()
+        for r in supply_rows:
+            if r.get("location_id") and r.get("min_qty") is not None and r.get("qty", 0) < r["min_qty"]:
+                att(r["location_id"])["forniture_missing"] += 1
+                forn_structs.add(r["location_id"])
+
+        kit_incompleti = 0
+        cfgs = await db.structure_cleaning_kits.find({"enabled": True}, {"_id": 0}).to_list(500)
+        for cfg in cfgs:
+            sid = cfg["structure_id"]
+            expected, unconfigured, _lbl = await _kit_pulizie_expected(cfg)
+            a = att(sid)
+            if unconfigured or not expected:
+                a["kit"] = "kit_non_configurato"
+                kit_incompleti += 1
+                continue
+            stock = await stock_map("pulizie", "structure", sid)
+            miss = sum(1 for it in expected if (stock.get(it["product_id"]) or {}).get("qty", 0) < it["qty"])
+            if miss:
+                a["kit"] = "incompleto"
+                a["kit_missing"] = miss
+                kit_incompleti += 1
+            else:
+                a["kit"] = "ok"
+
+        monitored_ids = set(attention.keys()) | set(
+            r["location_id"] for r in await db.stock_levels.find(
+                {"location_type": "structure"}, {"_id": 0, "location_id": 1}).to_list(3000) if r.get("location_id"))
+        structures = {s["id"]: s async for s in db.structures.find({"id": {"$in": list(attention.keys())}},
+                                                                   {"_id": 0, "id": 1, "name": 1, "klv_code": 1})}
+        rows = []
+        for sid, a in attention.items():
+            s = structures.get(sid) or {}
+            needs_att = a["lavanderia"] in ("gap", "kit_non_configurato") or a["forniture_missing"] > 0 \
+                or a["kit"] in ("incompleto", "kit_non_configurato")
+            rows.append({**a, "structure_name": s.get("name", "Struttura"), "klv_code": s.get("klv_code"),
+                         "needs_attention": needs_att})
+        rows.sort(key=lambda r: (not r["needs_attention"], r["structure_name"]))
+        anomalie = await db.segnalazioni.count_documents({"origin_type": "warehouse", "status": {"$nin": ["risolta", "chiusa"]}})
+        mov_today = await db.warehouse_movements.count_documents({
+            "at": {"$gte": today},
+            "$or": [{"origin.type": "structure"}, {"destination.type": "structure"}]})
+        fabb_aperti = await db.fabbisogni.count_documents({"status": "aperta"})
+        return {
+            "kpi": {
+                "structures_monitored": len(monitored_ids),
+                "fabbisogni_lavanderia": noleggio_gaps,
+                "forniture_da_reintegrare": len(forn_structs),
+                "kit_pulizie_incompleti": kit_incompleti,
+                "anomalie": anomalie,
+                "movements_today": mov_today,
+                "fabbisogni_aperti": fabb_aperti,
+            },
+            "attention": [r for r in rows if r["needs_attention"]][:12],
+        }
+
+    @router.get("/generale/overview")
+    async def generale_overview(current_user: dict = Depends(get_current_user)):
+        require_ops(current_user)
+        today = _deps["local_today"]()
+        totals = {}
+        for domain in DOMAINS:
+            crows = await db.stock_levels.find({"domain": domain, "location_type": "central"}, {"_id": 0}).to_list(1000)
+            totals[domain] = {"pieces": sum(r.get("qty", 0) for r in crows),
+                              "refs": len([r for r in crows if r.get("qty", 0) > 0])}
+        pul_catalog = await db.cleaning_catalog.find({"active": True, "min_qty": {"$ne": None}},
+                                                     {"_id": 0, "id": 1, "min_qty": 1}).to_list(300)
+        central_pul = await stock_map("pulizie", "central", None)
+        pulizie_low = len([p for p in pul_catalog if (central_pul.get(p["id"]) or {}).get("qty", 0) < (p.get("min_qty") or 0)])
+        zaini = await db.zaini.find({}, {"_id": 0, "status": 1}).to_list(200)
+        anomalie = await db.segnalazioni.count_documents({"origin_type": "warehouse", "status": {"$nin": ["risolta", "chiusa"]}})
+        mov_today = await db.warehouse_movements.count_documents({
+            "at": {"$gte": today},
+            "$or": [{"origin.type": {"$in": ["central", "zaino"]}}, {"destination.type": {"$in": ["central", "zaino"]}}]})
+        return {"kpi": {
+            "noleggio_pieces": totals["noleggio"]["pieces"], "noleggio_refs": totals["noleggio"]["refs"],
+            "forniture_pieces": totals["forniture"]["pieces"], "forniture_refs": totals["forniture"]["refs"],
+            "pulizie_pieces": totals["pulizie"]["pieces"],
+            "pulizie_low": pulizie_low,
+            "zaini_total": len(zaini),
+            "zaini_da_reintegrare": len([z for z in zaini if z["status"] == "da_reintegrare"]),
+            "anomalie": anomalie,
+            "movements_today": mov_today,
+        }}
+
+    @router.get("/generale/stock/{domain}")
+    async def generale_stock(domain: str, current_user: dict = Depends(get_current_user)):
+        require_ops(current_user)
+        if domain not in DOMAINS:
+            raise HTTPException(status_code=400, detail="Dominio non valido")
+        catalog = await db[CATALOG_COLL[domain]].find({"active": True}, {"_id": 0}).sort("name", 1).to_list(500)
+        central = await stock_map(domain, "central", None)
+        out = []
+        for p in catalog:
+            qty = (central.get(p["id"]) or {}).get("qty", 0)
+            out.append({**p, "qty": qty,
+                        "below_min": domain == "pulizie" and p.get("min_qty") is not None and qty < p["min_qty"]})
+        return out
+
+    @router.post("/kit-transfer")
+    async def kit_transfer(data: KitTransferPayload, current_user: dict = Depends(get_current_user)):
+        require_ops(current_user)
+        kit = await db.kits.find_one({"id": data.kit_id}, {"_id": 0})
+        if not kit:
+            raise HTTPException(status_code=404, detail="Kit non trovato")
+        if not kit.get("items"):
+            raise HTTPException(status_code=400, detail="Kit non configurato: definisci la composizione in Sistema → Cataloghi & Kit")
+        if data.qty < 1:
+            raise HTTPException(status_code=400, detail="Quantità non valida")
+        s = await structure_label(data.structure_id)
+        for it in kit["items"]:
+            product = await get_product(kit["domain"], it["product_id"]) or {"id": it["product_id"], "name": it.get("name", "")}
+            await apply_movement(
+                domain=kit["domain"], movement_type="trasferimento", product=product, qty=it["qty"] * data.qty,
+                origin={"type": "central", "label": "Magazzino Generale"},
+                destination={"type": "structure", "id": data.structure_id, "label": s["name"]},
+                user=current_user, structure_id=data.structure_id,
+                note=f"Trasferimento Kit {kit['name']} ×{data.qty}")
+        return {"ok": True, "movements": len(kit["items"])}
+
+    # ---------- Kit Pulizie Strutture ----------
+
+    @router.get("/kit-pulizie")
+    async def kit_pulizie_list(zone_id: Optional[str] = None, current_user: dict = Depends(get_current_user)):
+        require_ops(current_user)
+        cfgs = await db.structure_cleaning_kits.find({"enabled": True}, {"_id": 0}).to_list(500)
+        sq = {"id": {"$in": [c["structure_id"] for c in cfgs]}}
+        if zone_id:
+            sq["operational_zone_id"] = zone_id
+        structures = {s["id"]: s async for s in db.structures.find(sq, {"_id": 0, "id": 1, "name": 1, "klv_code": 1, "client_id": 1})}
+        client_ids = [s.get("client_id") for s in structures.values() if s.get("client_id")]
+        clients = {c["id"]: c async for c in db.clients.find({"id": {"$in": client_ids}}, {"_id": 0})}
+        out = []
+        for cfg in cfgs:
+            s = structures.get(cfg["structure_id"])
+            if not s:
+                continue
+            expected, unconfigured, kit_label = await _kit_pulizie_expected(cfg)
+            stock = await stock_map("pulizie", "structure", s["id"])
+            missing = [it for it in expected if (stock.get(it["product_id"]) or {}).get("qty", 0) < it["qty"]]
+            status = "kit_non_configurato" if (unconfigured or not expected) else ("incompleto" if missing else "completo")
+            cl = clients.get(s.get("client_id"))
+            out.append({"structure_id": s["id"], "structure_name": s["name"], "klv_code": s.get("klv_code"),
+                        "client_name": _deps["get_client_display_name"](cl) if cl else None,
+                        "kit_label": kit_label, "expected_count": len(expected),
+                        "missing_count": len(missing), "status": status})
+        out.sort(key=lambda r: (r["status"] == "completo", r["structure_name"]))
+        return out
+
+    @router.get("/kit-pulizie/{structure_id}")
+    async def kit_pulizie_detail(structure_id: str, current_user: dict = Depends(get_current_user)):
+        require_ops(current_user)
+        s = await structure_label(structure_id)
+        cfg = await db.structure_cleaning_kits.find_one({"structure_id": structure_id}, {"_id": 0}) or \
+            {"structure_id": structure_id, "enabled": False, "kit_id": None, "custom_items": []}
+        expected, unconfigured, kit_label = await _kit_pulizie_expected(cfg)
+        stock = await stock_map("pulizie", "structure", structure_id)
+        catalog = {p["id"]: p async for p in db.cleaning_catalog.find({}, {"_id": 0})}
+        items = []
+        seen = set()
+        for it in expected:
+            p = catalog.get(it["product_id"]) or {}
+            have = (stock.get(it["product_id"]) or {}).get("qty", 0)
+            items.append({"product_id": it["product_id"], "name": it.get("name") or p.get("name", ""),
+                          "type": p.get("type"), "photo": p.get("photo"),
+                          "expected": it["qty"], "present": have, "missing": max(0, it["qty"] - have)})
+            seen.add(it["product_id"])
+        for pid, r in stock.items():
+            if pid not in seen and r.get("qty", 0) != 0:
+                p = catalog.get(pid) or {}
+                items.append({"product_id": pid, "name": p.get("name", "Prodotto"), "type": p.get("type"),
+                              "photo": p.get("photo"), "expected": None, "present": r.get("qty", 0),
+                              "missing": 0, "extra": True})
+        movements = await db.warehouse_movements.find({"domain": "pulizie", "structure_id": structure_id}, {"_id": 0}).sort("at", -1).to_list(30)
+        richieste = await db.fabbisogni.find({"structure_id": structure_id, "kind": "pulizie",
+                                              "status": {"$in": ["aperta", "in_consegna"]}}, {"_id": 0}).to_list(20)
+        cl = await db.clients.find_one({"id": s.get("client_id")}, {"_id": 0}) if s.get("client_id") else None
+        return {"structure": {**s, "client_name": _deps["get_client_display_name"](cl) if cl else None},
+                "config": {"enabled": bool(cfg.get("enabled")), "kit_id": cfg.get("kit_id"),
+                           "custom_items": cfg.get("custom_items") or []},
+                "kit_label": kit_label, "kit_unconfigured": unconfigured,
+                "items": items, "movements": movements, "open_requests": richieste}
+
+    @router.put("/kit-pulizie/{structure_id}")
+    async def kit_pulizie_config(structure_id: str, data: KitPulizieConfigPayload, current_user: dict = Depends(get_current_user)):
+        require_ops(current_user)
+        upd = {"updated_at": now_iso()}
+        payload = data.model_dump(exclude_unset=True)
+        if "enabled" in payload:
+            upd["enabled"] = bool(payload["enabled"])
+        if "kit_id" in payload:
+            upd["kit_id"] = payload["kit_id"] or None
+        if "custom_items" in payload:
+            upd["custom_items"] = [i for i in (payload["custom_items"] or []) if i.get("qty", 0) > 0]
+        await db.structure_cleaning_kits.update_one(
+            {"structure_id": structure_id},
+            {"$set": upd, "$setOnInsert": {"id": str(uuid.uuid4()), "structure_id": structure_id, "created_at": now_iso()}},
+            upsert=True)
+        return await db.structure_cleaning_kits.find_one({"structure_id": structure_id}, {"_id": 0})
+
     # ---------- Noleggio Strutture ----------
 
     @router.get("/noleggio")
@@ -524,9 +792,18 @@ def create_magazzino_router(get_current_user, is_ops_user):
         movements = await db.warehouse_movements.find({"domain": "noleggio", "structure_id": structure_id}, {"_id": 0}) \
             .sort("at", -1).to_list(30)
         richieste = await db.fabbisogni.find({"structure_id": structure_id, "kind": "noleggio", "status": "aperta"}, {"_id": 0}).to_list(20)
+        photos = []
+        ptasks = await db.cleaning_tasks.find({"structure_id": structure_id, "media.media_type": "warehouse_photo"},
+                                              {"_id": 0, "date": 1, "media": 1, "cleaner_name": 1}).sort("date", -1).to_list(15)
+        for t in ptasks:
+            for m in t.get("media", []):
+                if m.get("media_type") == "warehouse_photo":
+                    photos.append({"id": m.get("id"), "kind": "image", "file_path": m.get("file_path"),
+                                   "date": t.get("date"), "uploaded_by_name": m.get("uploaded_by_name") or t.get("cleaner_name")})
         cl = await db.clients.find_one({"id": s.get("client_id")}, {"_id": 0}) if s.get("client_id") else None
         return {"structure": {**s, "client_name": _deps["get_client_display_name"](cl) if cl else None},
-                "items": items, "upcoming_needs": needs, "movements": movements, "open_requests": richieste}
+                "items": items, "upcoming_needs": needs, "movements": movements, "open_requests": richieste,
+                "photos": photos[:20]}
 
     # ---------- Forniture / Consumabili ----------
 
@@ -702,10 +979,10 @@ def create_magazzino_router(get_current_user, is_ops_user):
 
     async def _zaino_expected(z: dict) -> List[dict]:
         expected = {}
-        # Dotazione standard: gli articoli "da zaino" del catalogo devono esserci sempre
+        # Articoli standard "da zaino": previsti sempre; le quantità arrivano SOLO dal Kit (mai inventate)
         std = await db.cleaning_catalog.find({"active": True, "standard_location": "zaino"}, {"_id": 0}).to_list(200)
         for p in std:
-            expected[p["id"]] = {"product_id": p["id"], "name": p["name"], "qty": 1,
+            expected[p["id"]] = {"product_id": p["id"], "name": p["name"], "qty": None,
                                  "photo": p.get("photo"), "source": "standard"}
         if z.get("kit_id"):
             kit = await db.kits.find_one({"id": z["kit_id"]}, {"_id": 0})
@@ -730,7 +1007,7 @@ def create_magazzino_router(get_current_user, is_ops_user):
         missing = []
         for e in expected:
             have = (stock.get(e["product_id"]) or {}).get("qty", 0)
-            if have < e["qty"]:
+            if e.get("qty") is not None and have < e["qty"]:
                 missing.append({**e, "present": have, "missing": e["qty"] - have})
         return missing
 
@@ -741,7 +1018,7 @@ def create_magazzino_router(get_current_user, is_ops_user):
         seen = set()
         for e in expected:
             have = (stock.get(e["product_id"]) or {}).get("qty", 0)
-            rows.append({**e, "present": have, "missing": max(0, e["qty"] - have)})
+            rows.append({**e, "present": have, "missing": max(0, (e["qty"] or 0) - have) if e.get("qty") is not None else 0})
             seen.add(e["product_id"])
         for pid, r in stock.items():
             if pid not in seen and r.get("qty", 0) != 0:
@@ -854,9 +1131,9 @@ def create_magazzino_router(get_current_user, is_ops_user):
                 continue
             mov = await apply_movement(
                 domain="pulizie", movement_type="reintegro_zaino", product=p, qty=qty,
-                origin={"type": "external", "label": "Acquisto / Scorta"},
+                origin={"type": "central", "label": "Magazzino Generale"},
                 destination={"type": "zaino", "id": zaino_id, "label": z["code"]},
-                user=current_user, note="Reintegro zaino", zaino_id=zaino_id)
+                user=current_user, note="Reintegro zaino (dal Magazzino Generale)", zaino_id=zaino_id)
             movs.append(mov)
         missing = await _zaino_missing(z)
         if not missing:
@@ -873,11 +1150,27 @@ def create_magazzino_router(get_current_user, is_ops_user):
         domain: Optional[str] = None, movement_type: Optional[str] = None,
         structure_id: Optional[str] = None, zaino_id: Optional[str] = None,
         product: Optional[str] = None, date_from: Optional[str] = None, date_to: Optional[str] = None,
+        scope: Optional[str] = None, user: Optional[str] = None,
+        client_id: Optional[str] = None, zone_id: Optional[str] = None,
         page: int = Query(1, ge=1), limit: int = Query(50, ge=1, le=200),
         current_user: dict = Depends(get_current_user),
     ):
         require_ops(current_user)
         q = {}
+        if scope == "strutture":
+            q["$or"] = [{"origin.type": "structure"}, {"destination.type": "structure"}]
+        elif scope == "generale":
+            q["$or"] = [{"origin.type": {"$in": ["central", "zaino"]}}, {"destination.type": {"$in": ["central", "zaino"]}}]
+        if user:
+            q["user_name"] = {"$regex": user, "$options": "i"}
+        if not structure_id and (client_id or zone_id):
+            sq = {}
+            if client_id:
+                sq["client_id"] = client_id
+            if zone_id:
+                sq["operational_zone_id"] = zone_id
+            sids = [s["id"] async for s in db.structures.find(sq, {"_id": 0, "id": 1})]
+            q["structure_id"] = {"$in": sids}
         if domain:
             q["domain"] = domain
         if movement_type:
@@ -953,8 +1246,6 @@ def create_magazzino_router(get_current_user, is_ops_user):
         require_ops(current_user)
         if data.domain not in DOMAINS or data.location_type not in LOCATION_TYPES:
             raise HTTPException(status_code=400, detail="Parametri non validi")
-        if data.domain == "pulizie" and data.location_type == "central":
-            raise HTTPException(status_code=400, detail="Il magazzino pulizie centrale non esiste: usa una casa o uno zaino")
         stock = await stock_map(data.domain, data.location_type, data.location_id)
         label = {"central": "Magazzino Pulizie", "structure": None, "zaino": None}.get(data.location_type)
         if data.location_type == "structure" and data.location_id:
