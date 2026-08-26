@@ -13,6 +13,7 @@ import { StatusBadge } from '../../components/kilolava/badges';
 import { MediaStrip } from '../../components/kilolava/MediaViewer';
 import { MovementDialog, InventoryDialog } from './MovementDialog';
 import { MovementsTable } from './MovimentiPage';
+import { ProductThumb } from './ProductThumb';
 import { FABBISOGNO_STATUS_META, fmtD } from './shared';
 
 export default function FornitureDetailPage() {
@@ -121,7 +122,12 @@ export default function FornitureDetailPage() {
                   <tbody>
                     {data.items.map(i => (
                       <tr key={i.product_id} className="border-t border-border" data-testid={`supply-row-${i.product_id}`}>
-                        <td className="px-3 py-2 font-medium">{i.name}</td>
+                        <td className="px-3 py-2 font-medium">
+                          <div className="flex items-center gap-2.5">
+                            <ProductThumb photo={i.photo} size="w-9 h-9" testId={`supply-thumb-${i.product_id}`} />
+                            <span>{i.name}</span>
+                          </div>
+                        </td>
                         <td className={cn('px-3 py-2 tabular-nums font-semibold', i.below_min && 'text-amber-600')}>{i.qty}</td>
                         <td className="px-3 py-2">
                           <Input type="number" min="0" defaultValue={i.min_qty ?? ''} className="w-16 h-7 text-sm"

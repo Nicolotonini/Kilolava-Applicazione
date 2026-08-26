@@ -42,6 +42,7 @@ import NoleggioDetailPage from './pages/magazzino/NoleggioDetailPage';
 import FornitureListPage from './pages/magazzino/FornitureListPage';
 import FornitureDetailPage from './pages/magazzino/FornitureDetailPage';
 import PulizieStockPage from './pages/magazzino/PulizieStockPage';
+import PulizieDetailPage from './pages/magazzino/PulizieDetailPage';
 import ZainiPage from './pages/magazzino/ZainiPage';
 import ZainoDetailPage from './pages/magazzino/ZainoDetailPage';
 import MovimentiPage from './pages/magazzino/MovimentiPage';
@@ -207,6 +208,7 @@ function AppRoutes() {
         <Route path="magazzino/forniture" element={<FornitureListPage />} />
         <Route path="magazzino/forniture/:structureId" element={<FornitureDetailPage />} />
         <Route path="magazzino/pulizie" element={<PulizieStockPage />} />
+        <Route path="magazzino/pulizie/:structureId" element={<PulizieDetailPage />} />
         <Route path="magazzino/zaini" element={<ZainiPage />} />
         <Route path="magazzino/zaini/:zainoId" element={<ZainoDetailPage />} />
         <Route path="magazzino/movimenti" element={<MovimentiPage />} />

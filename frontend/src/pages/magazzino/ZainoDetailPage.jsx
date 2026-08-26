@@ -13,6 +13,7 @@ import { StatusBadge } from '../../components/kilolava/badges';
 import { MovementDialog } from './MovementDialog';
 import { MovementsTable } from './MovimentiPage';
 import { AnomaliaDialog } from './AnomaliaDialog';
+import { ProductThumb } from './ProductThumb';
 import { ZAINO_STATUS_META, fmtDT } from './shared';
 
 export default function ZainoDetailPage() {
@@ -92,7 +93,8 @@ export default function ZainoDetailPage() {
             )}>
             {kitUnconfigured && (
               <p className="text-sm text-amber-600 rounded-xl border border-amber-200 bg-amber-50 dark:bg-amber-900/20 dark:border-amber-800 px-4 py-2.5" data-testid="kit-unconfigured-warning">
-                Kit non configurato: definisci la composizione di "{kit.name}" in Sistema → Cataloghi &amp; Kit per calcolare la dotazione prevista.
+                Kit non configurato: la dotazione prevista usa solo gli articoli standard "da zaino" del catalogo.
+                Configura "{kit.name}" in Sistema → Cataloghi &amp; Kit per personalizzare le quantità.
               </p>
             )}
             {z.dotation.length === 0 ? (
@@ -113,7 +115,17 @@ export default function ZainoDetailPage() {
                   <tbody>
                     {z.dotation.map(d => (
                       <tr key={d.product_id} className="border-t border-border" data-testid={`dotation-${d.product_id}`}>
-                        <td className="px-3 py-2 font-medium">{d.name}{d.extra && <span className="ml-1.5 text-xs text-muted-foreground">(extra)</span>}</td>
+                        <td className="px-3 py-2 font-medium">
+                          <div className="flex items-center gap-2.5">
+                            <ProductThumb photo={d.photo} size="w-8 h-8" testId={`dot-thumb-${d.product_id}`} />
+                            <span>
+                              {d.name}
+                              {d.source === 'kit' && <span className="ml-1.5 text-xs text-primary font-medium">Kit</span>}
+                              {d.source === 'override' && <span className="ml-1.5 text-xs text-muted-foreground">Personalizzato</span>}
+                              {d.extra && <span className="ml-1.5 text-xs text-muted-foreground">(extra)</span>}
+                            </span>
+                          </div>
+                        </td>
                         <td className="px-3 py-2 tabular-nums text-muted-foreground">{d.qty ?? '—'}</td>
                         <td className={cn('px-3 py-2 tabular-nums font-semibold', d.missing > 0 && 'text-amber-600')}>{d.present}</td>
                         <td className="px-3 py-2">
@@ -153,7 +165,7 @@ export default function ZainoDetailPage() {
                 <option value="">Nessun kit</option>
                 {kits.map(k => <option key={k.id} value={k.id}>{k.name}{(k.items || []).length === 0 ? ' (non configurato)' : ''}</option>)}
               </select>
-              <p className="text-xs text-muted-foreground">La dotazione prevista deriva dal Kit selezionato.</p>
+              <p className="text-xs text-muted-foreground">Dotazione prevista = articoli standard "da zaino" (sempre presenti) + Kit selezionato.</p>
             </div>
           </DetailSection>
 
@@ -181,8 +193,8 @@ export default function ZainoDetailPage() {
         </div>
       </div>
 
-      {movOpen && <MovementDialog defaultDomain="pulizie" lockDomain defaultType="trasferimento"
-        defaultOrigin={{ type: 'central', id: null }} defaultDestination={{ type: 'zaino', id: zainoId }}
+      {movOpen && <MovementDialog defaultDomain="pulizie" lockDomain defaultType="carico"
+        defaultOrigin={{ type: 'external', id: null }} defaultDestination={{ type: 'zaino', id: zainoId }}
         onClose={() => setMovOpen(false)} onDone={() => { setMovOpen(false); load(); }} />}
       {checkOpen && <CheckDialog zaino={z} onClose={() => setCheckOpen(false)} onDone={() => { setCheckOpen(false); load(); }} />}
       {reintOpen && <ReintegroDialog zaino={z} onClose={() => setReintOpen(false)} onDone={() => { setReintOpen(false); load(); }} />}
@@ -249,7 +261,7 @@ function ReintegroDialog({ zaino, onClose, onDone }) {
       const r = await api.post(`/magazzino/zaini/${zaino.id}/reintegro`, {
         items: items.map(i => ({ product_id: i.product_id, qty: Number(i.qty) })),
       });
-      toast.success(`Reintegro registrato: ${r.data.movements} trasferimenti dal Magazzino Pulizie`);
+      toast.success(`Reintegro registrato: ${r.data.movements} carichi allo zaino`);
       onDone();
     } catch (e) { toast.error(e.response?.data?.detail || 'Errore'); }
     finally { setSaving(false); }
@@ -260,7 +272,7 @@ function ReintegroDialog({ zaino, onClose, onDone }) {
       <DialogContent className="max-w-md" data-testid="zaino-reintegro-dialog">
         <DialogHeader>
           <DialogTitle>Reintegra zaino — {zaino.code}</DialogTitle>
-          <DialogDescription>Trasferimento interno dal Magazzino Pulizie allo zaino (movimenti tracciati).</DialogDescription>
+          <DialogDescription>Carico allo zaino da acquisto o scorta esterna (movimenti tracciati).</DialogDescription>
         </DialogHeader>
         <div className="space-y-1.5">
           {items.map((it, i) => (

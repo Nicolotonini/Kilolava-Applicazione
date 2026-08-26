@@ -7298,6 +7298,7 @@ api_router.include_router(create_activity_router(get_current_user))
 api_router.include_router(create_integrations_router(get_current_user, is_ops_user))
 api_router.include_router(create_segnalazioni_router(get_current_user, is_ops_user))
 init_magazzino_deps(
+    put_object=put_object,
     local_today=local_today,
     get_client_display_name=get_client_display_name,
     get_effective_config=seg_effective_config,

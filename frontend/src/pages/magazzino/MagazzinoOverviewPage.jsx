@@ -10,7 +10,7 @@ import { StatusBadge } from '../../components/kilolava/badges';
 import { toast } from 'sonner';
 import { fmtD, FABBISOGNO_STATUS_META } from './shared';
 
-const KIND_LABELS = { noleggio: 'Noleggio', fornitura: 'Fornitura', zaino: 'Zaino' };
+const KIND_LABELS = { noleggio: 'Noleggio', fornitura: 'Fornitura', zaino: 'Zaino', pulizie: 'Pulizie' };
 
 export default function MagazzinoOverviewPage() {
   const navigate = useNavigate();
@@ -41,7 +41,7 @@ export default function MagazzinoOverviewPage() {
           <KpiCard label="Strutture monitorate" value={kpi.structures_monitored} testId="kpi-structures" onClick={() => navigate('/magazzino/forniture')} />
           <KpiCard label="Fabbisogni noleggio" value={kpi.noleggio_gaps} accent={kpi.noleggio_gaps > 0 ? 'text-amber-600' : 'text-emerald-600'} testId="kpi-noleggio-gaps" onClick={() => navigate('/magazzino/noleggio')} />
           <KpiCard label="Forniture da reintegrare" value={kpi.supply_restock} accent={kpi.supply_restock > 0 ? 'text-amber-600' : 'text-emerald-600'} testId="kpi-supply" onClick={() => navigate('/magazzino/forniture')} />
-          <KpiCard label="Prodotti sotto scorta" value={kpi.cleaning_low_stock} accent={kpi.cleaning_low_stock > 0 ? 'text-red-600' : 'text-emerald-600'} testId="kpi-cleaning-low" onClick={() => navigate('/magazzino/pulizie')} />
+          <KpiCard label="Case con mancanze pulizie" value={kpi.cleaning_low_stock} accent={kpi.cleaning_low_stock > 0 ? 'text-red-600' : 'text-emerald-600'} testId="kpi-cleaning-low" onClick={() => navigate('/magazzino/pulizie')} />
           <KpiCard label="Zaini operativi" value={kpi.zaini_total} sub={kpi.zaini_da_reintegrare > 0 ? `${kpi.zaini_da_reintegrare} da reintegrare` : null} testId="kpi-zaini" onClick={() => navigate('/magazzino/zaini')} />
           <KpiCard label="Movimenti oggi" value={kpi.movements_today} sub={kpi.anomalie > 0 ? `${kpi.anomalie} anomalie aperte` : null} testId="kpi-movements" onClick={() => navigate('/magazzino/movimenti')} />
         </KpiGrid>
@@ -73,14 +73,18 @@ export default function MagazzinoOverviewPage() {
           ))}
         </AreaCard>
         <AreaCard icon={Backpack} title="Magazzino Pulizie / Zaini"
-          subtitle="Prodotti sotto scorta e zaini da reintegrare"
+          subtitle="Case con materiale pulizie mancante e zaini da reintegrare"
           onOpen={() => navigate('/magazzino/pulizie')} testId="area-pulizie">
           {(data?.cleaning_alerts || []).length === 0 && (kpi.zaini_da_reintegrare || 0) === 0 ? (
-            <p className="text-sm text-emerald-600">Scorte e zaini a posto.</p>
+            <p className="text-sm text-emerald-600">Case e zaini a posto.</p>
           ) : (
             <>
               {(data?.cleaning_alerts || []).map(a => (
-                <p key={a.product_id} className="text-sm px-2 py-1">⚠ {a.name}: {a.qty}/{a.min_qty}</p>
+                <button key={a.structure_id} onClick={() => navigate(`/magazzino/pulizie/${a.structure_id}`)}
+                  className="w-full text-left text-sm flex items-center gap-2 rounded-lg px-2 py-1.5 hover:bg-accent/50 klv-interactive">
+                  <span className="font-medium truncate flex-1">{a.name}</span>
+                  <span className="text-xs text-amber-600 font-semibold whitespace-nowrap">{a.missing_count} mancanze</span>
+                </button>
               ))}
               {kpi.zaini_da_reintegrare > 0 && (
                 <button onClick={() => navigate('/magazzino/zaini')} className="text-sm px-2 py-1 text-amber-600 font-medium hover:underline">

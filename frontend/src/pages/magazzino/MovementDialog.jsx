@@ -9,8 +9,7 @@ import { MOVEMENT_TYPE_LABELS, DOMAIN_LABELS } from './shared';
 
 const LOC_TYPES = [
   ['external', 'Esterno'],
-  ['central', 'Magazzino Pulizie (centrale)'],
-  ['structure', 'Struttura'],
+  ['structure', 'Struttura / Casa'],
   ['zaino', 'Zaino'],
 ];
 
@@ -56,7 +55,7 @@ export function MovementDialog({ defaultDomain = 'pulizie', lockDomain, defaultT
   const [qty, setQty] = useState(1);
   const [note, setNote] = useState('');
   const [origin, setOrigin] = useState(defaultOrigin || { type: 'external', id: null });
-  const [destination, setDestination] = useState(defaultDestination || { type: domain === 'pulizie' ? 'central' : 'structure', id: null });
+  const [destination, setDestination] = useState(defaultDestination || { type: 'structure', id: null });
   const [products, setProducts] = useState([]);
   const [structures, setStructures] = useState([]);
   const [zaini, setZaini] = useState([]);

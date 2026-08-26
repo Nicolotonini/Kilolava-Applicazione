@@ -113,6 +113,7 @@ function getBreadcrumb(pathname, search) {
   if (pathname === '/magazzino/forniture') return { title: 'Forniture / Consumabili', crumbs: [{ label: 'Magazzino' }] };
   if (pathname.startsWith('/magazzino/forniture/')) return { title: 'Forniture struttura', crumbs: [{ label: 'Forniture / Consumabili', to: '/magazzino/forniture' }] };
   if (pathname === '/magazzino/pulizie') return { title: 'Magazzino Pulizie', crumbs: [{ label: 'Magazzino' }] };
+  if (pathname.startsWith('/magazzino/pulizie/')) return { title: 'Pulizie in casa', crumbs: [{ label: 'Magazzino Pulizie', to: '/magazzino/pulizie' }] };
   if (pathname === '/magazzino/zaini') return { title: 'Zaini Operativi', crumbs: [{ label: 'Magazzino' }] };
   if (pathname.startsWith('/magazzino/zaini/')) return { title: 'Dettaglio zaino', crumbs: [{ label: 'Zaini Operativi', to: '/magazzino/zaini' }] };
   if (pathname === '/magazzino/movimenti') return { title: 'Movimenti', crumbs: [{ label: 'Magazzino' }] };

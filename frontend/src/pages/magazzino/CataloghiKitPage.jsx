@@ -11,6 +11,7 @@ import { toast } from 'sonner';
 import { PageHeader } from '../../components/kilolava/PageHeader';
 import { EmptyState, ListSkeleton } from '../../components/kilolava/EmptyState';
 import { StatusBadge } from '../../components/kilolava/badges';
+import { ProductThumb } from './ProductThumb';
 import { DOMAIN_LABELS, fmtDT } from './shared';
 
 const TABS = [
@@ -86,7 +87,12 @@ function CatalogTab({ domain }) {
             <tbody>
               {rows.map(p => (
                 <tr key={p.id} className={cn('border-t border-border row-hover', !p.active && 'opacity-50')} data-testid={`product-row-${p.id}`}>
-                  <td className="px-3 py-2.5 font-medium">{p.name}</td>
+                  <td className="px-3 py-2.5 font-medium">
+                    <div className="flex items-center gap-2.5">
+                      <ProductThumb photo={p.photo} size="w-9 h-9" testId={`product-thumb-${p.id}`} />
+                      <span>{p.name}</span>
+                    </div>
+                  </td>
                   <td className="px-3 py-2.5 text-muted-foreground">{p.category || '—'}</td>
                   <td className="px-3 py-2.5 text-muted-foreground">{p.unit}</td>
                   {domain === 'pulizie' && (
@@ -96,7 +102,7 @@ function CatalogTab({ domain }) {
                       </StatusBadge>
                     </td>
                   )}
-                  {domain === 'pulizie' && <td className="px-3 py-2.5 text-muted-foreground">{p.standard_location === 'zaino' ? 'Zaino' : 'Magazzino'}</td>}
+                  {domain === 'pulizie' && <td className="px-3 py-2.5 text-muted-foreground">{p.standard_location === 'zaino' ? 'Zaino' : 'Casa'}</td>}
                   {domain === 'forniture' && <td className="px-3 py-2.5 text-muted-foreground tabular-nums">{p.default_min ?? '—'} / {p.default_ideal ?? '—'}</td>}
                   <td className="px-3 py-2.5">
                     <Switch checked={!!p.active} onCheckedChange={v => toggleActive(p, v)} data-testid={`product-active-${p.id}`} />
@@ -125,11 +131,26 @@ function ProductDialog({ domain, product, onClose, onDone }) {
   const [form, setForm] = useState({
     name: product?.name || '', category: product?.category || '', unit: product?.unit || 'pz',
     notes: product?.notes || '', type: product?.type || 'consumabile',
-    standard_location: product?.standard_location || 'central', min_qty: product?.min_qty ?? '',
+    standard_location: product?.standard_location || 'casa', min_qty: product?.min_qty ?? '',
     default_min: product?.default_min ?? '', default_ideal: product?.default_ideal ?? '',
   });
+  const [photo, setPhoto] = useState(product?.photo || null);
+  const [uploading, setUploading] = useState(false);
   const [saving, setSaving] = useState(false);
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+
+  const uploadPhoto = async (file) => {
+    if (!file) return;
+    setUploading(true);
+    try {
+      const fd = new FormData();
+      fd.append('file', file);
+      const r = await api.post(`/magazzino/catalog/${domain}/${product.id}/photo`, fd);
+      setPhoto(r.data.photo);
+      toast.success('Foto caricata');
+    } catch (e) { toast.error(e.response?.data?.detail || 'Errore caricamento foto'); }
+    finally { setUploading(false); }
+  };
 
   const save = async () => {
     if (!form.name.trim()) { toast.error('Inserisci il nome'); return; }
@@ -161,6 +182,16 @@ function ProductDialog({ domain, product, onClose, onDone }) {
           <DialogDescription>Il catalogo definisce i prodotti; le quantità vivono nei movimenti.</DialogDescription>
         </DialogHeader>
         <div className="space-y-3">
+          {product && (
+            <div className="flex items-center gap-3">
+              <ProductThumb photo={photo} size="w-14 h-14" testId="product-photo-preview" />
+              <label className="text-sm text-primary cursor-pointer hover:underline">
+                {uploading ? 'Caricamento...' : photo ? 'Cambia foto' : 'Aggiungi foto'}
+                <input type="file" accept="image/*" className="hidden" disabled={uploading}
+                  onChange={e => uploadPhoto(e.target.files?.[0])} data-testid="product-photo-input" />
+              </label>
+            </div>
+          )}
           <div>
             <Label className="text-xs">Nome</Label>
             <Input value={form.name} onChange={e => set('name', e.target.value)} data-testid="product-name-input" />
@@ -189,12 +220,12 @@ function ProductDialog({ domain, product, onClose, onDone }) {
                 <Label className="text-xs">Ubicazione</Label>
                 <select value={form.standard_location} onChange={e => set('standard_location', e.target.value)}
                   className="w-full h-9 rounded-md border border-border bg-background px-2 text-sm" data-testid="product-location-select">
-                  <option value="central">Magazzino</option>
+                  <option value="casa">Casa</option>
                   <option value="zaino">Zaino</option>
                 </select>
               </div>
               <div>
-                <Label className="text-xs">Scorta min.</Label>
+                <Label className="text-xs">Dotazione min.</Label>
                 <Input type="number" min="0" value={form.min_qty} onChange={e => set('min_qty', e.target.value)} data-testid="product-min-input" />
               </div>
             </div>
