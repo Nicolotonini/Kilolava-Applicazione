@@ -1,15 +1,15 @@
 """
-iCal sync service — fetch external feeds, upsert booking events,
-trigger auto task generation, and respect manually_modified events.
+iCal sync service — fetch external feeds, upsert booking events (soggiorni).
+I dati iCal aggiornano SOLO: uid, date check-in/check-out, titolo, cancellazione.
+NON toccano mai i dati Kilolava (persone, letti, note, pulizia collegata, ecc.).
+Idempotente per UID. Se le date cambiano su un soggiorno con dati operativi,
+viene impostato `dates_changed` per l'alert al Manager.
 """
 import uuid
 import httpx
-from datetime import datetime
-from icalendar import Calendar as ICalendar
 
 from core.database import db
 from core.utils import now_iso
-from services.calendar_automation import auto_generate_checkout_tasks
 
 
 def detect_ical_source(url: str) -> str:
@@ -21,8 +21,17 @@ def detect_ical_source(url: str) -> str:
     return "other_ical"
 
 
+def _has_kilolava_data(ev: dict) -> bool:
+    return bool(
+        ev.get("cleaning_task_id") or ev.get("guests_count")
+        or ev.get("beds_double") or ev.get("beds_single") or ev.get("beds_sofa")
+        or ev.get("notes")
+    )
+
+
 async def sync_structure_ical(structure_id: str, ical_url: str, user_id: str) -> dict:
     """Fetch and parse an iCal feed, create/update/remove booking events."""
+    from icalendar import Calendar as ICalendar
     source = detect_ical_source(ical_url)
 
     async with httpx.AsyncClient(timeout=30.0) as http_client:
@@ -54,44 +63,40 @@ async def sync_structure_ical(structure_id: str, ical_url: str, user_id: str) ->
 
     existing = await db.events.find(
         {"structure_id": structure_id, "ical_uid": {"$exists": True, "$ne": None}},
-        {"_id": 0, "id": 1, "ical_uid": 1, "start_time": 1, "end_time": 1, "title": 1, "manually_modified": 1}
+        {"_id": 0}
     ).to_list(5000)
     existing_map = {e["ical_uid"]: e for e in existing}
 
     created = 0
     updated = 0
     removed = 0
-    auto_tasks_created = 0
     skipped_manual = 0
     now = now_iso()
 
-    structure = await db.structures.find_one({"id": structure_id}, {"_id": 0, "name": 1, "client_id": 1})
+    structure = await db.structures.find_one({"id": structure_id}, {"_id": 0, "name": 1, "client_id": 1, "check_in_time": 1, "check_out_time": 1})
     structure_name = structure.get("name", "") if structure else ""
 
     for uid, fe in feed_events.items():
         title = fe["summary"]
         if title in ("CLOSED - Not available", "Not available", "Closed"):
-            title = f"Prenotazione {source.replace('_', ' ').title()}"
+            title = "Soggiorno"
 
         if uid in existing_map:
             ex = existing_map[uid]
             if ex.get("manually_modified"):
                 skipped_manual += 1
-                ex_full = await db.events.find_one({"id": ex["id"]}, {"_id": 0})
-                if ex_full:
-                    new_tasks = await auto_generate_checkout_tasks(ex_full)
-                    auto_tasks_created += len(new_tasks)
                 continue
-            if ex.get("start_time") != fe["start"] or ex.get("end_time") != fe["end"] or ex.get("title") != title:
-                await db.events.update_one(
-                    {"id": ex["id"]},
-                    {"$set": {"start_time": fe["start"], "end_time": fe["end"], "title": title, "updated_at": now}}
-                )
+            dates_changed = ex.get("start_time") != fe["start"] or ex.get("end_time") != fe["end"]
+            if dates_changed or ex.get("title") != title:
+                upd = {"start_time": fe["start"], "end_time": fe["end"], "title": title, "updated_at": now}
+                # Alert per il Manager: date modificate su un soggiorno con dati operativi Kilolava
+                if dates_changed and _has_kilolava_data(ex):
+                    upd["dates_changed"] = {
+                        "old_start": ex.get("start_time"), "old_end": ex.get("end_time"),
+                        "new_start": fe["start"], "new_end": fe["end"], "at": now,
+                    }
+                await db.events.update_one({"id": ex["id"]}, {"$set": upd})
                 updated += 1
-            ex_full = await db.events.find_one({"id": ex["id"]}, {"_id": 0})
-            if ex_full:
-                new_tasks = await auto_generate_checkout_tasks(ex_full)
-                auto_tasks_created += len(new_tasks)
         else:
             event_id = str(uuid.uuid4())
             event_doc = {
@@ -104,20 +109,27 @@ async def sync_structure_ical(structure_id: str, ical_url: str, user_id: str) ->
                 "end_time": fe["end"],
                 "assigned_operator": None,
                 "status": "pending",
-                "notes": f"Importato da {source.replace('_', ' ').title()} - UID: {uid}",
+                "notes": None,
                 "source": source,
                 "ical_uid": uid,
                 "auto_generated": False,
                 "manually_modified": False,
                 "generated_from": None,
                 "rule": None,
+                "guests_count": None,
+                "beds_double": None,
+                "beds_single": None,
+                "beds_sofa": None,
+                "checkin_time": (structure or {}).get("check_in_time"),
+                "checkout_time": (structure or {}).get("check_out_time"),
+                "cleaning_task_id": None,
+                "dates_changed": None,
+                "feed_cancelled": None,
                 "created_at": now,
                 "updated_at": now,
             }
             await db.events.insert_one(event_doc)
             created += 1
-            new_tasks = await auto_generate_checkout_tasks(event_doc)
-            auto_tasks_created += len(new_tasks)
 
     feed_uids = set(feed_events.keys())
     for uid, ex in existing_map.items():
@@ -125,9 +137,15 @@ async def sync_structure_ical(structure_id: str, ical_url: str, user_id: str) ->
             if ex.get("manually_modified"):
                 skipped_manual += 1
                 continue
-            await db.events.delete_many({"generated_from": ex["id"], "auto_generated": True})
-            await db.events.delete_one({"id": ex["id"]})
-            removed += 1
+            if _has_kilolava_data(ex):
+                # NON cancellare i dati Kilolava: segna come cancellata dal feed e lascia decidere al Manager
+                if not ex.get("feed_cancelled"):
+                    await db.events.update_one({"id": ex["id"]}, {"$set": {
+                        "status": "cancelled", "feed_cancelled": True, "updated_at": now}})
+                    removed += 1
+            else:
+                await db.events.delete_one({"id": ex["id"]})
+                removed += 1
 
     sync_record = {
         "id": str(uuid.uuid4()),
@@ -141,7 +159,6 @@ async def sync_structure_ical(structure_id: str, ical_url: str, user_id: str) ->
         "created": created,
         "updated": updated,
         "removed": removed,
-        "auto_tasks_created": auto_tasks_created,
         "skipped_manual": skipped_manual,
         "status": "success",
         "error": None,
@@ -149,3 +166,19 @@ async def sync_structure_ical(structure_id: str, ical_url: str, user_id: str) ->
     await db.ical_syncs.insert_one(sync_record)
     sync_record.pop("_id", None)
     return sync_record
+
+
+async def auto_sync_all_ical() -> dict:
+    """Sync automatico (scheduler, ogni 5 minuti). Idempotente, senza duplicati."""
+    structures = await db.structures.find(
+        {"ical_url": {"$exists": True, "$nin": [None, ""]}},
+        {"_id": 0, "id": 1, "ical_url": 1}
+    ).to_list(200)
+    ok, errors = 0, 0
+    for s in structures:
+        try:
+            await sync_structure_ical(s["id"], s["ical_url"], "scheduler")
+            ok += 1
+        except Exception:
+            errors += 1
+    return {"synced": ok, "errors": errors, "at": now_iso()}

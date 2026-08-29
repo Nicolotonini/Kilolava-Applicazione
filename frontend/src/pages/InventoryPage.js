@@ -2,7 +2,6 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useLanguage } from '../contexts/LanguageContext';
 import { inventoryApi, clientsApi, structuresApi } from '../lib/api';
-import { ExportButton } from '../components/ExportButton';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
@@ -275,7 +274,6 @@ const InventoryPage = () => {
           </div>
         </div>
         <div className="flex items-center gap-2">
-          {tab === 'articles' && <ExportButton entity="articles" />}
           {tab === 'articles' && <Button onClick={openNewArticle} className="h-8 bg-[#F24E75] hover:bg-[#E03B62] text-white" data-testid="add-article-btn"><Plus className="h-4 w-4 mr-1" />Nuovo articolo</Button>}
           {tab === 'movements' && <Button onClick={openNewMovement} className="h-8 bg-[#F24E75] hover:bg-[#E03B62] text-white" data-testid="add-movement-btn"><Plus className="h-4 w-4 mr-1" />Nuovo movimento</Button>}
           {tab === 'pricing' && <Button onClick={openNewPricing} className="h-8 bg-[#F24E75] hover:bg-[#E03B62] text-white" data-testid="add-pricing-btn"><Plus className="h-4 w-4 mr-1" />Nuovo prezzo</Button>}

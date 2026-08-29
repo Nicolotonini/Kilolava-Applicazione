@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import api, { API_BASE } from '../lib/api';
-import { ExportButton } from '../components/ExportButton';
 import { Card, CardContent } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
@@ -667,7 +666,6 @@ const MaintenanceIssuesPage = () => {
           <p className="text-sm text-muted-foreground">Interventi collegati alle Segnalazioni — {activeCount} aperti</p>
         </div>
         <div className="flex items-center gap-2">
-          <ExportButton entity="maintenance" />
           <Button onClick={openNew} className="h-9 bg-primary hover:bg-primary/90 text-primary-foreground gap-1" data-testid="new-issue-btn">
             <Plus className="h-4 w-4" />Nuovo intervento
           </Button>

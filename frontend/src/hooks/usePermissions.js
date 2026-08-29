@@ -19,7 +19,7 @@ const ROLE_PERMISSIONS = {
 const OPS_ROLES = new Set(['admin', 'operations_manager']);
 
 const NAV_KEYS = [
-  'dashboard', 'calendar', 'clients', 'structures', 'cleaning', 'cleaning-overview', 'cleaning-organize', 'segnalazioni',
+  'dashboard', 'mappa', 'calendar', 'clients', 'structures', 'cleaning', 'cleaning-overview', 'cleaning-organize', 'segnalazioni',
   'structure-inventory', 'keys', 'deliveries',
   'consegne-overview', 'consegne-da-organizzare', 'consegne-organizzazione', 'consegne-oggi', 'consegne-storico',
   'ms-overview', 'ms-noleggio', 'ms-forniture', 'ms-kit-pulizie', 'ms-movimenti',
@@ -43,8 +43,8 @@ const IMPERSONATION_KEY = 'kilolava_impersonate_role';
 
 export const ROLE_LABELS = {
   admin: 'Admin',
-  operations_manager: 'Operations Manager',
-  cleaner: 'Addetto Pulizie',
+  operations_manager: 'Responsabile Operativo',
+  cleaner: 'Operatrice Pulizie',
   rider: 'Rider',
   maintenance: 'Manutentore',
   client: 'Cliente',

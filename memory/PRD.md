@@ -183,6 +183,20 @@ frontend/src/pages/
 
 ---
 
+## Phase 27 (Giugno 2026) — Google Sheets Anagrafiche: Import + Backup — COMPLETATO (iteration_19: 42/42 backend + frontend 100%; OAuth reale da autorizzare dall'utente)
+
+### Architettura
+- Backend: `services/sheets_anagrafiche.py` (motore) + `routes/sheets_anagrafiche.py` (router `/api/sheets-anagrafiche/*` + callback `/api/oauth/sheets/callback`). Config in backend/.env: GOOGLE_OAUTH_CLIENT_ID/SECRET/REDIRECT_URI + GOOGLE_SHEETS_IMPORT_ID/BACKUP_ID (OAuth user-provided, token in db.google_tokens con refresh automatico; MAI valori nei log/summary).
+- Kilolava = fonte ufficiale. Import = onboarding/proposta con ANTEPRIMA E CONFERMA OBBLIGATORIA; Backup = output read-only logico. MAI cancellazioni automatiche (riga sparita → item 'missing' informativo). MAI dati sensibili nei fogli (no password/hash/codici serrature; test verifica assenza $2b$).
+- Codici stabili permanenti: CLI-xxxx (clienti), KLV-xxxx (strutture, contatore db.counters bumpato su import), KLV-Uxxxx (unità), USR-xxxx (utenti). `ensure_codes()` idempotente assegna ai record esistenti. Identità SOLO da codici (mai riga/nome/email). Formati validati con errore bloccante.
+- 4 tab import: CLIENTI, STRUTTURE & UNITÀ (righe stesso codice = 1 struttura + N unità; Ha Unità=NO con unità → errore), SERVIZI STRUTTURE (SÌ/NO a livello struttura + Kit Pulizie), DIPENDENTI / COLLABORATORI (anagrafica SENZA account: login_enabled=false, hashed_password=None, warning esplicito).
+- Preview: nuovi/modificati/invariati/disattivazioni (Attivo=NO → proposta disattivazione, mai delete)/errori bloccanti (per tab+riga)/warning (email invalida, rione sconosciuto)/CONFLITTI Kilolava-vs-foglio via snapshot (db.sheets_snapshots) — risoluzione per campo 'sheet'/'kilolava' nelle decisions. Rioni mappati su operational_zones → operational_zone_id.
+- Apply: ordine clienti→strutture→unità→servizi→dipendenti, decisions {key:{apply,fields}}, audit nel Registro Attività (origin 'Google Sheets Import'), history in db.sheets_sync_history. Secondo import identico → tutto invariato.
+- Backup: 4 tab specchio (riga per unità), manuale + giornaliero 03:00 (scheduler job sheets_daily_backup, skip silenzioso se non connesso).
+- Frontend: tab 'Google Fogli — Anagrafiche' in /integrations (`pages/integrations/SheetsAnagraficheCard.jsx`): Connetti Google (OAuth redirect), stato, link 2 fogli, Prepara foglio import, Anteprima import (dialog con summary/errori/item selezionabili/conflitti con scelta per campo/Applica/Annulla), Backup ora, ultimo import/backup, storico. Solo Admin (403 altrove). Callback → /integrations?sheets=connected|error.
+- Test: `tests/test_sheets_anagrafiche.py` (27 unit, Google API MOCKATA, SERIALE con -o addopts='') + `tests/test_sheets_anagrafiche_api.py` (15 integration del testing agent). Fix inclusi: db.zones→operational_zones, zaini assigned_to, _next_code regex KLV-U, contatore KLV, MapPin import mancante in AppLayout.js (bug pre-esistente della fase Mappa).
+- DA FARE DALL'UTENTE: click 'Connetti Google' e autorizzazione OAuth → poi test import/backup sui fogli reali.
+
 ## Phase 26 (Giugno 2026) — Consegne + Lavanderia Privata + Manutenzioni — COMPLETATO (iteration_18: 18/18 backend + frontend 100%)
 
 ### Consegne (centro logistico)

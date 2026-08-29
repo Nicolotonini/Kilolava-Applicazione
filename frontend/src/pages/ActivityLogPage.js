@@ -3,7 +3,6 @@ import api from '../lib/api';
 import { Card, CardContent } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
-import { ExportButton } from '../components/ExportButton';
 import { History, PlusCircle, Pencil, Trash2, RefreshCw } from 'lucide-react';
 import { cn } from '../lib/utils';
 
@@ -67,7 +66,6 @@ export default function ActivityLogPage() {
           <p className="text-sm text-muted-foreground">{total} operazioni registrate</p>
         </div>
         <div className="flex items-center gap-2">
-          <ExportButton entity="activity" />
           <Button variant="outline" size="sm" className="h-8 gap-1.5" onClick={() => fetchLogs(0, false)} data-testid="refresh-activity-btn">
             <RefreshCw className={cn('h-3.5 w-3.5', loading && 'animate-spin')} />Aggiorna
           </Button>

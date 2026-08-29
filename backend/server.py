@@ -36,14 +36,10 @@ from core.enums import (  # noqa: E402
 )
 
 # Services (recently migrated logic)
-from services.calendar_automation import (  # noqa: E402
-    CHECKOUT_TASK_DEFINITIONS,
-    task_exists_with_rule as _task_exists_with_rule,
-    auto_generate_checkout_tasks as _auto_generate_checkout_tasks,
-)
 from services.ical_sync import (  # noqa: E402
     detect_ical_source as _detect_ical_source,
     sync_structure_ical as _sync_structure_ical,
+    auto_sync_all_ical as _auto_sync_all_ical,
 )
 from services import scheduler_service  # noqa: E402
 
@@ -1642,6 +1638,13 @@ class EventUpdate(BaseModel):
     status: Optional[str] = None
     notes: Optional[str] = None
     source: Optional[str] = None
+    guests_count: Optional[int] = None
+    beds_double: Optional[int] = None
+    beds_single: Optional[int] = None
+    beds_sofa: Optional[int] = None
+    checkin_time: Optional[str] = None
+    checkout_time: Optional[str] = None
+    clear_dates_alert: Optional[bool] = None
 
 class EventResponse(BaseModel):
     model_config = ConfigDict(extra="ignore")
@@ -1663,8 +1666,26 @@ class EventResponse(BaseModel):
     manually_modified: bool = False
     generated_from: Optional[str] = None
     rule: Optional[str] = None
+    guests_count: Optional[int] = None
+    beds_double: Optional[int] = None
+    beds_single: Optional[int] = None
+    beds_sofa: Optional[int] = None
+    checkin_time: Optional[str] = None
+    checkout_time: Optional[str] = None
+    cleaning_task_id: Optional[str] = None
+    dates_changed: Optional[dict] = None
+    feed_cancelled: Optional[bool] = None
     created_at: str
     updated_at: str
+
+
+EVENT_KILOLAVA_KEYS = ["guests_count", "beds_double", "beds_single", "beds_sofa",
+                       "checkin_time", "checkout_time", "cleaning_task_id", "dates_changed", "feed_cancelled"]
+
+
+def _event_extra(ev: dict) -> dict:
+    return {k: ev.get(k) for k in EVENT_KILOLAVA_KEYS}
+
 
 # ============== EVENT ENDPOINTS ==============
 
@@ -1743,7 +1764,8 @@ async def get_events(
             generated_from=ev.get("generated_from"),
             rule=ev.get("rule"),
             created_at=ev["created_at"],
-            updated_at=ev["updated_at"]
+            updated_at=ev["updated_at"],
+            **_event_extra(ev),
         ))
     return result
 
@@ -1782,13 +1804,6 @@ async def create_event(
     }
     await db.events.insert_one(event_doc)
 
-    # Auto-generate the 4 checkout service tasks for new bookings (manual or otherwise)
-    if event_data.event_type == "booking":
-        try:
-            await _auto_generate_checkout_tasks(event_doc)
-        except Exception as e:
-            logging.error(f"Auto-task generation failed for booking {event_id}: {e}")
-
     return EventResponse(
         id=event_id,
         event_type=event_data.event_type,
@@ -1806,24 +1821,6 @@ async def create_event(
         created_at=now,
         updated_at=now,
     )
-
-
-@api_router.post("/events/{event_id}/generate-tasks")
-async def regenerate_booking_tasks(event_id: str, current_user: dict = Depends(get_current_user)):
-    """Manually (re)generate the 4 service tasks for a single booking."""
-    if not is_ops_user(current_user):
-        raise HTTPException(status_code=403, detail="Non autorizzato")
-    ev = await db.events.find_one({"id": event_id}, {"_id": 0})
-    if not ev:
-        raise HTTPException(status_code=404, detail="Evento non trovato")
-    if ev.get("event_type") != "booking":
-        raise HTTPException(status_code=400, detail="Solo le prenotazioni supportano la generazione automatica")
-    created_tasks = await _auto_generate_checkout_tasks(ev)
-    return {
-        "booking_id": event_id,
-        "created_count": len(created_tasks),
-        "created": created_tasks,
-    }
 
 
 @api_router.get("/events/{event_id}", response_model=EventResponse)
@@ -1859,7 +1856,8 @@ async def get_event(event_id: str, current_user: dict = Depends(get_current_user
         generated_from=ev.get("generated_from"),
         rule=ev.get("rule"),
         created_at=ev["created_at"],
-        updated_at=ev["updated_at"]
+        updated_at=ev["updated_at"],
+        **_event_extra(ev),
     )
 
 
@@ -1875,6 +1873,9 @@ async def update_event(
 
     update_data = {"updated_at": now_iso()}
     payload = event_data.model_dump(exclude_unset=True)
+    if payload.pop("clear_dates_alert", None):
+        update_data["dates_changed"] = None
+        update_data["feed_cancelled"] = None
     for key, value in payload.items():
         if value is not None:
             update_data[key] = value
@@ -1919,7 +1920,8 @@ async def update_event(
         generated_from=updated_ev.get("generated_from"),
         rule=updated_ev.get("rule"),
         created_at=updated_ev["created_at"],
-        updated_at=updated_ev["updated_at"]
+        updated_at=updated_ev["updated_at"],
+        **_event_extra(updated_ev),
     )
 
 
@@ -2060,235 +2062,75 @@ def _get_cleaning_window(checkout_time_str, cleaning_time_min=60):
 # now live in services/calendar_automation.py and are imported at the top of this file.
 
 
-@api_router.post("/automation/generate")
-async def generate_tasks(
+@api_router.get("/calendar/indicators")
+async def calendar_indicators(
     date_from: str,
     date_to: str,
-    dry_run: bool = False,
     current_user: dict = Depends(get_current_user)
 ):
-    """Generate operational tasks from bookings for a date range."""
+    """Indicatori operativi per soggiorno: pulizia, fabbisogni, manutenzioni. Solo azionabili."""
     range_start = f"{date_from}T00:00:00"
     range_end = f"{date_to}T23:59:59"
-
-    # Find all bookings in the range
     bookings = await db.events.find({
         "event_type": "booking",
-        "status": {"$nin": ["cancelled"]},
         "$or": [
             {"start_time": {"$gte": range_start, "$lte": range_end}},
             {"end_time": {"$gte": range_start, "$lte": range_end}},
             {"$and": [{"start_time": {"$lte": range_start}}, {"end_time": {"$gte": range_end}}]},
-        ]
+        ],
     }, {"_id": 0}).to_list(500)
+    struct_ids = list({b["structure_id"] for b in bookings if b.get("structure_id")})
 
-    generated = []
-    skipped = []
-    now = now_iso()
+    task_ids = [b["cleaning_task_id"] for b in bookings if b.get("cleaning_task_id")]
+    tasks_by_id = {}
+    if task_ids:
+        for t in await db.cleaning_tasks.find({"id": {"$in": task_ids}}, {"_id": 0, "id": 1, "status": 1, "date": 1, "scheduled_time": 1, "assigned_cleaner_ids": 1}).to_list(500):
+            tasks_by_id[t["id"]] = t
+    # fallback: pulizie per struttura+data checkout non collegate
+    tasks_by_struct_date = {}
+    if struct_ids:
+        for t in await db.cleaning_tasks.find({"structure_id": {"$in": struct_ids}, "status": {"$ne": "cancelled"}},
+                                              {"_id": 0, "id": 1, "structure_id": 1, "status": 1, "date": 1, "scheduled_time": 1, "assigned_cleaner_ids": 1}).to_list(2000):
+            tasks_by_struct_date.setdefault((t["structure_id"], t.get("date")), t)
 
-    for booking in bookings:
-        structure_id = booking["structure_id"]
-        unit_id = booking.get("unit_id")
-        structure, unit, client = await _get_unit_or_structure_info(structure_id, unit_id)
-        if not structure:
-            continue
+    fabb_by_struct = {}
+    maint_by_struct = set()
+    if struct_ids:
+        async for f in db.fabbisogni.find({"structure_id": {"$in": struct_ids}, "status": {"$in": ["aperta", "in_consegna"]}}, {"_id": 0, "structure_id": 1, "kind": 1}):
+            fabb_by_struct.setdefault(f["structure_id"], set()).add(f.get("kind"))
+        async for m in db.maintenance_issues.find({"structure_id": {"$in": struct_ids}, "status": {"$in": ["open", "assigned", "in_progress", "on_hold"]}}, {"_id": 0, "structure_id": 1}):
+            maint_by_struct.add(m["structure_id"])
 
-        logistics = (unit or {}).get("logistics_config") or {}
-        cleaning_cfg = (unit or {}).get("cleaning_config") or {}
-        cleaning_time = cleaning_cfg.get("estimated_cleaning_time", 60)
-        logistics_mode = logistics.get("logistics_mode", "dynamic")
+    cleaner_ids = set()
+    for t in list(tasks_by_id.values()) + list(tasks_by_struct_date.values()):
+        for cid in t.get("assigned_cleaner_ids") or []:
+            cleaner_ids.add(cid)
+    cleaner_names = {}
+    if cleaner_ids:
+        async for u in db.users.find({"id": {"$in": list(cleaner_ids)}}, {"_id": 0, "id": 1, "name": 1}):
+            cleaner_names[u["id"]] = u["name"]
 
-        # Determine property name for task titles
-        prop_name = structure["name"]
-        if unit:
-            prop_name = f"{structure['name']} / {unit.get('name', '')}"
-
-        # ── RULE 1: CHECK-OUT → CLEANING ──
-        checkout_date = booking["end_time"][:10]
-        if date_from <= checkout_date <= date_to:
-            if not await _task_exists(booking["id"], "cleaning", checkout_date):
-                clean_start, clean_end = _get_cleaning_window(booking["end_time"], cleaning_time)
-
-                task = {
-                    "event_type": "cleaning",
-                    "title": f"Pulizia - {prop_name}",
-                    "structure_id": structure_id,
-                    "unit_id": unit_id,
-                    "start_time": clean_start,
-                    "end_time": clean_end,
-                    "status": EventStatus.PENDING,
-                    "notes": f"Auto: checkout {booking.get('title', '')}. Kit reset richiesto.",
-                    "source": "automation",
-                    "generated_from": booking["id"],
-                    "auto_generated": True,
-                    "rule": AutomationRule.CHECKOUT_CLEANING,
-                }
-
-                if logistics_mode == "fixed":
-                    task["notes"] += f" Giorni fissi: {', '.join(logistics.get('pickup_days', []))}"
-
-                if not dry_run:
-                    task["id"] = str(uuid.uuid4())
-                    task["created_at"] = now
-                    task["updated_at"] = now
-                    await db.events.insert_one(task)
-                generated.append({**task, "_id": None, "id": task.get("id", "preview")})
-            else:
-                skipped.append({"booking_id": booking["id"], "type": "cleaning", "date": checkout_date, "reason": "already_exists"})
-
-        # ── RULE 2: CHECK-IN → CONDITIONAL DELIVERY ──
-        checkin_date = booking["start_time"][:10]
-        if date_from <= checkin_date <= date_to:
-            available, target, threshold = await _count_available_kits(structure_id, unit_id, checkin_date)
-
-            if available < threshold:
-                if not await _task_exists(booking["id"], "delivery", checkin_date):
-                    # Schedule delivery before check-in
-                    checkin_dt = datetime.fromisoformat(booking["start_time"].replace("Z", "+00:00"))
-                    delivery_start = checkin_dt - timedelta(hours=3)
-                    delivery_end = checkin_dt - timedelta(hours=1)
-
-                    kits_needed = target - available
-
-                    task = {
-                        "event_type": "delivery",
-                        "title": f"Consegna kit ({kits_needed}) - {prop_name}",
-                        "structure_id": structure_id,
-                        "unit_id": unit_id,
-                        "start_time": delivery_start.isoformat(),
-                        "end_time": delivery_end.isoformat(),
-                        "status": EventStatus.PENDING,
-                        "notes": f"Auto: check-in {booking.get('title', '')}. Kit disponibili: {available}/{target}. Necessari: {kits_needed}.",
-                        "source": "automation",
-                        "generated_from": booking["id"],
-                        "auto_generated": True,
-                        "rule": AutomationRule.CHECKIN_DELIVERY,
-                    }
-
-                    if not dry_run:
-                        task["id"] = str(uuid.uuid4())
-                        task["created_at"] = now
-                        task["updated_at"] = now
-                        await db.events.insert_one(task)
-                    generated.append({**task, "_id": None, "id": task.get("id", "preview")})
-                else:
-                    skipped.append({"booking_id": booking["id"], "type": "delivery", "date": checkin_date, "reason": "already_exists"})
-            else:
-                skipped.append({"booking_id": booking["id"], "type": "delivery", "date": checkin_date, "reason": "stock_sufficient", "available": available, "target": target})
-
-    # ── RULE 3: FIXED SCHEDULE TASKS ──
-    # Find units with fixed logistics mode and generate pickup tasks on their scheduled days
-    fixed_units = await db.units.find({
-        "logistics_config.logistics_mode": "fixed",
-        "logistics_config.pickup_days": {"$exists": True, "$ne": []}
-    }, {"_id": 0}).to_list(200)
-
-    day_map = {"mon": 0, "tue": 1, "wed": 2, "thu": 3, "fri": 4, "sat": 5, "sun": 6}
-    current_date = datetime.fromisoformat(f"{date_from}T00:00:00+00:00")
-    end_date = datetime.fromisoformat(f"{date_to}T23:59:59+00:00")
-
-    while current_date <= end_date:
-        current_weekday = current_date.weekday()
-        date_str = current_date.strftime("%Y-%m-%d")
-
-        for u in fixed_units:
-            pickup_days = u.get("logistics_config", {}).get("pickup_days", [])
-            time_window = u.get("logistics_config", {}).get("pickup_time_window", "09:00-12:00")
-            pickup_day_nums = [day_map.get(d, -1) for d in pickup_days]
-
-            if current_weekday in pickup_day_nums:
-                struct = await db.structures.find_one({"id": u["structure_id"]}, {"_id": 0, "name": 1})
-                u_name = f"{struct['name'] if struct else ''} / {u.get('name', '')}"
-
-                # Pickup task
-                if not await _task_exists(f"fixed_{u['id']}", "pickup", date_str):
-                    parts = time_window.split("-") if time_window else ["09:00", "12:00"]
-                    start_t = parts[0] if parts else "09:00"
-                    end_t = parts[1] if len(parts) > 1 else "12:00"
-
-                    task = {
-                        "event_type": "pickup",
-                        "title": f"Ritiro programmato - {u_name}",
-                        "structure_id": u["structure_id"],
-                        "unit_id": u["id"],
-                        "start_time": f"{date_str}T{start_t}:00",
-                        "end_time": f"{date_str}T{end_t}:00",
-                        "status": EventStatus.PENDING,
-                        "notes": "Auto: ritiro a programma fisso.",
-                        "source": "automation",
-                        "generated_from": f"fixed_{u['id']}",
-                        "auto_generated": True,
-                        "rule": AutomationRule.FIXED_SCHEDULE,
-                    }
-                    if not dry_run:
-                        task["id"] = str(uuid.uuid4())
-                        task["created_at"] = now
-                        task["updated_at"] = now
-                        await db.events.insert_one(task)
-                    generated.append({**task, "_id": None, "id": task.get("id", "preview")})
-
-        current_date += timedelta(days=1)
-
-    # Clean _id from responses
-    for g in generated:
-        g.pop("_id", None)
-
-    return {
-        "date_from": date_from,
-        "date_to": date_to,
-        "dry_run": dry_run,
-        "generated_count": len(generated),
-        "skipped_count": len(skipped),
-        "generated": generated,
-        "skipped": skipped,
-    }
-
-
-@api_router.get("/automation/status")
-async def get_automation_status(current_user: dict = Depends(get_current_user)):
-    """Get stats about auto-generated tasks."""
-    total_auto = await db.events.count_documents({"auto_generated": True})
-    pending_auto = await db.events.count_documents({"auto_generated": True, "status": EventStatus.PENDING})
-    completed_auto = await db.events.count_documents({"auto_generated": True, "status": EventStatus.COMPLETED})
-
-    # Count by rule
-    pipeline = [
-        {"$match": {"auto_generated": True}},
-        {"$group": {"_id": "$rule", "count": {"$sum": 1}}}
-    ]
-    by_rule = {}
-    async for doc in db.events.aggregate(pipeline):
-        by_rule[doc["_id"]] = doc["count"]
-
-    # Fixed schedule units count
-    fixed_count = await db.units.count_documents({"logistics_config.logistics_mode": "fixed"})
-
-    return {
-        "total_auto_tasks": total_auto,
-        "pending": pending_auto,
-        "completed": completed_auto,
-        "by_rule": by_rule,
-        "fixed_schedule_units": fixed_count,
-    }
-
-
-@api_router.delete("/automation/clear")
-async def clear_auto_tasks(
-    date_from: str,
-    date_to: str,
-    status_filter: str = "pending",
-    current_user: dict = Depends(get_current_user)
-):
-    """Clear auto-generated pending tasks for a date range."""
-    query = {
-        "auto_generated": True,
-        "start_time": {"$gte": f"{date_from}T00:00:00", "$lte": f"{date_to}T23:59:59"},
-    }
-    if status_filter != "all":
-        query["status"] = status_filter
-
-    result = await db.events.delete_many(query)
-    return {"deleted_count": result.deleted_count}
+    out = {}
+    for b in bookings:
+        sid = b.get("structure_id")
+        checkout_date = (b.get("end_time") or "")[:10]
+        task = tasks_by_id.get(b.get("cleaning_task_id")) or tasks_by_struct_date.get((sid, checkout_date))
+        kinds = fabb_by_struct.get(sid, set())
+        out[b["id"]] = {
+            "cleaning": {
+                "task_id": task["id"] if task else None,
+                "status": task.get("status") if task else None,
+                "date": task.get("date") if task else None,
+                "time": task.get("scheduled_time") if task else None,
+                "assigned": bool(task and (task.get("assigned_cleaner_ids") or [])),
+                "cleaners": [cleaner_names.get(c, "") for c in (task.get("assigned_cleaner_ids") or [])] if task else [],
+            },
+            "linen_gap": "noleggio" in kinds,
+            "supplies_gap": bool(kinds & {"fornitura", "pulizie"}),
+            "maintenance_open": sid in maint_by_struct,
+            "has_notes": bool(b.get("notes")),
+        }
+    return out
 
 
 @api_router.get("/health")
@@ -4442,6 +4284,7 @@ class CleaningTaskCreate(BaseModel):
     access_notes: Optional[str] = None
     notes: Optional[str] = None
     checklist_template_id: Optional[str] = None
+    booking_event_id: Optional[str] = None
 
 
 class CleaningTaskUpdate(BaseModel):
@@ -4664,6 +4507,7 @@ async def create_cleaning_task(data: CleaningTaskCreate, current_user: dict = De
         "client_id": client_id,
         "structure_id": data.structure_id,
         "unit_id": data.unit_id,
+        "booking_event_id": data.booking_event_id,
         "assigned_cleaner_id": cleaner_ids[0] if cleaner_ids else None,
         "assigned_cleaner_ids": cleaner_ids,
         "date": data.date,
@@ -4696,6 +4540,8 @@ async def create_cleaning_task(data: CleaningTaskCreate, current_user: dict = De
     }
     await db.cleaning_tasks.insert_one(task)
     task.pop("_id", None)
+    if data.booking_event_id:
+        await db.events.update_one({"id": data.booking_event_id}, {"$set": {"cleaning_task_id": task["id"], "updated_at": now}})
     enriched = await _enrich_cleaning_task(task)
     for cid in cleaner_ids:
         await create_notification(
@@ -7460,10 +7306,9 @@ async def scheduler_status(current_user: dict = Depends(get_current_user)):
 
 
 # Include the router in the main app (after all routes are defined)
-from routes.export_routes import create_export_router  # noqa: E402
+from routes.integrations import create_integrations_router  # noqa: E402
 from routes.billing_pdf import create_billing_pdf_router  # noqa: E402
 from routes.activity_log import create_activity_router, init_activity_middleware  # noqa: E402
-from routes.integrations import create_integrations_router  # noqa: E402
 from routes.segnalazioni import (  # noqa: E402
     create_segnalazioni_router, init_segnalazioni_deps, register_from_cleaning, migrate_cleaning_issues,
     get_effective_config as seg_effective_config, resolve_responsibility as seg_resolve_resp,
@@ -7472,6 +7317,8 @@ from routes.segnalazioni import (  # noqa: E402
 from routes.magazzino import create_magazzino_router, init_magazzino_deps, seed_magazzino  # noqa: E402
 from routes.consegne import create_consegne_router, init_consegne_deps, migrate_fermate  # noqa: E402
 from routes.lavanderia import create_lavanderia_router, init_lavanderia_deps  # noqa: E402
+from routes.mappa import create_mappa_router, init_mappa_deps  # noqa: E402
+from routes.sheets_anagrafiche import create_sheets_anagrafiche_router  # noqa: E402
 init_segnalazioni_deps(
     create_notification=create_notification,
     notify_ops_users=notify_ops_users,
@@ -7480,7 +7327,6 @@ init_segnalazioni_deps(
     local_today=local_today,
     get_client_display_name=get_client_display_name,
 )
-api_router.include_router(create_export_router(get_current_user))
 api_router.include_router(create_billing_pdf_router(get_current_user))
 api_router.include_router(create_activity_router(get_current_user))
 api_router.include_router(create_integrations_router(get_current_user, is_ops_user))
@@ -7506,6 +7352,9 @@ init_lavanderia_deps(
     put_object=put_object,
 )
 api_router.include_router(create_lavanderia_router(get_current_user, is_ops_user), prefix="/lavanderia")
+init_mappa_deps(local_today=local_today)
+api_router.include_router(create_mappa_router(get_current_user, is_ops_user))
+api_router.include_router(create_sheets_anagrafiche_router(get_current_user, is_ops_user))
 init_activity_middleware(app, SECRET_KEY, ALGORITHM)
 
 app.include_router(api_router)
@@ -7566,7 +7415,8 @@ async def startup_event():
         logger.error(f"Migrazione fermate failed: {e}")
     # Start scheduler with overdue task check every 30 minutes
     try:
-        scheduler_service.start_scheduler(_check_overdue_tasks)
+        from services.sheets_anagrafiche import auto_backup_job as _sheets_backup_job
+        scheduler_service.start_scheduler(_check_overdue_tasks, _auto_sync_all_ical, _sheets_backup_job)
     except Exception as e:
         logger.error(f"Scheduler startup failed: {e}")
     # Channel Manager auto-sync (ogni 6 ore, predisposto anche per webhook futuri)

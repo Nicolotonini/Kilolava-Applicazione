@@ -69,8 +69,8 @@ async def check_overdue_tasks(create_notification, notify_ops_users) -> dict:
     return {"checked_at": now_str, "overdue_found": len(overdue_tasks), "notified": notified_count}
 
 
-def start_scheduler(job_callable):
-    """Start the scheduler with the overdue check job. Idempotent."""
+def start_scheduler(job_callable, ical_sync_callable=None, daily_backup_callable=None):
+    """Start the scheduler: overdue check, iCal auto-sync, backup anagrafiche notturno. Idempotent."""
     if scheduler.running:
         return
     scheduler.add_job(
@@ -82,8 +82,29 @@ def start_scheduler(job_callable):
         max_instances=1,
         coalesce=True,
     )
+    if ical_sync_callable:
+        scheduler.add_job(
+            ical_sync_callable,
+            IntervalTrigger(minutes=5),
+            id="ical_auto_sync",
+            name="Sync automatico iCal (5 min)",
+            replace_existing=True,
+            max_instances=1,
+            coalesce=True,
+        )
+    if daily_backup_callable:
+        from apscheduler.triggers.cron import CronTrigger
+        scheduler.add_job(
+            daily_backup_callable,
+            CronTrigger(hour=3, minute=0, timezone="Europe/Rome"),
+            id="sheets_daily_backup",
+            name="Backup anagrafiche Google Sheets (03:00)",
+            replace_existing=True,
+            max_instances=1,
+            coalesce=True,
+        )
     scheduler.start()
-    logger.info("Scheduler started with overdue task check (30min interval)")
+    logger.info("Scheduler started (overdue 30min, iCal sync 5min)")
 
 
 def stop_scheduler():

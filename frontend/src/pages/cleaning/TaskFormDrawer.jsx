@@ -34,16 +34,16 @@ function Stepper({ label, value, min = 0, max, onChange, testId }) {
   );
 }
 
-export function TaskFormDrawer({ task, defaultDate, structures, cleaners, zones, onClose, onSaved }) {
+export function TaskFormDrawer({ task, defaultDate, prefill, structures, cleaners, zones, onClose, onSaved }) {
   const isEdit = !!task?.id;
   const zonesById = useMemo(() => Object.fromEntries((zones || []).map(z => [z.id, z.name])), [zones]);
   const [search, setSearch] = useState('');
-  const [structureId, setStructureId] = useState(task?.structure_id || '');
+  const [structureId, setStructureId] = useState(task?.structure_id || prefill?.structure_id || '');
   const [date, setDate] = useState(task?.date || defaultDate || todayStr());
-  const [guests, setGuests] = useState(task?.guests_count ?? 0);
-  const [bedsDouble, setBedsDouble] = useState(task?.beds_double ?? 0);
-  const [bedsSingle, setBedsSingle] = useState(task?.beds_single ?? 0);
-  const [bedsSofa, setBedsSofa] = useState(task?.beds_sofa ?? 0);
+  const [guests, setGuests] = useState(task?.guests_count ?? prefill?.guests_count ?? 0);
+  const [bedsDouble, setBedsDouble] = useState(task?.beds_double ?? prefill?.beds_double ?? 0);
+  const [bedsSingle, setBedsSingle] = useState(task?.beds_single ?? prefill?.beds_single ?? 0);
+  const [bedsSofa, setBedsSofa] = useState(task?.beds_sofa ?? prefill?.beds_sofa ?? 0);
   const [checkin, setCheckin] = useState(task?.checkin_today || false);
   const [checkinTime, setCheckinTime] = useState(task?.checkin_time || '15:00');
   const [cleanerIds, setCleanerIds] = useState(task?.assigned_cleaner_ids || (task?.assigned_cleaner_id ? [task.assigned_cleaner_id] : []));
@@ -103,6 +103,7 @@ export function TaskFormDrawer({ task, defaultDate, structures, cleaners, zones,
         checkin_time: checkin ? (checkinTime || null) : null,
         assigned_cleaner_ids: cleanerIds,
         notes: notes || null,
+        booking_event_id: prefill?.booking_event_id || undefined,
       };
       let created;
       if (isEdit) {

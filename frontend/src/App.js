@@ -21,6 +21,7 @@ import ConsegneOggiPage from './pages/consegne/ConsegneOggiPage';
 import ConsegneStoricoPage from './pages/consegne/ConsegneStoricoPage';
 import FermataDetailPage from './pages/consegne/FermataDetailPage';
 import SettingsPage from './pages/SettingsPage';
+import MappaOperativaPage from './pages/MappaOperativaPage';
 import ActivityLogPage from './pages/ActivityLogPage';
 import UsersPage from './pages/UsersPage';
 import IntegrationsPage from './pages/IntegrationsPage';
@@ -209,6 +210,7 @@ function AppRoutes() {
         <Route path="calendar" element={<CalendarPage />} />
         <Route path="inventory" element={<InventoryPage />} />
         <Route path="consegne" element={<ConsegnePanoramicaPage />} />
+        <Route path="mappa" element={<MappaOperativaPage />} />
         <Route path="consegne/da-organizzare" element={<DaOrganizzarePage />} />
         <Route path="consegne/organizzazione" element={<OrganizzazionePage />} />
         <Route path="consegne/oggi" element={<ConsegneOggiPage />} />

@@ -83,16 +83,6 @@ export const eventsApi = {
   update: (id, data) => api.put(`/events/${id}`, data),
   delete: (id) => api.delete(`/events/${id}`),
   getDayStats: (date) => api.get('/events/stats/day', { params: { date } }),
-  regenerateTasks: (id) => api.post(`/events/${id}/generate-tasks`),
-};
-
-// ============== AUTOMATION API ==============
-export const automationApi = {
-  generate: (dateFrom, dateTo, dryRun = false) =>
-    api.post(`/automation/generate?date_from=${dateFrom}&date_to=${dateTo}&dry_run=${dryRun}`),
-  getStatus: () => api.get('/automation/status'),
-  clear: (dateFrom, dateTo, statusFilter = 'pending') =>
-    api.delete(`/automation/clear?date_from=${dateFrom}&date_to=${dateTo}&status_filter=${statusFilter}`),
 };
 
 // ============== INVENTORY API ==============
@@ -189,6 +179,18 @@ export const integrationsApi = {
   octorateAppSettings: () => api.get('/integrations/octorate/app-settings'),
   saveOctorateAppSettings: (data) => api.put('/integrations/octorate/app-settings', data),
   octorateConnect: (id) => api.get(`/integrations/octorate/connect/${id}`),
+};
+
+export const sheetsAnagraficheApi = {
+  status: () => api.get('/sheets-anagrafiche/status'),
+  connectUrl: () => api.get('/sheets-anagrafiche/connect-url'),
+  disconnect: () => api.post('/sheets-anagrafiche/disconnect'),
+  setupImport: () => api.post('/sheets-anagrafiche/setup-import'),
+  preview: () => api.post('/sheets-anagrafiche/preview'),
+  applyImport: (data) => api.post('/sheets-anagrafiche/apply', data),
+  cancelPreview: (id) => api.delete(`/sheets-anagrafiche/preview/${id}`),
+  backup: () => api.post('/sheets-anagrafiche/backup'),
+  history: () => api.get('/sheets-anagrafiche/history'),
 };
 
 export default api;

@@ -7,7 +7,7 @@ import { NotificationBell } from '../NotificationBell';
 import {
   LayoutDashboard, Users, CalendarDays, Truck, Settings, LogOut, Menu, X,
   Sun, Moon, Shield, Sparkles, Wrench, FileText, ChevronDown, ChevronRight,
-  Eye, Building2, Shirt, Layers, Boxes, KeyRound, AlertTriangle, Warehouse,
+  Eye, Building2, Shirt, Layers, Boxes, KeyRound, AlertTriangle, Warehouse, MapPin,
 } from 'lucide-react';
 import { useSegnalazioniBadge } from '../../hooks/useSegnalazioniBadge';
 import { Button } from '../ui/button';
@@ -17,7 +17,7 @@ const LOGO_URL = 'https://customer-assets.emergentagent.com/job_kilolava-core/ar
 
 const NAV = [
   { type: 'item', key: 'dashboard', path: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
-  { type: 'item', key: 'calendar', path: '/calendar', icon: CalendarDays, label: 'Calendario' },
+  { type: 'item', key: 'mappa', path: '/mappa', icon: MapPin, label: 'Mappa Operativa' },
   {
     type: 'group', key: 'clients-structures', icon: Users, label: 'Clienti e Strutture', children: [
       { key: 'clients', path: '/clients', label: 'Clienti' },
@@ -28,6 +28,7 @@ const NAV = [
   {
     type: 'group', key: 'cleaning', icon: Sparkles, label: 'Pulizie', children: [
       { key: 'cleaning-overview', path: '/cleaning', label: 'Panoramica' },
+      { key: 'calendar', path: '/calendar', label: 'Calendario' },
       { key: 'cleaning-organize', path: '/cleaning-organize', label: 'Organizzazione' },
     ],
   },
@@ -110,7 +111,7 @@ const INVENTORY_TAB_LABELS = {
 function getBreadcrumb(pathname, search) {
   const tab = new URLSearchParams(search).get('tab') || 'articles';
   if (pathname === '/dashboard') return { title: 'Dashboard', crumbs: [] };
-  if (pathname === '/calendar') return { title: 'Calendario', crumbs: [] };
+  if (pathname === '/calendar') return { title: 'Calendario', crumbs: [{ label: 'Pulizie' }] };
   if (pathname === '/clients') return { title: 'Clienti', crumbs: [] };
   if (pathname.startsWith('/clients/')) return { title: 'Dettaglio cliente', crumbs: [{ label: 'Clienti', to: '/clients' }] };
   if (pathname === '/structures') return { title: 'Strutture', crumbs: [] };

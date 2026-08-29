@@ -1,16 +1,13 @@
 import React, { useMemo } from 'react';
 import { cn } from '../../lib/utils';
-import { Bed } from 'lucide-react';
-import {
-  EVENT_ICONS, SERVICE_ICONS, WEEKDAYS_SHORT,
-  fmtDate, isToday, getEventColors,
-} from './calendarHelpers';
+import { WEEKDAYS_SHORT, fmtDate, isToday } from './calendarHelpers';
+import { SoggiornoBlock } from './SoggiornoBlock';
 
 /**
- * Traditional 6-row month grid. Mini cards with service-icons under bookings.
+ * Griglia mensile. Mini-blocchi soggiorno con persone e date.
  */
 export const MonthGrid = ({
-  days, events, autoTaskMap, structuresMap, refMonth,
+  days, events, indicatorsMap, refMonth,
   onEventClick, onCellDblClick,
   onPanStart, onPanMove, onPanEnd,
   onDrop, onDragOver, onDragStart, onDragEnd, dragOverCell,
@@ -70,48 +67,18 @@ export const MonthGrid = ({
                 )}
               </div>
               <div className="space-y-0.5">
-                {cellEvents.slice(0, 3).map((ev) => {
-                  const colors = getEventColors(ev);
-                  const Icon = EVENT_ICONS[ev.event_type] || Bed;
-                  const struct = structuresMap[ev.structure_id];
-                  const isBooking = ev.event_type === 'booking';
-                  return (
-                    <div
-                      key={ev.id}
-                      draggable
-                      onDragStart={(e) => onDragStart(e, ev)}
-                      onDragEnd={onDragEnd}
-                      onClick={(e) => { e.stopPropagation(); onEventClick(ev); }}
-                      className={cn(
-                        "rounded px-1.5 py-1 cursor-pointer hover:shadow border-l-[3px] overflow-hidden",
-                        colors.bg, colors.border
-                      )}
-                      data-testid={`month-event-${ev.id}`}
-                    >
-                      <div className="flex items-center gap-1">
-                        <Icon className={cn("h-2.5 w-2.5 flex-shrink-0", colors.text)} />
-                        <span className={cn("text-xs font-medium truncate flex-1", colors.text)}>
-                          {ev.title}
-                        </span>
-                      </div>
-                      {isBooking && struct && (
-                        <div className="flex items-center gap-0.5 mt-0.5">
-                          {SERVICE_ICONS.map(({ key, rule, Icon: SIcon, color, bg }) => {
-                            const taskExists = !!autoTaskMap[ev.id]?.[rule];
-                            return (
-                              <div key={key} className={cn(
-                                "w-3 h-3 rounded flex items-center justify-center",
-                                taskExists ? `${bg} ${color}` : 'bg-muted/30 text-muted-foreground/30'
-                              )}>
-                                <SIcon className="h-2 w-2" />
-                              </div>
-                            );
-                          })}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
+                {cellEvents.slice(0, 3).map((ev) => (
+                  <SoggiornoBlock
+                    key={ev.id}
+                    ev={ev}
+                    indicators={indicatorsMap?.[ev.id]}
+                    compact
+                    draggable={!ev.ical_uid}
+                    onDragStart={(e) => { if (ev.ical_uid) { e.preventDefault(); return; } onDragStart(e, ev); }}
+                    onDragEnd={onDragEnd}
+                    onClick={(e) => { e.stopPropagation(); onEventClick(ev); }}
+                  />
+                ))}
               </div>
             </div>
           );

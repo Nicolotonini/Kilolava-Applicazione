@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import api from '../lib/api';
-import { ExportButton } from '../components/ExportButton';
 import { Card, CardContent } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
@@ -93,7 +92,6 @@ const DocumentsPage = () => {
           <p className="text-sm text-muted-foreground">Gestione DDT e documenti operativi</p>
         </div>
         <div className="flex items-center gap-2">
-          <ExportButton entity="documents" className="h-9" />
           <Button
             onClick={() => navigate('/documents/new')}
             className="bg-[#F24E75] hover:bg-[#E03B62] text-white"

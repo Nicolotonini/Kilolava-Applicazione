@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { toast } from 'sonner';
+import SheetsAnagraficheCard from './integrations/SheetsAnagraficheCard';
 
 const PROVIDER_LABELS = {
   kross: 'Kross Booking',
@@ -74,7 +75,10 @@ export default function IntegrationsPage() {
     const oct = params.get('octorate');
     if (oct === 'connected') toast.success('Octorate collegato via OAuth');
     else if (oct === 'error') toast.error(`Collegamento Octorate fallito${params.get('reason') ? `: ${params.get('reason')}` : ''}`);
-    if (oct) window.history.replaceState({}, '', '/integrations');
+    const sheets = params.get('sheets');
+    if (sheets === 'connected') { setTab('sheets'); toast.success('Google Fogli collegato'); }
+    else if (sheets === 'error') { setTab('sheets'); toast.error('Collegamento Google fallito'); }
+    if (oct || sheets) window.history.replaceState({}, '', '/integrations');
   }, []);
 
   useEffect(() => {
@@ -125,6 +129,7 @@ export default function IntegrationsPage() {
         {[
           { key: 'connections', label: 'Channel Manager' },
           { key: 'reservations', label: 'Prenotazioni importate' },
+          { key: 'sheets', label: 'Google Fogli — Anagrafiche' },
         ].map(t => (
           <button
             key={t.key}
@@ -162,6 +167,8 @@ export default function IntegrationsPage() {
             ))}
           </div>
         )
+      ) : tab === 'sheets' ? (
+        <SheetsAnagraficheCard />
       ) : (
         <ReservationsTab connections={connections} structures={structures} />
       )}

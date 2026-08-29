@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import api from '../lib/api';
-import { ExportButton } from '../components/ExportButton';
 import { Card, CardContent } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
@@ -167,7 +166,6 @@ const UsersPage = () => {
           <p className="text-sm text-muted-foreground">{users.length} utenti totali</p>
         </div>
         <div className="flex items-center gap-2">
-          <ExportButton entity="users" />
           <Button onClick={openNew} className="h-8 bg-[#F24E75] hover:bg-[#E03B62] text-white gap-1" data-testid="add-user-btn">
             <Plus className="h-4 w-4" />Nuovo utente
           </Button>
