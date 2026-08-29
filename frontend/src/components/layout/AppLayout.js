@@ -71,7 +71,6 @@ const NAV = [
     type: 'group', key: 'rental-laundry', icon: Layers, label: 'Lavanderia a Noleggio', children: [
       { key: 'rl-warehouse', path: '/inventory?tab=articles', label: 'Magazzino Noleggio' },
       { key: 'rl-movements', path: '/inventory?tab=movements', label: 'Movimenti / Storico' },
-      { key: 'rl-articles', path: '/inventory?tab=pricing', label: 'Articoli & Kit' },
     ],
   },
   { type: 'item', key: 'maintenance', path: '/maintenance', icon: Wrench, label: 'Manutenzioni' },
