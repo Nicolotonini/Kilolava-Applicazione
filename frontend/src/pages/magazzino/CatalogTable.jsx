@@ -141,22 +141,22 @@ export const CatalogTable = ({ domain }) => {
                     )}
                     <tr className={cn('border-t border-border row-hover cursor-pointer', !p.active && 'opacity-50')}
                       onClick={() => setEditing(p)} data-testid={`cat-row-${p.code || p.id}`}>
-                      <td className="px-3 py-2 font-mono text-xs font-semibold">{p.code || '—'}</td>
-                      <td className="px-3 py-2 font-medium">
-                        <div className="flex items-center gap-2">
-                          <ProductThumb photo={p.photo} size="w-7 h-7" testId={`cat-thumb-${p.id}`} />
+                      <td className="px-3 py-2.5 font-mono text-xs font-semibold">{p.code || '—'}</td>
+                      <td className="px-3 py-2.5 font-medium">
+                        <div className="flex items-center gap-2.5">
+                          <ProductThumb photo={p.photo} size="w-9 h-9" testId={`cat-thumb-${p.id}`} />
                           <span>{p.name}</span>
                         </div>
                       </td>
-                      <td className="px-3 py-2 text-muted-foreground">{p.category || '—'}</td>
-                      <td className="px-3 py-2 text-muted-foreground">{tipValue(p) || '—'}</td>
-                      <td className="px-3 py-2 text-muted-foreground">{p.unit}</td>
-                      <td className="px-3 py-2 text-right tabular-nums text-muted-foreground">{euro(p.cost)}</td>
-                      <td className="px-3 py-2 text-right tabular-nums text-muted-foreground">{euro(p.prezzo_standard)}</td>
-                      <td className="px-3 py-2" onClick={e => e.stopPropagation()}>
+                      <td className="px-3 py-2.5 text-muted-foreground">{p.category || '—'}</td>
+                      <td className="px-3 py-2.5 text-muted-foreground">{tipValue(p) || '—'}</td>
+                      <td className="px-3 py-2.5 text-muted-foreground">{p.unit}</td>
+                      <td className="px-3 py-2.5 text-right tabular-nums text-muted-foreground">{euro(p.cost)}</td>
+                      <td className="px-3 py-2.5 text-right tabular-nums text-muted-foreground">{euro(p.prezzo_standard)}</td>
+                      <td className="px-3 py-2.5" onClick={e => e.stopPropagation()}>
                         <Switch checked={!!p.active} onCheckedChange={v => toggleActive(p, v)} data-testid={`cat-active-${p.code || p.id}`} />
                       </td>
-                      <td className="px-3 py-2 text-right" onClick={e => e.stopPropagation()}>
+                      <td className="px-3 py-2.5 text-right" onClick={e => e.stopPropagation()}>
                         <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-muted-foreground hover:text-red-600"
                           onClick={() => setConfirmDelete(p)} title="Cancella" data-testid={`cat-delete-${p.code || p.id}`}>
                           <Trash2 className="h-3.5 w-3.5" />

@@ -1,0 +1,28 @@
+{
+  "summary": "Frontend-only verification of sidebar 'Sistema' group after fix in usePermissions.js (NAV_KEYS updated from 'cataloghi-kit' to 'cataloghi-prodotti' and 'kit'). All 6 expected Sistema sub-items are now visible (Utenti & Ruoli, Cataloghi Prodotti, Kit, Integrazioni, Registro attività, Impostazioni). Both new links navigate correctly and receive active highlight. Regression on Integrazioni/Registro attività OK. Zero console errors.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": [],
+  "updated_files": [],
+  "success_rate": {"backend": "N/A (skipped)", "frontend": "100%"},
+  "test_credentials": "test_user@kilolava.com / TestPass123! (admin)",
+  "seed_data_creation": "None",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Login flow: fill email+password, click button with role=button name='Accedi' (Italian). After login lands on /dashboard. Sidebar Sistema group is EXPANDED by default when navigating to a Sistema sub-route; click on 'Sistema' text toggles it. Use direct link selectors a[href='/cataloghi-prodotti'] and a[href='/kit']. Active class contains 'bg-primary/10 text-primary font-semibold active'.",
+  "verified_flows": [
+    "Login admin -> /dashboard",
+    "Sidebar shows Sistema group with 6 items including new 'Cataloghi Prodotti' and 'Kit'",
+    "Navigate /cataloghi-prodotti - 3 tabs shown, Lavanderia a Noleggio 23 rows",
+    "Navigate /kit - table with 8 KIT-NOL rows (KIT-NOL-0001..0008)",
+    "Active state highlight OK for both new items",
+    "Regression: Integrazioni -> /integrations OK, Registro attivita -> /activity OK",
+    "Zero console errors"
+  ]
+}

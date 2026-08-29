@@ -23,7 +23,7 @@ const NAV_KEYS = [
   'structure-inventory', 'keys', 'deliveries',
   'consegne-overview', 'consegne-da-organizzare', 'consegne-organizzazione', 'consegne-oggi', 'consegne-storico',
   'ms-overview', 'ms-noleggio', 'ms-forniture', 'ms-kit-pulizie', 'ms-movimenti',
-  'mg-overview', 'mg-noleggio', 'mg-forniture', 'mg-pulizie', 'mg-zaini', 'mg-movimenti', 'cataloghi-kit',
+  'mg-overview', 'mg-noleggio', 'mg-forniture', 'mg-pulizie', 'mg-zaini', 'mg-movimenti', 'cataloghi-prodotti', 'kit',
   'pl-jobs', 'pl-history', 'rl-warehouse', 'rl-movements', 'rl-articles',
   'maintenance', 'documents', 'reports', 'users', 'activity', 'settings', 'integrations',
   // legacy keys kept for compatibility

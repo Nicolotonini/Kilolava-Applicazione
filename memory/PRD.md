@@ -183,6 +183,12 @@ frontend/src/pages/
 
 ---
 
+## Phase 31 (Giugno 2026) — Sidebar Sistema + Foto prodotti + Tipografia — COMPLETATO (iteration_23 sidebar 100%, iteration_24 foto/font 100%)
+- Fix sidebar: NAV_KEYS in hooks/usePermissions.js aggiornato ('cataloghi-kit' → 'cataloghi-prodotti','kit') — le due voci ora visibili nel gruppo Sistema.
+- Foto prodotti: 54/54 (23 NOL + 8 FOR + 23 PUL) caricate su Object Storage via /app/scripts/upload_product_photos_v2.py (mapping per CODICE; riuso 36 foto storiche + 10 nuove generate per Tovagliato/forniture mancanti; foto condivise tra varianti Living/Dream). Servite da GET /api/files/{path}?auth={token} (~400KB). ProductThumb: img data-testid cat-thumb-*, fallback suffisso -fallback.
+- Tipografia: index.html ora carica Inter 300-700 (prima SOLO 600 → pesi finti); righe tabella cataloghi uniformate a py-2.5 e thumb w-9 h-9 come le altre tabelle. Verificato: Inter 400/500/600 attivi, padding 10px uniforme.
+- Minori noti (non bloccanti): GET /api/magazzino/kits/{id} singolo non esiste (405) — la lista include già items[]; peso Inter 700 lazy-fetch quando usato.
+
 ## Phase 30 (Giugno 2026) — Separazione Cataloghi Prodotti / Kit + cataloghi FOR/PUL reali + cancellazione sicura — COMPLETATO (iteration_22: 9/9 backend + 14/14 frontend 100%)
 - Pagine SEPARATE: Sistema → 'Cataloghi Prodotti' (/cataloghi-prodotti, CataloghiProdottiPage.jsx, 3 tab: Noleggio/Forniture/Prodotti Pulizie con CatalogTable.jsx generica) e Sistema → 'Kit' (/kit, KitPage.jsx: tabella Codice/Nome/Tipo/Versione/Articoli/Stato + detail dialog con COMPOSIZIONE Articolo|Codice|Quantità + edit + versioni). Vecchia /cataloghi-kit → redirect; CataloghiKitPage.jsx e NoleggioCatalogTab.jsx ELIMINATI.
 - Cataloghi reali: FOR-0001..0008 (supply_catalog: Carta igienica, Sapone mani, Scottex, Sapone piatti, Spugna cucina, Sacchetti immondizia[rotolo], Capsule caffè, Zucchero) e PUL-0001..0023 (cleaning_catalog, Tipo: attrezzatura_durevole×8/consumabile×11/materiale×4; nomi corretti: 'Spazzolino per le fughe', 'Spazzolone per gli scarichi'). Vecchi seed demo eliminati. Counters: nol_code=23, for_code=8, pul_code=23, kit_nol_code=8, tutti monotoni (codici MAI riusati).

@@ -1,0 +1,25 @@
+{
+  "summary": "Iteration 24 — Verified fix for Cataloghi Prodotti photos + typography homogeneity. Backend (4/4 pytest) and Frontend (all critical flows) PASS. All 54/54 product photos load correctly with 0 fallback placeholders. Inter font loaded with weights 400/500/600 confirmed. KIT page shows 8 kits and KIT-NOL-0001 detail modal renders composition (7 items) correctly. TD padding on catalog rows = 10px top/bottom (py-2.5 uniform with other tables).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Cataloghi Prodotti — first TD (codice column)", "issues": ["Font-family è monospace (ui-monospace, SFMono-Regular...) e font-size 13px sulla cella codice — intenzionale ma verificare che sia coerente con le altre tabelle dell'app che mostrano codici in monospace. Le altre celle usano Inter (verificato via body computed style)."]},
+    "notes": [{"info": "document.fonts.check('700 14px Inter') = false — pesi 400/500/600 sono OK; il peso 700 potrebbe non essere richiesto dal CSS attuale e quindi non è forse caricato dal browser (lazy fetch di Google Fonts). Nessun bloccante perché la richiesta esplicita era su 500 e 600."}]
+  },
+  "test_report_links": ["/app/backend/tests/test_catalog_photos.py", "/app/test_reports/pytest/iter24_backend.xml"],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Peso Inter 700 non è confermato dal browser via document.fonts.check — se serve grassetto pieno in UI potrebbe manifestarsi come faux-bold; se il design non lo usa, ignorare.",
+    "Endpoint /api/magazzino/kits/{id} restituisce 405 Method Not Allowed: il dettaglio kit viene servito già dalla list (items inclusi). Se si prevede un GET singolo in futuro, aggiungerlo esplicitamente."
+  ],
+  "updated_files": ["/app/backend/tests/test_catalog_photos.py (new)"],
+  "success_rate": {"backend": "100% (4/4)", "frontend": "100% (foto 54/54, kit 8/8, detail OK, tipografia OK)"},
+  "test_credentials": "test_user@kilolava.com / TestPass123!",
+  "seed_data_creation": "none",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Backend test file /app/backend/tests/test_catalog_photos.py copre: 3 cataloghi (noleggio 23, forniture 8, pulizie 23) con verifica photo.file_path + fetch file image via /api/files/{path}?auth={token}, e kit list (8 kits) + composition di KIT-NOL-0001 via GET /api/magazzino/kits. Kit detail endpoint singolo /api/magazzino/kits/{id} risponde 405 — la lista include già items[], quindi il test valida la composizione dalla list response.",
+  "rca of the issue": "Fix precedente confermato funzionante: (1) script upload_product_photos_v2.py ha popolato tutti i 54 record photo.file_path; (2) index.html carica Inter con pesi 300-700 e document.fonts.check per 400/500/600 = true; (3) CatalogTable.jsx padding py-2.5 = 10px verificato via computedStyle. Nessuna regressione osservata su /kit."
+}
