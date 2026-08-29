@@ -57,7 +57,8 @@ def create_sheets_anagrafiche_router(get_current_user, is_ops_user):
                     "token_uri": "https://oauth2.googleapis.com/token"}
         }, scopes=svc.SCOPES, redirect_uri=cfg["redirect_uri"])
         url, state = flow.authorization_url(access_type="offline", prompt="consent")
-        await db.oauth_states.insert_one({"state": state, "user_id": current_user["id"], "created_at": now_iso()})
+        await db.oauth_states.insert_one({"state": state, "code_verifier": flow.code_verifier,
+                                          "user_id": current_user["id"], "created_at": now_iso()})
         return {"url": url}
 
     @router.get("/oauth/sheets/callback")
@@ -77,6 +78,8 @@ def create_sheets_anagrafiche_router(get_current_user, is_ops_user):
                     "auth_uri": "https://accounts.google.com/o/oauth2/auth",
                     "token_uri": "https://oauth2.googleapis.com/token"}
         }, scopes=svc.SCOPES, redirect_uri=cfg["redirect_uri"])
+        if st.get("code_verifier"):
+            flow.code_verifier = st["code_verifier"]
         try:
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore")
