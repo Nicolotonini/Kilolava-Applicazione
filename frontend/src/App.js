@@ -53,7 +53,8 @@ import FornitureDetailPage from './pages/magazzino/FornitureDetailPage';
 import ZainiPage from './pages/magazzino/ZainiPage';
 import ZainoDetailPage from './pages/magazzino/ZainoDetailPage';
 import MovimentiPage from './pages/magazzino/MovimentiPage';
-import CataloghiKitPage from './pages/magazzino/CataloghiKitPage';
+import CataloghiProdottiPage from './pages/magazzino/CataloghiProdottiPage';
+import KitPage from './pages/magazzino/KitPage';
 import LavorazioniPage from './pages/lavanderia/LavorazioniPage';
 import LavanderiaStoricoPage from './pages/lavanderia/LavanderiaStoricoPage';
 import KeysPage from './pages/KeysPage';
@@ -247,7 +248,9 @@ function AppRoutes() {
         <Route path="magazzino/zaini" element={<Navigate to="/magazzino-generale/zaini" replace />} />
         <Route path="magazzino/zaini/:id" element={<LegacyDetailRedirect base="/magazzino-generale/zaini" />} />
         <Route path="magazzino/movimenti" element={<Navigate to="/magazzino-strutture/movimenti" replace />} />
-        <Route path="cataloghi-kit" element={<CataloghiKitPage />} />
+        <Route path="cataloghi-prodotti" element={<CataloghiProdottiPage />} />
+        <Route path="kit" element={<KitPage />} />
+        <Route path="cataloghi-kit" element={<Navigate to="/cataloghi-prodotti" replace />} />
         <Route path="keys" element={<KeysPage />} />
         <Route path="private-laundry/jobs" element={<LavorazioniPage />} />
         <Route path="private-laundry/history" element={<LavanderiaStoricoPage />} />

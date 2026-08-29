@@ -83,7 +83,8 @@ const NAV = [
   {
     type: 'group', key: 'system', icon: Settings, label: 'Sistema', children: [
       { key: 'users', path: '/users', label: 'Utenti & Ruoli' },
-      { key: 'cataloghi-kit', path: '/cataloghi-kit', label: 'Cataloghi & Kit' },
+      { key: 'cataloghi-prodotti', path: '/cataloghi-prodotti', label: 'Cataloghi Prodotti' },
+      { key: 'kit', path: '/kit', label: 'Kit' },
       { key: 'integrations', path: '/integrations', label: 'Integrazioni' },
       { key: 'activity', path: '/activity', label: 'Registro attività' },
       { key: 'settings', path: '/settings', label: 'Impostazioni' },
@@ -139,7 +140,8 @@ function getBreadcrumb(pathname, search) {
   if (pathname === '/magazzino-generale/zaini') return { title: 'Zaini Operatrici', crumbs: [{ label: 'Magazzino Generale' }] };
   if (pathname.startsWith('/magazzino-generale/zaini/')) return { title: 'Dettaglio zaino', crumbs: [{ label: 'Zaini Operatrici', to: '/magazzino-generale/zaini' }] };
   if (pathname === '/magazzino-generale/movimenti') return { title: 'Movimenti Generale', crumbs: [{ label: 'Magazzino Generale' }] };
-  if (pathname === '/cataloghi-kit') return { title: 'Cataloghi & Kit', crumbs: [{ label: 'Sistema' }] };
+  if (pathname === '/cataloghi-prodotti') return { title: 'Cataloghi Prodotti', crumbs: [{ label: 'Sistema' }] };
+  if (pathname === '/kit') return { title: 'Kit', crumbs: [{ label: 'Sistema' }] };
   if (pathname === '/keys') return { title: 'Chiavi', crumbs: [{ label: 'Clienti e Strutture' }] };
   if (pathname.startsWith('/consegne/fermata/')) return { title: 'Dettaglio fermata', crumbs: [{ label: 'Consegne', to: '/consegne' }] };
   if (pathname === '/consegne') return { title: 'Panoramica', crumbs: [{ label: 'Consegne' }] };

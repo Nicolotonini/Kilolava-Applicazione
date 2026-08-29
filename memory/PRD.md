@@ -183,6 +183,16 @@ frontend/src/pages/
 
 ---
 
+## Phase 30 (Giugno 2026) — Separazione Cataloghi Prodotti / Kit + cataloghi FOR/PUL reali + cancellazione sicura — COMPLETATO (iteration_22: 9/9 backend + 14/14 frontend 100%)
+- Pagine SEPARATE: Sistema → 'Cataloghi Prodotti' (/cataloghi-prodotti, CataloghiProdottiPage.jsx, 3 tab: Noleggio/Forniture/Prodotti Pulizie con CatalogTable.jsx generica) e Sistema → 'Kit' (/kit, KitPage.jsx: tabella Codice/Nome/Tipo/Versione/Articoli/Stato + detail dialog con COMPOSIZIONE Articolo|Codice|Quantità + edit + versioni). Vecchia /cataloghi-kit → redirect; CataloghiKitPage.jsx e NoleggioCatalogTab.jsx ELIMINATI.
+- Cataloghi reali: FOR-0001..0008 (supply_catalog: Carta igienica, Sapone mani, Scottex, Sapone piatti, Spugna cucina, Sacchetti immondizia[rotolo], Capsule caffè, Zucchero) e PUL-0001..0023 (cleaning_catalog, Tipo: attrezzatura_durevole×8/consumabile×11/materiale×4; nomi corretti: 'Spazzolino per le fughe', 'Spazzolone per gli scarichi'). Vecchi seed demo eliminati. Counters: nol_code=23, for_code=8, pul_code=23, kit_nol_code=8, tutti monotoni (codici MAI riusati).
+- Seed one-time con flag app_settings '_id: real_catalog_seed' (gli articoli eliminati non ricompaiono al riavvio). Codici auto per tab: NOL/FOR/PUL via CODE_SEQ in create_product.
+- UBICAZIONE rimossa dalla UI cataloghi (niente ubicazione/min/ideale/responsabilità: appartengono a Magazzino/config struttura). NOTA: standard_location resta campo DB interno (default 'casa') per la logica Zaini (reintegro standard_location='zaino').
+- Kit Zaino Standard demo ELIMINATO e mai ricreato. Restano solo 8 KIT-NOL. UI kit senza badge decorativi (info come testo/colonne).
+- Cancellazione sicura articoli: DELETE /api/magazzino/catalog/{domain}/{id} — hard delete solo se MAI referenziato (stock_levels, warehouse_movements, kits, kit_versions, fabbisogni, structure_cleaning_kits, logistics_tasks, documents); altrimenti 409 → UI dialog 'Articolo già utilizzato' con opzione 'Disattiva articolo'. UI: cestino secondario per riga + doppia conferma.
+- CentralStockPage: compat nuovi type (startsWith 'attrezzatura', filtro Materiali aggiunto).
+- Test obsoleto: tests/test_magazzino_system.py riferisce i vecchi seed demo — NON eseguirlo. Nuovo: tests/test_iter22_catalog_kit_split.py (idempotente).
+
 ## Phase 29 (Giugno 2026) — Catalogo reale Lavanderia a Noleggio + Kit — COMPLETATO (iteration_21: 8/8 backend + frontend 100%)
 - rental_catalog: 23 articoli REALI con codici permanenti NOL-0001..0023 (auto-assegnati via counter nol_code, mai riutilizzati), campi: code/name/category (Biancheria letto|bagno|Tovagliato)/tipologia/misura/linea (Living|Dream)/colore/materiale=Cotone/unit=pz/cost=null/prezzo_standard=null/photo=null/ordine/notes/active. Demo legacy (Federa, Telo, Viso, Bidet...) ELIMINATI. Seed idempotente in seed_magazzino (REAL_RENTAL_CATALOG in routes/magazzino.py).
 - Ordinamento visuale: Categoria (letto→bagno→Tovagliato) → ordine → nome, MAI per codice (list_catalog noleggio).

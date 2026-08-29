@@ -19,7 +19,7 @@ const META = {
   forniture: { title: 'Forniture / Consumabili', subtitle: 'Scorte Kilolava in sede, pronte per essere distribuite nelle case' },
   pulizie: { title: 'Prodotti Pulizie', subtitle: 'Stock centrale del materiale utilizzato per lavorare (sede e zaini)' },
 };
-const FILTERS = [['all', 'Tutti'], ['attrezzatura', 'Attrezzatura'], ['consumabile', 'Consumabili'], ['low', 'Sotto scorta']];
+const FILTERS = [['all', 'Tutti'], ['attrezzatura', 'Attrezzatura'], ['consumabile', 'Consumabili'], ['materiale', 'Materiali'], ['low', 'Sotto scorta']];
 
 export default function CentralStockPage({ domain }) {
   const [rows, setRows] = useState(null);
@@ -38,6 +38,7 @@ export default function CentralStockPage({ domain }) {
   const filtered = (rows || []).filter(r => {
     if (domain !== 'pulizie' || filter === 'all') return true;
     if (filter === 'low') return r.below_min;
+    if (filter === 'attrezzatura') return (r.type || '').startsWith('attrezzatura');
     return r.type === filter;
   });
 
@@ -75,7 +76,7 @@ export default function CentralStockPage({ domain }) {
       )}
 
       {rows === null ? <ListSkeleton rows={8} /> : filtered.length === 0 ? (
-        <EmptyState icon={Boxes} message="Nessun articolo. Registra un Carico dal fornitore per iniziare, o gestisci il catalogo in Sistema → Cataloghi & Kit." />
+        <EmptyState icon={Boxes} message="Nessun articolo. Registra un Carico dal fornitore per iniziare, o gestisci il catalogo in Sistema → Cataloghi Prodotti." />
       ) : (
         <div className="rounded-xl border border-border overflow-x-auto">
           <table className="w-full text-sm min-w-[640px]">
@@ -102,8 +103,8 @@ export default function CentralStockPage({ domain }) {
                   <td className="px-3 py-2.5 text-muted-foreground">{p.category || '—'}</td>
                   {domain === 'pulizie' && (
                     <td className="px-3 py-2.5">
-                      <StatusBadge tone={p.type === 'attrezzatura' ? 'violet' : 'neutral'}>
-                        {p.type === 'attrezzatura' ? 'Attrezzatura' : 'Consumabile'}
+                      <StatusBadge tone={(p.type || '').startsWith('attrezzatura') ? 'violet' : 'neutral'}>
+                        {(p.type || '').startsWith('attrezzatura') ? 'Attrezzatura' : p.type === 'materiale' ? 'Materiale' : 'Consumabile'}
                       </StatusBadge>
                     </td>
                   )}
