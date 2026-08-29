@@ -4,6 +4,7 @@ from typing import List, Optional
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from pydantic import BaseModel
+from pymongo import ReturnDocument
 
 from core.database import db
 from core.utils import now_iso
@@ -15,7 +16,53 @@ MOVEMENT_TYPES = ["carico", "scarico", "trasferimento", "consegna", "ritiro", "c
 ZAINO_STATUSES = ["disponibile", "assegnato", "da_reintegrare", "in_manutenzione", "fuori_uso"]
 LOCATION_TYPES = ["central", "structure", "zaino", "external"]
 
-SEED_RENTAL = ["Federa", "Lenzuolo singolo", "Lenzuolo matrimoniale", "Copripiumino", "Telo", "Viso", "Bidet", "Tappetino"]
+_LEGACY_RENTAL_DEMO = ["Federa", "Lenzuolo singolo", "Lenzuolo matrimoniale", "Copripiumino", "Telo", "Viso", "Bidet", "Tappetino"]
+NOL_CATEGORY_ORDER = {"Biancheria letto": 0, "Biancheria bagno": 1, "Tovagliato": 2}
+# Catalogo reale Lavanderia a Noleggio: (code, name, category, tipologia, misura, linea, colore, ordine)
+REAL_RENTAL_CATALOG = [
+    ("NOL-0001", "Federa Living", "Biancheria letto", "Federa", "Standard", "Living", "", 1),
+    ("NOL-0002", "Federa Dream", "Biancheria letto", "Federa", "Standard", "Dream", "", 2),
+    ("NOL-0003", "Lenzuolo matrimoniale Living", "Biancheria letto", "Lenzuolo", "Matrimoniale", "Living", "", 3),
+    ("NOL-0004", "Lenzuolo matrimoniale Dream", "Biancheria letto", "Lenzuolo", "Matrimoniale", "Dream", "", 4),
+    ("NOL-0005", "Lenzuolo singolo Living", "Biancheria letto", "Lenzuolo", "Singolo", "Living", "", 5),
+    ("NOL-0006", "Lenzuolo singolo Dream", "Biancheria letto", "Lenzuolo", "Singolo", "Dream", "", 6),
+    ("NOL-0007", "Copripiumino singolo Dream", "Biancheria letto", "Copripiumino", "Singolo", "Dream", "", 7),
+    ("NOL-0008", "Copripiumino matrimoniale Dream", "Biancheria letto", "Copripiumino", "Matrimoniale", "Dream", "", 8),
+    ("NOL-0009", "Asciugamano piccolo Living", "Biancheria bagno", "Asciugamano", "Piccolo", "Living", "", 9),
+    ("NOL-0010", "Asciugamano piccolo Dream", "Biancheria bagno", "Asciugamano", "Piccolo", "Dream", "", 10),
+    ("NOL-0011", "Asciugamano medio Living", "Biancheria bagno", "Asciugamano", "Medio", "Living", "", 11),
+    ("NOL-0012", "Asciugamano medio Dream", "Biancheria bagno", "Asciugamano", "Medio", "Dream", "", 12),
+    ("NOL-0013", "Asciugamano grande Living", "Biancheria bagno", "Asciugamano", "Grande", "Living", "", 13),
+    ("NOL-0014", "Asciugamano grande Dream", "Biancheria bagno", "Asciugamano", "Grande", "Dream", "", 14),
+    ("NOL-0015", "Tappetino bagno", "Biancheria bagno", "Tappetino", "Bagno", "", "", 15),
+    ("NOL-0016", "Tovagliolo bianco", "Tovagliato", "Tovagliolo", "Standard", "", "Bianco", 16),
+    ("NOL-0017", "Coprimacchia 100x100 bianco", "Tovagliato", "Coprimacchia", "100x100", "", "Bianco", 17),
+    ("NOL-0018", "Coprimacchia 100x100 noce", "Tovagliato", "Coprimacchia", "100x100", "", "Noce", 18),
+    ("NOL-0019", "Coprimacchia 120x120 Folk fiocco marrone", "Tovagliato", "Coprimacchia", "120x120", "Folk", "Fiocco marrone", 19),
+    ("NOL-0020", "Coprimacchia 120x120 bianco", "Tovagliato", "Coprimacchia", "120x120", "", "Bianco", 20),
+    ("NOL-0021", "Tovaglia 150x150 Opus tortora", "Tovagliato", "Tovaglia", "150x150", "Opus", "Tortora", 21),
+    ("NOL-0022", "Tovaglia 150x150 bianco", "Tovagliato", "Tovaglia", "150x150", "", "Bianco", 22),
+    ("NOL-0023", "Tovaglia 180x180 bianco", "Tovagliato", "Tovaglia", "180x180", "", "Bianco", 23),
+]
+# Kit reali Lavanderia a Noleggio: (code, name, bed_type, linea, stagione, [(article_code, qty), ...])
+REAL_RENTAL_KITS = [
+    ("KIT-NOL-0001", "Kit matrimoniale estivo Living", "matrimoniale", "Living", "estivo",
+     [("NOL-0003", 1), ("NOL-0004", 1), ("NOL-0001", 2), ("NOL-0009", 2), ("NOL-0011", 2), ("NOL-0013", 2), ("NOL-0015", 1)]),
+    ("KIT-NOL-0002", "Kit matrimoniale invernale Living", "matrimoniale", "Living", "invernale",
+     [("NOL-0003", 1), ("NOL-0008", 1), ("NOL-0001", 2), ("NOL-0009", 2), ("NOL-0011", 2), ("NOL-0013", 2), ("NOL-0015", 1)]),
+    ("KIT-NOL-0003", "Kit singolo estivo Living", "singolo", "Living", "estivo",
+     [("NOL-0005", 1), ("NOL-0006", 1), ("NOL-0001", 1), ("NOL-0009", 1), ("NOL-0011", 1), ("NOL-0013", 1), ("NOL-0015", 1)]),
+    ("KIT-NOL-0004", "Kit singolo invernale Living", "singolo", "Living", "invernale",
+     [("NOL-0005", 1), ("NOL-0007", 1), ("NOL-0001", 1), ("NOL-0009", 1), ("NOL-0011", 1), ("NOL-0013", 1), ("NOL-0015", 1)]),
+    ("KIT-NOL-0005", "Kit matrimoniale estivo Dream", "matrimoniale", "Dream", "estivo",
+     [("NOL-0003", 1), ("NOL-0004", 1), ("NOL-0002", 2), ("NOL-0010", 2), ("NOL-0012", 2), ("NOL-0014", 2), ("NOL-0015", 1)]),
+    ("KIT-NOL-0006", "Kit matrimoniale invernale Dream", "matrimoniale", "Dream", "invernale",
+     [("NOL-0003", 1), ("NOL-0008", 1), ("NOL-0002", 2), ("NOL-0010", 2), ("NOL-0012", 2), ("NOL-0014", 2), ("NOL-0015", 1)]),
+    ("KIT-NOL-0007", "Kit singolo estivo Dream", "singolo", "Dream", "estivo",
+     [("NOL-0005", 1), ("NOL-0006", 1), ("NOL-0002", 1), ("NOL-0010", 1), ("NOL-0012", 1), ("NOL-0014", 1), ("NOL-0015", 1)]),
+    ("KIT-NOL-0008", "Kit singolo invernale Dream", "singolo", "Dream", "invernale",
+     [("NOL-0005", 1), ("NOL-0007", 1), ("NOL-0002", 1), ("NOL-0010", 1), ("NOL-0012", 1), ("NOL-0014", 1), ("NOL-0015", 1)]),
+]
 SEED_SUPPLY = [
     {"name": "Carta igienica", "category": "Consumabili bagno"},
     {"name": "Sapone", "category": "Consumabili bagno"},
@@ -58,11 +105,19 @@ def init_magazzino_deps(**kwargs):
 
 async def seed_magazzino():
     now = now_iso()
-    if await db.rental_catalog.count_documents({}) == 0:
-        await db.rental_catalog.insert_many([
-            {"id": str(uuid.uuid4()), "name": n, "sku": "", "category": "Biancheria", "unit": "pz",
-             "photo": None, "cost": None, "active": True, "notes": "", "created_at": now, "updated_at": now}
-            for n in SEED_RENTAL])
+    # Rimozione item demo legacy (chiaramente test: senza codice NOL, nomi del vecchio seed)
+    await db.rental_catalog.delete_many({"code": {"$exists": False}, "name": {"$in": _LEGACY_RENTAL_DEMO}, "sku": ""})
+    for code, name, cat, tip, mis, linea, colore, ordine in REAL_RENTAL_CATALOG:
+        if not await db.rental_catalog.find_one({"code": code}):
+            await db.rental_catalog.insert_one({
+                "id": str(uuid.uuid4()), "code": code, "name": name, "sku": "", "category": cat,
+                "tipologia": tip, "misura": mis, "linea": linea, "colore": colore, "materiale": "Cotone",
+                "unit": "pz", "photo": None, "cost": None, "prezzo_standard": None, "ordine": ordine,
+                "active": True, "notes": "", "created_at": now, "updated_at": now})
+    if not await db.counters.find_one({"_id": "nol_code"}):
+        await db.counters.insert_one({"_id": "nol_code", "seq": 23})
+    if not await db.counters.find_one({"_id": "kit_nol_code"}):
+        await db.counters.insert_one({"_id": "kit_nol_code", "seq": 8})
     if await db.supply_catalog.count_documents({}) == 0:
         await db.supply_catalog.insert_many([
             {"id": str(uuid.uuid4()), "name": s["name"], "sku": "", "category": s["category"], "unit": "pz",
@@ -92,17 +147,28 @@ async def seed_magazzino():
             "id": str(uuid.uuid4()), "structure_id": sid, "enabled": True, "kit_id": None,
             "custom_items": [{"product_id": r["product_id"], "name": (prods.get(r["product_id"]) or {}).get("name", ""), "qty": r["min_qty"]} for r in rws],
             "created_at": now_iso(), "updated_at": now_iso()})
-    seed_kits = [
-        ("Kit Matrimoniale", "noleggio", "matrimoniale"),
-        ("Kit Singolo", "noleggio", "singolo"),
-        ("Kit Zaino Standard", "pulizie", None),
-    ]
-    for name, domain, bed_type in seed_kits:
-        if not await db.kits.find_one({"name": name}):
-            await db.kits.insert_one({
-                "id": str(uuid.uuid4()), "name": name, "domain": domain, "bed_type": bed_type,
-                "items": [], "active": True, "version": 1, "notes": "",
-                "created_at": now, "updated_at": now})
+    # Rimozione kit noleggio demo (chiaramente test: senza codice, composizione vuota)
+    demo_kits = await db.kits.find({"domain": "noleggio", "code": {"$exists": False},
+                                    "name": {"$in": ["Kit Matrimoniale", "Kit Singolo"]}, "items": []},
+                                   {"_id": 0, "id": 1}).to_list(10)
+    if demo_kits:
+        _ids = [k["id"] for k in demo_kits]
+        await db.kit_versions.delete_many({"kit_id": {"$in": _ids}})
+        await db.kits.delete_many({"id": {"$in": _ids}})
+    if not await db.kits.find_one({"name": "Kit Zaino Standard"}):
+        await db.kits.insert_one({
+            "id": str(uuid.uuid4()), "name": "Kit Zaino Standard", "domain": "pulizie", "bed_type": None,
+            "items": [], "active": True, "version": 1, "notes": "", "created_at": now, "updated_at": now})
+    _prod_by_code = {p["code"]: p async for p in db.rental_catalog.find({"code": {"$exists": True}}, {"_id": 0, "id": 1, "code": 1, "name": 1})}
+    for kcode, kname, bed, linea, stagione, comp in REAL_RENTAL_KITS:
+        if await db.kits.find_one({"code": kcode}):
+            continue
+        items = [{"product_id": _prod_by_code[c]["id"], "code": c, "name": _prod_by_code[c]["name"], "qty": q}
+                 for c, q in comp if c in _prod_by_code]
+        await db.kits.insert_one({
+            "id": str(uuid.uuid4()), "code": kcode, "name": kname, "domain": "noleggio", "bed_type": bed,
+            "linea": linea, "stagione": stagione, "items": items, "active": True, "version": 1,
+            "notes": "", "created_at": now, "updated_at": now})
     await db.warehouse_movements.create_index([("at", -1)])
     await db.warehouse_movements.create_index([("structure_id", 1)])
     await db.warehouse_movements.create_index([("zaino_id", 1)])
@@ -247,12 +313,21 @@ class ProductPayload(BaseModel):
     default_min: Optional[int] = None
     default_ideal: Optional[int] = None
     resp_category: Optional[str] = None
+    tipologia: Optional[str] = None
+    misura: Optional[str] = None
+    linea: Optional[str] = None
+    colore: Optional[str] = None
+    materiale: Optional[str] = None
+    prezzo_standard: Optional[float] = None
+    ordine: Optional[int] = None
 
 
 class KitPayload(BaseModel):
     name: str
     domain: str
     bed_type: Optional[str] = None
+    linea: Optional[str] = None
+    stagione: Optional[str] = None
     items: List[dict] = []
     active: Optional[bool] = True
     notes: Optional[str] = None
@@ -352,7 +427,13 @@ def create_magazzino_router(get_current_user, is_ops_user):
         if domain not in DOMAINS:
             raise HTTPException(status_code=400, detail="Dominio non valido")
         q = {} if include_inactive else {"active": True}
-        return await db[CATALOG_COLL[domain]].find(q, {"_id": 0}).sort("name", 1).to_list(500)
+        rows = await db[CATALOG_COLL[domain]].find(q, {"_id": 0}).sort("name", 1).to_list(500)
+        if domain == "noleggio":
+            # Ordine visuale: Categoria -> Ordine visualizzazione -> Nome (MAI per codice)
+            rows.sort(key=lambda p: (NOL_CATEGORY_ORDER.get(p.get("category"), 99),
+                                     p.get("ordine") if p.get("ordine") is not None else 9999,
+                                     p.get("name") or ""))
+        return rows
 
     @router.post("/catalog/{domain}")
     async def create_product(domain: str, data: ProductPayload, current_user: dict = Depends(get_current_user)):
@@ -368,6 +449,17 @@ def create_magazzino_router(get_current_user, is_ops_user):
             doc["type"] = data.type if data.type in ("attrezzatura", "consumabile") else "consumabile"
             doc["standard_location"] = data.standard_location if data.standard_location in ("casa", "zaino") else "casa"
             doc["min_qty"] = data.min_qty
+        if domain == "noleggio":
+            c = await db.counters.find_one_and_update(
+                {"_id": "nol_code"}, {"$inc": {"seq": 1}}, upsert=True, return_document=ReturnDocument.AFTER)
+            doc["code"] = f"NOL-{c['seq']:04d}"
+            doc["tipologia"] = data.tipologia or ""
+            doc["misura"] = data.misura or ""
+            doc["linea"] = data.linea or ""
+            doc["colore"] = data.colore or ""
+            doc["materiale"] = data.materiale or "Cotone"
+            doc["prezzo_standard"] = data.prezzo_standard
+            doc["ordine"] = data.ordine
         if domain == "forniture":
             doc["default_min"] = data.default_min
             doc["default_ideal"] = data.default_ideal
@@ -420,8 +512,13 @@ def create_magazzino_router(get_current_user, is_ops_user):
             raise HTTPException(status_code=400, detail="Dominio non valido")
         now = now_iso()
         doc = {"id": str(uuid.uuid4()), "name": data.name.strip(), "domain": data.domain,
-               "bed_type": data.bed_type, "items": data.items or [], "active": True,
+               "bed_type": data.bed_type, "linea": data.linea or None, "stagione": data.stagione or None,
+               "items": data.items or [], "active": True,
                "version": 1, "notes": data.notes or "", "created_at": now, "updated_at": now}
+        if data.domain == "noleggio":
+            c = await db.counters.find_one_and_update(
+                {"_id": "kit_nol_code"}, {"$inc": {"seq": 1}}, upsert=True, return_document=ReturnDocument.AFTER)
+            doc["code"] = f"KIT-NOL-{c['seq']:04d}"
         await db.kits.insert_one(doc)
         doc.pop("_id", None)
         return doc
@@ -432,15 +529,25 @@ def create_magazzino_router(get_current_user, is_ops_user):
         kit = await db.kits.find_one({"id": kit_id}, {"_id": 0})
         if not kit:
             raise HTTPException(status_code=404, detail="Kit non trovato")
-        # Versionamento: snapshot della versione precedente, lo storico non cambia
-        await db.kit_versions.insert_one({
-            "id": str(uuid.uuid4()), "kit_id": kit_id, "version": kit.get("version", 1),
-            "snapshot": kit, "saved_at": now_iso(), "saved_by": current_user.get("name", "")})
-        upd = {"name": data.name.strip(), "bed_type": data.bed_type, "items": data.items or [],
+        upd = {"name": data.name.strip(), "bed_type": data.bed_type, "linea": data.linea or None,
+               "stagione": data.stagione or None, "items": data.items or [],
                "notes": data.notes or "", "updated_at": now_iso()}
         if data.active is not None:
             upd["active"] = data.active
-        await db.kits.update_one({"id": kit_id}, {"$set": upd, "$inc": {"version": 1}})
+        # Versionamento solo se la composizione/definizione cambia davvero
+        def _norm(items):
+            return sorted((i.get("product_id"), int(i.get("qty") or 0)) for i in (items or []))
+        changed = (_norm(kit.get("items")) != _norm(data.items) or kit.get("name") != upd["name"]
+                   or kit.get("bed_type") != upd["bed_type"] or kit.get("linea") != upd["linea"]
+                   or kit.get("stagione") != upd["stagione"])
+        if changed:
+            # Snapshot della versione precedente: lo storico non cambia mai
+            await db.kit_versions.insert_one({
+                "id": str(uuid.uuid4()), "kit_id": kit_id, "version": kit.get("version", 1),
+                "snapshot": kit, "saved_at": now_iso(), "saved_by": current_user.get("name", "")})
+            await db.kits.update_one({"id": kit_id}, {"$set": upd, "$inc": {"version": 1}})
+        else:
+            await db.kits.update_one({"id": kit_id}, {"$set": upd})
         return await db.kits.find_one({"id": kit_id}, {"_id": 0})
 
     @router.get("/kits/{kit_id}/versions")

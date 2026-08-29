@@ -183,6 +183,14 @@ frontend/src/pages/
 
 ---
 
+## Phase 29 (Giugno 2026) — Catalogo reale Lavanderia a Noleggio + Kit — COMPLETATO (iteration_21: 8/8 backend + frontend 100%)
+- rental_catalog: 23 articoli REALI con codici permanenti NOL-0001..0023 (auto-assegnati via counter nol_code, mai riutilizzati), campi: code/name/category (Biancheria letto|bagno|Tovagliato)/tipologia/misura/linea (Living|Dream)/colore/materiale=Cotone/unit=pz/cost=null/prezzo_standard=null/photo=null/ordine/notes/active. Demo legacy (Federa, Telo, Viso, Bidet...) ELIMINATI. Seed idempotente in seed_magazzino (REAL_RENTAL_CATALOG in routes/magazzino.py).
+- Ordinamento visuale: Categoria (letto→bagno→Tovagliato) → ordine → nome, MAI per codice (list_catalog noleggio).
+- kits: 8 kit reali KIT-NOL-0001..0008 (counter kit_nol_code), campi linea/stagione/bed_type(dimensione), items con {product_id, code, name, qty}. Kit demo noleggio vuoti eliminati; Kit Zaino Standard (pulizie) preservato. Composizioni: estivo=Lenzuolo Living+Dream, invernale=Lenzuolo Living+Copripiumino Dream; Living/Dream federe+asciugamani della propria linea; tappetino NOL-0015 sempre; matrimoniale qty2, singolo qty1.
+- Versionamento kit: snapshot in kit_versions + version++ SOLO se composizione/definizione cambia (PUT identico non versiona). Storico mai modificato retroattivamente.
+- UI: /cataloghi-kit tab 'Prodotti Noleggio' → NoleggioCatalogTab.jsx (tabella compatta Codice/Nome/Categoria/Tipologia/Linea/Materiale/UM/Costo/Prezzo std/Stato, intestazioni gruppo categoria, filtri categoria/tipologia/linea/stato + ricerca nome/codice, click riga → dialog dettaglio completo con foto/misura/colore/ordine). Tab Kit: filtro pills per tipo, card con codice/linea/dimensione/stagione/n.articoli, dialog con composizione leggibile (codice+nome+qty) e selects linea/stagione.
+- NOTA aperta: fabbisogno pulizie sceglie kit per bed_type — con 4 kit per dimensione (linea×stagione) serve in futuro una configurazione per struttura/stagione di quale kit usare.
+
 ## Phase 28 (Giugno 2026) — RESET CONTROLLATO DATI + OAuth Sheets collegato — COMPLETATO (iteration_20: 20/20 backend + 25 pagine frontend 100%)
 
 ### OAuth Google Sheets

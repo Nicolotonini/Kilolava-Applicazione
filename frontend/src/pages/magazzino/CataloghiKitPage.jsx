@@ -12,10 +12,11 @@ import { PageHeader } from '../../components/kilolava/PageHeader';
 import { EmptyState, ListSkeleton } from '../../components/kilolava/EmptyState';
 import { StatusBadge } from '../../components/kilolava/badges';
 import { ProductThumb } from './ProductThumb';
+import { NoleggioCatalogTab } from './NoleggioCatalogTab';
 import { DOMAIN_LABELS, fmtDT } from './shared';
 
 const TABS = [
-  ['noleggio', 'Noleggio Strutture'],
+  ['noleggio', 'Prodotti Noleggio'],
   ['forniture', 'Forniture / Consumabili'],
   ['pulizie', 'Magazzino Pulizie'],
   ['kits', 'Kit'],
@@ -37,7 +38,7 @@ export default function CataloghiKitPage() {
           </button>
         ))}
       </div>
-      {tab === 'kits' ? <KitsTab /> : <CatalogTab domain={tab} key={tab} />}
+      {tab === 'kits' ? <KitsTab /> : tab === 'noleggio' ? <NoleggioCatalogTab /> : <CatalogTab domain={tab} key={tab} />}
     </div>
   );
 }
@@ -262,33 +263,48 @@ function KitsTab() {
   const [kits, setKits] = useState(null);
   const [editing, setEditing] = useState(null);
   const [creating, setCreating] = useState(false);
+  const [domainFilter, setDomainFilter] = useState('');
 
   const load = useCallback(() => {
     api.get('/magazzino/kits').then(r => setKits(r.data)).catch(() => setKits([]));
   }, []);
   useEffect(() => { load(); }, [load]);
 
+  const filtered = (kits || []).filter(k => !domainFilter || k.domain === domainFilter);
+
   return (
     <div className="space-y-3">
-      <div className="flex justify-end">
+      <div className="flex items-center gap-1.5 flex-wrap">
+        {[['', 'Tutti'], ...Object.entries(DOMAIN_LABELS)].map(([k, l]) => (
+          <button key={k} onClick={() => setDomainFilter(k)}
+            className={cn('px-2.5 py-1 rounded-full text-xs font-medium klv-interactive',
+              domainFilter === k ? 'bg-foreground text-background' : 'bg-muted text-muted-foreground hover:text-foreground')}
+            data-testid={`kit-filter-${k || 'all'}`}>
+            {l}
+          </button>
+        ))}
+        <div className="flex-1" />
         <Button onClick={() => setCreating(true)} className="bg-primary text-primary-foreground hover:bg-primary/90" data-testid="new-kit-btn">
           <Plus className="h-4 w-4 mr-1.5" />Nuovo kit
         </Button>
       </div>
-      {kits === null ? <ListSkeleton rows={4} /> : kits.length === 0 ? (
+      {kits === null ? <ListSkeleton rows={4} /> : filtered.length === 0 ? (
         <EmptyState icon={BookOpen} message="Nessun kit definito." />
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
-          {kits.map(k => (
+          {filtered.map(k => (
             <div key={k.id} className="rounded-xl border border-border bg-card p-4 space-y-2 card-hover cursor-pointer"
-              onClick={() => setEditing(k)} data-testid={`kit-card-${k.id}`}>
+              onClick={() => setEditing(k)} data-testid={`kit-card-${k.code || k.id}`}>
               <div className="flex items-center gap-2">
+                {k.code && <span className="text-[11px] font-mono font-semibold text-primary shrink-0">{k.code}</span>}
                 <p className="font-semibold flex-1 truncate">{k.name}</p>
                 <span className="text-xs text-muted-foreground font-mono">v{k.version || 1}</span>
               </div>
               <div className="flex items-center gap-1.5 flex-wrap">
                 <StatusBadge tone="accent">{DOMAIN_LABELS[k.domain] || k.domain}</StatusBadge>
-                {k.bed_type && <StatusBadge tone="violet">{BED_TYPES.find(([v]) => v === k.bed_type)?.[1] || k.bed_type}</StatusBadge>}
+                {k.linea && <StatusBadge tone={k.linea === 'Dream' ? 'violet' : 'info'}>{k.linea}</StatusBadge>}
+                {k.bed_type && <StatusBadge tone="neutral">{BED_TYPES.find(([v]) => v === k.bed_type)?.[1] || k.bed_type}</StatusBadge>}
+                {k.stagione && <StatusBadge tone={k.stagione === 'estivo' ? 'success' : 'waiting'}>{k.stagione === 'estivo' ? 'Estivo' : 'Invernale'}</StatusBadge>}
                 {(k.items || []).length === 0
                   ? <StatusBadge tone="waiting" testId={`kit-unconfigured-${k.id}`}>Kit non configurato</StatusBadge>
                   : <StatusBadge tone="success">{k.items.length} articoli</StatusBadge>}
@@ -316,6 +332,8 @@ function KitDialog({ kit, onClose, onDone }) {
   const [name, setName] = useState(kit?.name || '');
   const [domain, setDomain] = useState(kit?.domain || 'noleggio');
   const [bedType, setBedType] = useState(kit?.bed_type || '');
+  const [linea, setLinea] = useState(kit?.linea || '');
+  const [stagione, setStagione] = useState(kit?.stagione || '');
   const [notes, setNotes] = useState(kit?.notes || '');
   const [active, setActive] = useState(kit ? !!kit.active : true);
   const [items, setItems] = useState(kit?.items ? kit.items.map(i => ({ ...i })) : []);
@@ -331,7 +349,7 @@ function KitDialog({ kit, onClose, onDone }) {
   const addItem = () => {
     const p = catalog.find(c => c.id === addId);
     if (!p || items.some(i => i.product_id === p.id)) return;
-    setItems(xs => [...xs, { product_id: p.id, name: p.name, qty: 1 }]);
+    setItems(xs => [...xs, { product_id: p.id, code: p.code || null, name: p.name, qty: 1 }]);
     setAddId('');
   };
 
@@ -339,8 +357,9 @@ function KitDialog({ kit, onClose, onDone }) {
     if (!name.trim()) { toast.error('Inserisci il nome'); return; }
     setSaving(true);
     const payload = {
-      name: name.trim(), domain, bed_type: bedType || null, notes, active,
-      items: items.map(i => ({ product_id: i.product_id, name: i.name, qty: Number(i.qty) })).filter(i => i.qty > 0),
+      name: name.trim(), domain, bed_type: bedType || null,
+      linea: linea || null, stagione: stagione || null, notes, active,
+      items: items.map(i => ({ product_id: i.product_id, code: i.code || null, name: i.name, qty: Number(i.qty) })).filter(i => i.qty > 0),
     };
     try {
       if (kit) await api.put(`/magazzino/kits/${kit.id}`, payload);
@@ -378,12 +397,32 @@ function KitDialog({ kit, onClose, onDone }) {
             </div>
           </div>
           {domain === 'noleggio' && (
-            <div>
-              <Label className="text-xs">Tipo letto (per il calcolo del fabbisogno)</Label>
-              <select value={bedType} onChange={e => setBedType(e.target.value)}
-                className="w-full h-9 rounded-md border border-border bg-background px-2 text-sm" data-testid="kit-bedtype-select">
-                {BED_TYPES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-              </select>
+            <div className="grid grid-cols-3 gap-2">
+              <div>
+                <Label className="text-xs">Dimensione (tipo letto)</Label>
+                <select value={bedType} onChange={e => setBedType(e.target.value)}
+                  className="w-full h-9 rounded-md border border-border bg-background px-2 text-sm" data-testid="kit-bedtype-select">
+                  {BED_TYPES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                </select>
+              </div>
+              <div>
+                <Label className="text-xs">Linea Kit</Label>
+                <select value={linea} onChange={e => setLinea(e.target.value)}
+                  className="w-full h-9 rounded-md border border-border bg-background px-2 text-sm" data-testid="kit-linea-select">
+                  <option value="">—</option>
+                  <option value="Living">Living</option>
+                  <option value="Dream">Dream</option>
+                </select>
+              </div>
+              <div>
+                <Label className="text-xs">Stagione</Label>
+                <select value={stagione} onChange={e => setStagione(e.target.value)}
+                  className="w-full h-9 rounded-md border border-border bg-background px-2 text-sm" data-testid="kit-stagione-select">
+                  <option value="">—</option>
+                  <option value="estivo">Estivo</option>
+                  <option value="invernale">Invernale</option>
+                </select>
+              </div>
             </div>
           )}
 
@@ -396,6 +435,7 @@ function KitDialog({ kit, onClose, onDone }) {
             )}
             {items.map((it, i) => (
               <div key={it.product_id} className="flex items-center gap-2 text-sm" data-testid={`kit-item-${it.product_id}`}>
+                {it.code && <span className="font-mono text-[11px] text-muted-foreground shrink-0">{it.code}</span>}
                 <span className="flex-1 min-w-0 truncate">{it.name}</span>
                 <Input type="number" min="1" value={it.qty} className="w-20 h-8 text-sm"
                   onChange={e => setItems(xs => xs.map((x, j) => j === i ? { ...x, qty: e.target.value } : x))}

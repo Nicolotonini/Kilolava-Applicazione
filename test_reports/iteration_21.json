@@ -1,0 +1,24 @@
+{
+  "summary": "Iteration 21 — Lavanderia a Noleggio: real catalog (23 NOL-XXXX articles) + 8 KIT-NOL kits fully verified. Backend pytest 8/8 PASS (login, catalog count/codes/materiale=Cotone/unit=pz/cost=null/prezzo_standard=null/photo=null, no 'Rigatino', visual order Categoria→Ordine [Biancheria letto 1-8, Biancheria bagno 9-15, Tovagliato 16-23], sample fields NOL-0001/NOL-0015/NOL-0019/NOL-0023, all 8 kits with EXACT composition/bed_type/linea/stagione/7-items, POST catalog auto-code NOL-0024 with correct placement inside Tovagliato Coprimacchia group, POST kit auto-code KIT-NOL-0009, PUT kit versioning creates v1 snapshot with ORIGINAL composition and restore returns tappetino to qty=1). Frontend: /cataloghi-kit renders nol-catalog-table with 23 items + 3 category header rows (26 total tr); search 'coprimacchia' filters to 4 items (+1 header), 'NOL-0015' → 1 item (+1 header), filter Categoria=Tovagliato → 8 items, filter Linea=Dream → 8 items across bagno+letto (with 2 group headers = 10 rows); click NOL-0019 row opens nol-product-dialog showing permanent code NOL-0019; Kit tab kit-filter-noleggio pill shows 8 KIT-NOL cards, clicking KIT-NOL-0001 opens kit-dialog with readable composition (NOL codes visible). Regression: /magazzino-generale, /magazzino-generale/noleggio, /magazzino-strutture/noleggio all load without errors; Dashboard shows 'Nessun avviso. Tutto sotto controllo'. FINAL DB STATE (verified via Mongo): rental_catalog=23 exact NOL-0001..0023, kits(noleggio)=8 KIT-NOL-0001..0008 (all 7 items), counters nol_code.seq=23 kit_nol_code.seq=8, KIT-NOL-0001 tappetino qty=1 (composition restored, version=7 due to test runs — user explicitly allowed 'version finale 3 va bene, l'importante è che la composizione corrente torni quella corretta'), zero TEST_ residuals, clients=0, structures=0.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_iter21_rental_catalog.py",
+    "/app/test_reports/pytest/iter21.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "magazzino.py:430 list_catalog does .sort('name', 1) at Mongo level then re-sorts in Python for noleggio. Not a bug but the initial sort is wasted CPU; consider skipping it when domain=='noleggio'.",
+    "magazzino.py:541 update_kit uses $inc:{version:1} — correct for versioning; snapshot stored BEFORE bump also correct. However version drifts on every save even if items unchanged. Consider only bumping/snapshotting when items or composition actually differ, otherwise every idempotent PUT (e.g. from a UI form re-save) inflates version and pollutes kit_versions.",
+    "NoleggioCatalogTab counts rows including category-group header rows (3 headers make total tr = 26 instead of 23). Not a bug (headers are visual) but if any external count check uses 'tbody tr' it will be off by +N_categories. Consider giving header rows a distinct data-testid or role='rowgroup'/'presentation' so tests can exclude them cleanly."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter21_rental_catalog.py (new)"
+  ],
+  "success_rate": {"backend": "100% (8/8)", "frontend": "100% (catalog table + filters + product dialog + kit tab + kit dialog + regression pages all OK)"},
+  "test_credentials": "admin: test_user@kilolava.com / TestPass123!",
+  "seed_data_creation": "None kept. Test created transient NOL-0024 + KIT-NOL-0009 (both deleted via Mongo in test_zzz_cleanup_all). KIT-NOL-0001 items reset to original composition (tappetino qty=1); its version has drifted to 7 by end of test runs (explicitly allowed by user). kit_versions collection has 6 snapshots for KIT-NOL-0001 (from the two test runs) — these are historical audit records, safe to keep. Counters restored: nol_code.seq=23, kit_nol_code.seq=8.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Feature is stable. Real catalog=23 items with permanent codes NOL-0001..0023 and 8 kits KIT-NOL-0001..0008 present and correct. Counters aligned at 23/8. If versioning test is re-run, KIT-NOL-0001 version will keep growing but composition remains correct (idempotent). kit_versions accumulates snapshots — could be cleaned with db.kit_versions.delete_many({}) if desired, but not required. Note NoleggioCatalogTab renders category-group header rows inside <tbody> so tbody tr count = items + 3 (Biancheria letto/Biancheria bagno/Tovagliato) — factor this into any UI row assertion."
+}
