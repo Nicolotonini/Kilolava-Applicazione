@@ -183,6 +183,20 @@ frontend/src/pages/
 
 ---
 
+## Phase 28 (Giugno 2026) — RESET CONTROLLATO DATI + OAuth Sheets collegato — COMPLETATO (iteration_20: 20/20 backend + 25 pagine frontend 100%)
+
+### OAuth Google Sheets
+- Fix "Missing code verifier": PKCE code_verifier ora salvato in db.oauth_states e ripristinato nel callback. UTENTE HA COMPLETATO L'AUTORIZZAZIONE: connessione ATTIVA (db.google_tokens id 'sheets', refresh token presente — NON toccare). Primo backup reale eseguito con successo dall'utente.
+
+### Reset controllato (autorizzato esplicitamente dall'utente)
+- Backup pre-reset: mongodump completo in /app/database_export/pre_reset_20260829_162804 (47 collection, 1.2MB) + /app/database_export/reset_report.json. NON usare per ripopolare.
+- Script: /app/scripts/reset_operational_data.py (con --dry-run). AZZERATO: clienti 2→0, strutture 3→0, unità 2→0, eventi/soggiorni 48→0, pulizie 24→0, segnalazioni 4+4task+5legacy→0, manutenzioni 6→0, logistica 9→0, ordini 5→0, lavanderia 4→0, movimenti 10→0, stock 8→0, fabbisogni 18→0, documenti/DDT 5→0, notifiche 110→0, registro attività 1419→0, iCal importati 23→0, zaini test 2→0 (contatore zaino_seq e klv_structure azzerati), utenti 11→1.
+- UNICO ACCOUNT: test_user@kilolava.com / TestPass123! (admin) — non esisteva un admin "reale" nel DB, tutti gli 11 utenti erano test; mantenuto quello in uso dall'utente. NON eliminarlo mai.
+- PRESERVATI: cataloghi (rental 8, supply 5, cleaning 23, articles noleggio 4 con qty e soglie a 0), kit 3, rioni 47, checklist template 2, listino lavanderia 3€/kg, delivery_config, app_settings, google_tokens, board_layouts admin. 0 record orfani (verifica automatica).
+- DIVIETO ASSOLUTO: NON inserire dati demo. L'utente carica solo dati REALI (anche via import Google Sheets ora attivo).
+- Fix FASE 1: rimosse stringhe residue 'generate tasks' da translations.js; azzerate soglie demo articles (alert dashboard eliminato); fix bug latente 500 su GET /api/clients con private_info/company_info None (guardie `or {}` in server.py:545-569).
+- Nota: blob media orfani su Object Storage (video/foto vecchie pulizie) innocui; foglio Google Backup contiene ancora anagrafiche test → sovrascritto al prossimo backup (03:00 o manuale).
+
 ## Phase 27 (Giugno 2026) — Google Sheets Anagrafiche: Import + Backup — COMPLETATO (iteration_19: 42/42 backend + frontend 100%; OAuth reale da autorizzare dall'utente)
 
 ### Architettura

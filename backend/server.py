@@ -546,10 +546,10 @@ def get_client_display_name(client: dict) -> str:
     """Get display name based on client type"""
     client_type = client.get("client_type", "private")
     if client_type == "company":
-        company_info = client.get("company_info", {})
+        company_info = client.get("company_info") or {}
         return company_info.get("company_name", "")
     else:
-        private_info = client.get("private_info", {})
+        private_info = client.get("private_info") or {}
         name = private_info.get("name", "")
         surname = private_info.get("surname", "")
         return f"{name} {surname}".strip()
@@ -558,15 +558,15 @@ def get_client_phone(client: dict) -> Optional[str]:
     """Get phone based on client type"""
     client_type = client.get("client_type", "private")
     if client_type == "company":
-        return client.get("company_info", {}).get("phone")
-    return client.get("private_info", {}).get("phone")
+        return (client.get("company_info") or {}).get("phone")
+    return (client.get("private_info") or {}).get("phone")
 
 def get_client_email(client: dict) -> Optional[str]:
     """Get email based on client type"""
     client_type = client.get("client_type", "private")
     if client_type == "company":
-        return client.get("company_info", {}).get("email")
-    return client.get("private_info", {}).get("email")
+        return (client.get("company_info") or {}).get("email")
+    return (client.get("private_info") or {}).get("email")
 
 @api_router.post("/clients", response_model=ClientResponse)
 async def create_client(client_data: ClientCreate, current_user: dict = Depends(get_current_user)):
