@@ -13,25 +13,52 @@ import {
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { APIProvider, Map, AdvancedMarker } from '@vis.gl/react-google-maps';
+import { RoutePolyline, FitPoints } from '../components/kilolava/RoutePolyline';
 
-function RiderGiroMap({ fermate }) {
+function RiderGiroMap({ giro, fermate, nextId, navRoute }) {
   const apiKey = process.env.REACT_APP_GOOGLE_MAPS_API_KEY;
-  const located = fermate.filter(f => f.latitude != null && f.status !== 'cancelled');
-  if (!apiKey || located.length === 0) return null;
-  const center = { lat: located[0].latitude, lng: located[0].longitude };
+  const stops = ((giro?.stops?.length ? giro.stops : fermate) || []).filter(f => f.latitude != null && f.status !== 'cancelled');
+  const origin = navRoute?.riderPos || (giro?.origin?.source === 'gps' ? { lat: giro.origin.latitude, lng: giro.origin.longitude } : null);
+  if (!apiKey || (stops.length === 0 && !origin)) return null;
+  const fitPoints = [
+    ...stops.map(s => ({ lat: s.latitude, lng: s.longitude })),
+    ...(origin ? [origin] : []),
+    ...(giro?.sede?.latitude != null ? [{ lat: giro.sede.latitude, lng: giro.sede.longitude }] : []),
+  ];
+  const center = fitPoints[0];
   return (
-    <div className="rounded-xl border border-border overflow-hidden h-56" data-testid="rider-giro-map">
-      <APIProvider apiKey={apiKey}>
+    <div className="rounded-xl border border-border overflow-hidden h-72" data-testid="rider-giro-map">
+      <APIProvider apiKey={apiKey} libraries={['geometry']}>
         <Map style={{ width: '100%', height: '100%' }} defaultCenter={center} defaultZoom={13}
           mapId={process.env.REACT_APP_GOOGLE_MAP_ID || undefined} gestureHandling="greedy" disableDefaultUI zoomControl>
-          {located.map((f, i) => (
-            <AdvancedMarker key={f.id} position={{ lat: f.latitude, lng: f.longitude }}>
-              <div className={cn('w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold shadow-lg border-2 border-white text-white',
-                f.status === 'completed' ? 'bg-emerald-500' : f.status === 'in_progress' ? 'bg-amber-500' : 'bg-blue-600')}>
-                {f.route_order || i + 1}
-              </div>
+          <FitPoints points={fitPoints} />
+          {navRoute?.polyline
+            ? <RoutePolyline encoded={navRoute.polyline} color="#F24E75" weight={6} />
+            : (giro?.polyline && <RoutePolyline encoded={giro.polyline} color="#2563eb" />)}
+          {giro?.sede?.latitude != null && (
+            <AdvancedMarker position={{ lat: giro.sede.latitude, lng: giro.sede.longitude }} title="Sede Kilolava">
+              <div className="w-7 h-7 rounded-lg bg-gray-900 text-white flex items-center justify-center text-[10px] font-bold shadow-lg border-2 border-white">KLV</div>
             </AdvancedMarker>
-          ))}
+          )}
+          {origin && (
+            <AdvancedMarker position={origin} title="La tua posizione">
+              <div className="w-5 h-5 rounded-full bg-blue-600 border-[3px] border-white shadow-lg" data-testid="rider-position-marker" />
+            </AdvancedMarker>
+          )}
+          {stops.map((f, i) => {
+            const isNext = f.id === nextId && f.status !== 'completed';
+            return (
+              <AdvancedMarker key={f.id} position={{ lat: f.latitude, lng: f.longitude }}>
+                <div className={cn('rounded-full flex items-center justify-center text-xs font-bold shadow-lg border-2 border-white text-white',
+                  isNext ? 'w-9 h-9 ring-4 ring-[#F24E75]/40 bg-[#F24E75]' :
+                  f.status === 'completed' ? 'w-7 h-7 bg-emerald-500' :
+                  f.status === 'in_progress' ? 'w-7 h-7 bg-amber-500' : 'w-7 h-7 bg-blue-600')}
+                  data-testid={`rider-map-stop-${f.id}`}>
+                  {f.status === 'completed' ? '✓' : (f.route_order || i + 1)}
+                </div>
+              </AdvancedMarker>
+            );
+          })}
         </Map>
       </APIProvider>
     </div>
@@ -63,6 +90,16 @@ const RiderViewPage = () => {
   const [showProblem, setShowProblem] = useState(null);
   const locState = useLocationState();
   const [locDialog, setLocDialog] = useState(false);
+  const [giro, setGiro] = useState(null);
+  const [navRoute, setNavRoute] = useState(null);
+  const [navLoading, setNavLoading] = useState(false);
+
+  const fetchGiro = useCallback(async () => {
+    try {
+      const res = await api.get('/consegne/giro-percorso', { params: { date: selectedDate } });
+      setGiro(res.data);
+    } catch { setGiro(null); }
+  }, [selectedDate]);
 
   const fetchFermate = useCallback(async () => {
     setLoading(true);
@@ -73,7 +110,7 @@ const RiderViewPage = () => {
     finally { setLoading(false); }
   }, [selectedDate]);
 
-  useEffect(() => { fetchFermate(); }, [fetchFermate]);
+  useEffect(() => { fetchFermate(); fetchGiro(); setNavRoute(null); }, [fetchFermate, fetchGiro]);
 
   const shiftDate = (days) => {
     const d = new Date(selectedDate + 'T12:00:00');
@@ -97,9 +134,9 @@ const RiderViewPage = () => {
   const completa = async (id) => {
     try {
       await api.post(`/consegne/fermate/${id}/completa`, { note: noteText || null });
-      toast.success('Fermata completata!');
-      setNoteText(''); setExpanded(null);
-      fetchFermate();
+      toast.success('Fermata completata! Prossima consegna aggiornata');
+      setNoteText(''); setExpanded(null); setNavRoute(null);
+      fetchFermate(); fetchGiro();
     } catch (e) { toast.error(e.response?.data?.detail || 'Errore'); }
   };
 
@@ -144,6 +181,29 @@ const RiderViewPage = () => {
     ...active.filter((f) => f.status === 'assigned'),
     ...active.filter((f) => f.status === 'problem'),
   ];
+  const next = ordered[0] || null;
+  const nextEta = next && giro?.stops ? giro.stops.find((s) => s.id === next.id) : null;
+
+  const avviaPercorso = async () => {
+    if (!next) return;
+    setNavLoading(true);
+    try {
+      const pos = await new Promise((res, rej) =>
+        navigator.geolocation.getCurrentPosition(res, rej, { enableHighAccuracy: true, timeout: 12000 }));
+      const r = await api.post('/consegne/route-to-next', {
+        fermata_id: next.id, latitude: pos.coords.latitude, longitude: pos.coords.longitude,
+      });
+      if (!r.data.route_available) {
+        toast.error('Percorso temporaneamente non disponibile');
+        setNavRoute(null);
+        return;
+      }
+      setNavRoute({ ...r.data, riderPos: { lat: pos.coords.latitude, lng: pos.coords.longitude } });
+    } catch (e) {
+      if (e?.code) toast.error('Posizione GPS non disponibile: consenti la geolocalizzazione');
+      else toast.error(e.response?.data?.detail || 'Percorso temporaneamente non disponibile');
+    } finally { setNavLoading(false); }
+  };
 
   return (
     <div className="min-h-screen bg-background" data-testid="rider-view-page">
@@ -186,7 +246,57 @@ const RiderViewPage = () => {
           </Button>
         </div>
 
-        <RiderGiroMap fermate={fermate} />
+        <RiderGiroMap giro={giro} fermate={fermate} nextId={next?.id} navRoute={navRoute} />
+
+        {next && (
+          <Card className="border-2 border-primary/50" data-testid="next-delivery-card">
+            <CardContent className="p-3.5 space-y-2">
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-bold uppercase tracking-wider text-primary">Prossima consegna</p>
+                {next.time_window_end && (
+                  <StatusBadge tone="waiting" className="!py-0.5" testId="next-window-badge">Entro {next.time_window_end}</StatusBadge>
+                )}
+              </div>
+              <p className="font-semibold text-base leading-tight">
+                {next.klv_code && <span className="font-mono text-sm font-bold text-primary mr-1.5">{next.klv_code}</span>}
+                {next.destination}
+              </p>
+              {next.address && (
+                <p className="text-xs text-muted-foreground flex items-center gap-1"><MapPin className="h-3 w-3 shrink-0" />{next.address}</p>
+              )}
+              {nextEta?.eta ? (
+                <div className="flex items-center gap-3 text-sm font-semibold tabular-nums" data-testid="next-eta-info">
+                  <span className="text-primary">ETA {nextEta.eta}</span>
+                  <span className="text-muted-foreground font-normal">{nextEta.leg_km} km</span>
+                  <span className="text-muted-foreground font-normal">{nextEta.leg_min} min</span>
+                </div>
+              ) : giro && giro.route_available === false ? (
+                <p className="text-xs font-medium text-amber-600" data-testid="route-unavailable">Percorso temporaneamente non disponibile</p>
+              ) : null}
+              <div className="flex items-center gap-1.5 flex-wrap">
+                {(next.lines || []).map((l, i) => (
+                  <StatusBadge key={i} tone={KIND_TONES[l.category] || 'cancelled'} className="!py-0.5">{l.category_label}</StatusBadge>
+                ))}
+              </div>
+              {(next.lines || []).some((l) => (l.items || []).length > 0) && (
+                <div className="text-xs text-muted-foreground">
+                  <span className="font-semibold uppercase">Da consegnare: </span>
+                  {(next.lines || []).flatMap((l) => l.items || []).map((it) => `${it.qty}× ${it.name}`).join(', ')}
+                </div>
+              )}
+              {next.notes && <p className="text-xs"><span className="font-semibold uppercase text-muted-foreground">Note: </span>{next.notes}</p>}
+              <Button className="w-full h-11 gap-1.5 bg-primary text-primary-foreground font-medium"
+                onClick={avviaPercorso} disabled={navLoading} data-testid="avvia-percorso-btn">
+                <Navigation className="h-4 w-4" />{navLoading ? 'Calcolo percorso…' : 'Avvia percorso'}
+              </Button>
+              {navRoute?.route_available && (
+                <p className="text-xs text-center font-semibold tabular-nums text-primary" data-testid="nav-route-info">
+                  Percorso avviato: {navRoute.km} km · {navRoute.min} min · arrivo {navRoute.eta}
+                </p>
+              )}
+            </CardContent>
+          </Card>
+        )}
 
         {fermate.length > 0 && (
           <div className="space-y-1">

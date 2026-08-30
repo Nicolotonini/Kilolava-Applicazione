@@ -7,13 +7,9 @@ TravelService            -> tempi di viaggio: Google Distance Matrix se abilitat
 Il sistema PROPONE: la conferma è sempre del Responsabile.
 """
 import math
-import os
-
-import httpx
 
 from core.database import db
 
-GOOGLE_KEY = os.environ.get("GOOGLE_MAPS_API_KEY")
 SPEED_KMH = {"driving": 22, "walking": 4.5}
 ROUTE_FACTOR = 1.35
 STOP_OVERHEAD_MIN = {"driving": 4, "walking": 2}
@@ -41,30 +37,19 @@ def haversine_km(a, b):
 
 
 async def travel_estimate(origin, dest, mode="driving"):
-    """Ritorna (minuti, km). Google Distance Matrix quando abilitata, altrimenti stima deterministica."""
+    """Google Routes API (computeRouteMatrix). Ritorna (minuti, km) oppure None se Google non risponde.
+    NESSUN dato inventato e nessun fallback alle API legacy: chi chiama gestisce l'assenza del dato."""
     if not origin or not dest or origin[0] is None or dest[0] is None:
-        return 10, 2.0
+        return None
     key = (round(origin[0], 4), round(origin[1], 4), round(dest[0], 4), round(dest[1], 4), mode)
     if key in _travel_cache:
         return _travel_cache[key]
-    result = None
-    if GOOGLE_KEY:
-        try:
-            async with httpx.AsyncClient(timeout=6) as cl:
-                r = await cl.get("https://maps.googleapis.com/maps/api/distancematrix/json", params={
-                    "origins": f"{origin[0]},{origin[1]}", "destinations": f"{dest[0]},{dest[1]}",
-                    "mode": mode, "key": GOOGLE_KEY})
-                d = r.json()
-                el = d.get("rows", [{}])[0].get("elements", [{}])[0]
-                if d.get("status") == "OK" and el.get("status") == "OK":
-                    result = (max(1, round(el["duration"]["value"] / 60)) + STOP_OVERHEAD_MIN[mode],
-                              round(el["distance"]["value"] / 1000, 1))
-        except Exception:
-            result = None
-    if result is None:
-        km = round(haversine_km(origin, dest) * ROUTE_FACTOR, 1)
-        minutes = max(2, round(km / SPEED_KMH[mode] * 60)) + STOP_OVERHEAD_MIN[mode]
-        result = (minutes, km)
+    from services.google_maps import route_matrix
+    m = await route_matrix([origin], [dest], mode="DRIVE" if mode == "driving" else "WALK")
+    el = (m or {}).get((0, 0))
+    if not el:
+        return None
+    result = (max(1, round(el["seconds"] / 60)) + STOP_OVERHEAD_MIN[mode], round(el["meters"] / 1000, 1))
     _travel_cache[key] = result
     return result
 
@@ -171,9 +156,8 @@ async def cleaning_propose(date: str, board: dict):
         }
 
     async def schedule_task(st, t, locked=False):
-        travel_min, _km = await travel_estimate(st["pos"], pos_of(t), "driving") if st["pos"] and pos_of(t) else (10, 0)
-        if st["pos"] is None or pos_of(t) is None:
-            travel_min = 10 if st["schedule"] else 0
+        tr = await travel_estimate(st["pos"], pos_of(t), "driving") if st["pos"] and pos_of(t) else None
+        travel_min = tr[0] if tr else (10 if st["schedule"] else 0)
         dur = t.get("predicted_duration_minutes") or 60
         start = max(st["time"] + travel_min, earliest_of(t))
         end = start + dur
@@ -214,7 +198,9 @@ async def cleaning_propose(date: str, board: dict):
         for cid, st in state.items():
             travel_min = 10
             if st["pos"] and pos_of(t):
-                travel_min, _ = await travel_estimate(st["pos"], pos_of(t), "driving")
+                tr = await travel_estimate(st["pos"], pos_of(t), "driving")
+                if tr:
+                    travel_min = tr[0]
             start = max(st["time"] + travel_min, earliest_of(t))
             end = start + dur
             score = end + travel_min * 1.5
@@ -271,9 +257,23 @@ async def delivery_propose(date: str):
 
     fermate = await db.logistics_tasks.find(
         {"date": date, "status": {"$in": ["unassigned", "assigned"]}}, {"_id": 0}).sort("route_order", 1).to_list(200)
+    google_missing = False
     struct_ids = list({f["structure_id"] for f in fermate if f.get("structure_id")})
     structs = {s["id"]: s async for s in db.structures.find(
-        {"id": {"$in": struct_ids}}, {"_id": 0, "id": 1, "name": 1, "klv_code": 1, "latitude": 1, "longitude": 1})}
+        {"id": {"$in": struct_ids}}, {"_id": 0, "id": 1, "name": 1, "klv_code": 1, "latitude": 1, "longitude": 1, "address": 1})}
+
+    # Geocoding on-demand delle strutture senza coordinate (persistito, stessa logica di /giro-percorso)
+    from services.google_maps import geocode_address
+    from core.utils import now_iso
+    for sid, s in structs.items():
+        if s.get("latitude") is None and (s.get("address") or "").strip():
+            addr = s["address"].strip()
+            g = await geocode_address(addr) or await geocode_address(f"{addr}, Trieste, Italia")
+            if g:
+                s["latitude"], s["longitude"] = g["lat"], g["lng"]
+                await db.structures.update_one({"id": sid}, {"$set": {
+                    "latitude": g["lat"], "longitude": g["lng"],
+                    "geocoded_at": now_iso(), "geocode_formatted": g.get("formatted_address")}})
 
     def pos_of(f):
         if f.get("latitude") is not None:
@@ -305,10 +305,14 @@ async def delivery_propose(date: str):
     for f in fermate:
         p = pos_of(f)
         dl = deadline_of(f)
-        best, best_score, best_tr = None, None, (10, 2.0)
+        best, best_score, best_tr = None, None, None
         for rid, st in state.items():
-            tr = await travel_estimate(st["pos"], p, "driving") if st["pos"] and p else (10, 2.0)
-            arrival = st["time"] + tr[0]
+            tr = None
+            if st["pos"] and p:
+                tr = await travel_estimate(st["pos"], p, "driving")
+                if tr is None:
+                    google_missing = True
+            arrival = st["time"] + (tr[0] if tr else 0)
             win_start = hhmm_to_min(f.get("time_window_start"))
             if win_start:
                 arrival = max(arrival, win_start)
@@ -323,26 +327,32 @@ async def delivery_propose(date: str):
             unassigned.append({"fermata_id": f["id"], **dest_of(f)})
             continue
         st = state[best]
-        arrival = st["time"] + best_tr[0]
+        arrival = st["time"] + (best_tr[0] if best_tr else 0)
         win_start = hhmm_to_min(f.get("time_window_start"))
         if win_start:
             arrival = max(arrival, win_start)
         st["stops"].append({
             "fermata_id": f["id"], **dest_of(f), "eta": min_to_hhmm(arrival),
-            "travel_min": best_tr[0], "km": best_tr[1],
+            "travel_min": best_tr[0] if best_tr else None, "km": best_tr[1] if best_tr else None,
             "time_window_end": f.get("time_window_end"), "priority": f.get("priority", "normal"),
             "lines": [l.get("category") for l in (f.get("lines") or [])],
         })
         if dl is not None and arrival + DEFAULT_STOP_SERVICE_MIN > dl:
             alerts.append(f"{st['rider']['name']}: {dest_of(f)['destination']} rischia la finestra oraria (arrivo {min_to_hhmm(arrival)})")
         st["time"] = arrival + DEFAULT_STOP_SERVICE_MIN
-        st["km"] += best_tr[1]
-        st["travel"] += best_tr[0]
+        if best_tr:
+            st["km"] += best_tr[1]
+            st["travel"] += best_tr[0]
         st["pos"] = p or st["pos"]
 
     riders_out = []
     for rid, st in state.items():
-        back = await travel_estimate(st["pos"], sede, "driving") if st["stops"] and sede and st["pos"] else (0, 0.0)
+        back = None
+        if st["stops"] and sede and st["pos"]:
+            back = await travel_estimate(st["pos"], sede, "driving")
+            if back is None:
+                google_missing = True
+        back = back or (0, 0.0)
         riders_out.append({
             "rider_id": rid, "name": st["rider"]["name"], "gps": gps.get(rid),
             "start_time": min_to_hhmm(st["start"]),
@@ -351,5 +361,12 @@ async def delivery_propose(date: str):
             "travel_min_total": st["travel"] + back[0],
             "total_min": (st["time"] + back[0] - st["start"]) if st["stops"] else 0,
         })
+    if google_missing:
+        alerts.append("Percorso temporaneamente non disponibile: Google Maps non risponde — tempi, km ed ETA non calcolati")
+        for r in riders_out:
+            for s in r["stops"]:
+                s["eta"], s["travel_min"], s["km"] = None, None, None
+            r["km_total"], r["travel_min_total"], r["end_time"], r["total_min"] = None, None, None, None
     return {"date": date, "sede": {"address": settings["sede_address"], "latitude": settings["sede_lat"], "longitude": settings["sede_lng"]},
-            "riders": riders_out, "unassigned": unassigned, "alerts": list(dict.fromkeys(alerts))}
+            "riders": riders_out, "unassigned": unassigned, "alerts": list(dict.fromkeys(alerts)),
+            "route_data_available": not google_missing}

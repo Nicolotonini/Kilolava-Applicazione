@@ -127,6 +127,12 @@ class AggiungiRichiesta(BaseModel):
     richiesta_id: str
 
 
+class RouteToNextPayload(BaseModel):
+    fermata_id: str
+    latitude: float
+    longitude: float
+
+
 class RouteOrderPayload(BaseModel):
     rider_id: str
     date: str
@@ -508,6 +514,27 @@ def create_consegne_router(get_current_user, is_ops_user):
         if not job or not job.get("final_weight_kg") or not job.get("scale_photo"):
             raise HTTPException(status_code=400, detail="⚠ Pesatura necessaria prima della consegna: peso finale e foto bilancia obbligatori")
 
+    async def _coords_of_structure(sid):
+        """Coordinate struttura; se mancano geocodifica l'indirizzo (Geocoding API) e le persiste (cache)."""
+        if not sid:
+            return None
+        s = await db.structures.find_one({"id": sid}, {"_id": 0, "latitude": 1, "longitude": 1, "address": 1})
+        if not s:
+            return None
+        if s.get("latitude") is not None:
+            return (s["latitude"], s["longitude"])
+        addr = (s.get("address") or "").strip()
+        if not addr:
+            return None
+        from services.google_maps import geocode_address
+        g = await geocode_address(addr) or await geocode_address(f"{addr}, Trieste, Italia")
+        if not g:
+            return None
+        await db.structures.update_one({"id": sid}, {"$set": {
+            "latitude": g["lat"], "longitude": g["lng"],
+            "geocoded_at": now_iso(), "geocode_formatted": g.get("formatted_address")}})
+        return (g["lat"], g["lng"])
+
     def _line_from(f: dict) -> dict:
         return {"category": f["kind"], "richiesta_id": f["id"], "items": f.get("items") or [],
                 "laundry_job_id": f.get("source_id") if f["kind"] == "lavanderia_privata" else None,
@@ -805,6 +832,109 @@ def create_consegne_router(get_current_user, is_ops_user):
             e.pop("movement_ids", None)
             out.append(e)
         return out
+
+    # ---------- Percorso Google (Routes API) ----------
+
+    @router.get("/giro-percorso")
+    async def giro_percorso(rider_id: Optional[str] = None, date: Optional[str] = None,
+                            current_user: dict = Depends(get_current_user)):
+        """Percorso reale del giro di un rider: polyline Google, km/min per tratta, ETA per fermata.
+        Nessun dato inventato: se Google non risponde -> route_available=false."""
+        rid = rider_id or current_user["id"]
+        if rid != current_user["id"]:
+            require_ops(current_user)
+        d = date or _deps["local_today"]()
+        rows = await db.logistics_tasks.find({"rider_id": rid, "date": d, "status": {"$ne": "cancelled"}},
+                                             {"_id": 0}).sort("route_order", 1).to_list(100)
+        from services.planning import get_operative_settings, min_to_hhmm, DEFAULT_STOP_SERVICE_MIN
+        settings = await get_operative_settings()
+        sede = {"address": settings["sede_address"], "latitude": settings["sede_lat"], "longitude": settings["sede_lng"]}
+
+        stops = []
+        for t in rows:
+            e = await _enrich_fermata(t)
+            coords = None
+            if e.get("latitude") is not None:
+                coords = (e["latitude"], e["longitude"])
+            elif t.get("structure_id"):
+                coords = await _coords_of_structure(t["structure_id"])
+            stops.append({
+                "id": t["id"], "destination": e["destination"], "klv_code": e.get("klv_code"),
+                "address": e.get("address"), "status": t.get("status"), "route_order": t.get("route_order"),
+                "latitude": coords[0] if coords else None, "longitude": coords[1] if coords else None,
+                "lines": [{"category": line.get("category"), "category_label": line.get("category_label")}
+                          for line in (e.get("lines") or [])],
+                "time_window_start": t.get("time_window_start"), "time_window_end": t.get("time_window_end"),
+                "notes": t.get("notes"), "eta": None, "leg_km": None, "leg_min": None,
+            })
+
+        # origine: GPS rider se attivo e fresco (<=10 min), altrimenti sede
+        origin, origin_source = None, None
+        loc = await db.user_locations.find_one({"user_id": rid, "active": True}, {"_id": 0})
+        if loc and loc.get("latitude") is not None and loc.get("timestamp"):
+            from datetime import datetime, timezone
+            try:
+                ts = datetime.fromisoformat(str(loc["timestamp"]).replace("Z", "+00:00"))
+                if (datetime.now(timezone.utc) - ts).total_seconds() <= 600:
+                    origin, origin_source = (loc["latitude"], loc["longitude"]), "gps"
+            except ValueError:
+                pass
+        if origin is None and sede["latitude"] is not None:
+            origin, origin_source = (sede["latitude"], sede["longitude"]), "sede"
+
+        remaining = [s for s in stops if s["status"] in ("assigned", "in_progress", "problem")]
+        route, route_available = None, False
+        if origin and remaining and all(s["latitude"] is not None for s in remaining):
+            from services.google_maps import compute_route
+            pts = [(s["latitude"], s["longitude"]) for s in remaining][:26]  # Routes API: max ~25 intermediates
+            route = await compute_route(origin, pts[-1], waypoints=pts[:-1])
+            route_available = bool(route)
+        if route:
+            from datetime import datetime as _dt
+            from zoneinfo import ZoneInfo
+            now = _dt.now(ZoneInfo("Europe/Rome"))
+            acc = now.hour * 60 + now.minute
+            legs = route.get("legs") or []
+            for i, s in enumerate(remaining):
+                if i < len(legs):
+                    acc += max(1, round(legs[i]["duration_seconds"] / 60))
+                    s["eta"] = min_to_hhmm(acc)
+                    s["leg_km"] = round(legs[i]["distance_meters"] / 1000, 1)
+                    s["leg_min"] = max(1, round(legs[i]["duration_seconds"] / 60))
+                    acc += DEFAULT_STOP_SERVICE_MIN
+
+        return {"date": d, "rider_id": rid, "sede": sede,
+                "origin": {"latitude": origin[0], "longitude": origin[1], "source": origin_source} if origin else None,
+                "stops": stops, "remaining_count": len(remaining),
+                "polyline": route.get("polyline") if route else None,
+                "km_total": round(route["distance_meters"] / 1000, 1) if route else None,
+                "min_total": max(1, round(route["duration_seconds"] / 60)) if route else None,
+                "route_available": route_available}
+
+    @router.post("/route-to-next")
+    async def route_to_next(data: RouteToNextPayload, current_user: dict = Depends(get_current_user)):
+        """AVVIA PERCORSO: tragitto reale dalla posizione GPS del rider alla fermata."""
+        f = await db.logistics_tasks.find_one({"id": data.fermata_id}, {"_id": 0})
+        if not f:
+            raise HTTPException(status_code=404, detail="Fermata non trovata")
+        if f.get("rider_id") != current_user["id"]:
+            require_ops(current_user)
+        coords = (f.get("latitude"), f.get("longitude")) if f.get("latitude") is not None else await _coords_of_structure(f.get("structure_id"))
+        if not coords or coords[0] is None:
+            raise HTTPException(status_code=400, detail="Fermata senza coordinate: aggiungi l'indirizzo alla struttura")
+        from services.google_maps import compute_route
+        route = await compute_route((data.latitude, data.longitude), coords)
+        if not route:
+            return {"route_available": False}
+        from datetime import datetime as _dt
+        from zoneinfo import ZoneInfo
+        from services.planning import min_to_hhmm
+        now = _dt.now(ZoneInfo("Europe/Rome"))
+        mins = max(1, round(route["duration_seconds"] / 60))
+        return {"route_available": True, "polyline": route["polyline"],
+                "km": round(route["distance_meters"] / 1000, 1), "min": mins,
+                "eta": min_to_hhmm(now.hour * 60 + now.minute + mins),
+                "destination": {"latitude": coords[0], "longitude": coords[1]}}
 
     # ---------- Panoramica ----------
 

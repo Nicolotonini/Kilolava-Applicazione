@@ -14,6 +14,7 @@ import { cn } from '../../lib/utils';
 import { DaySelector, FERMATA_STATUS, KIND_TONES, todayRome } from './shared';
 import { DayStaffStrip } from '../../components/kilolava/DayStaffStrip';
 import { AvailabilityDialog } from '../cleaning/AvailabilityDialog';
+import { RoutePolyline } from '../../components/kilolava/RoutePolyline';
 
 const OVERLOAD_THRESHOLD = 8;
 const RIDER_COLORS = ['#2563eb', '#d97706', '#0d9488', '#7c3aed', '#db2777', '#65a30d'];
@@ -86,19 +87,21 @@ function GiriProposalDialog({ proposal, onClose, onConfirmed }) {
               <div key={r.rider_id} className="rounded-lg border border-border px-3 py-2" data-testid={`giro-rider-${r.rider_id}`}>
                 <div className="flex items-center justify-between">
                   <p className="text-sm font-bold uppercase">{r.name}</p>
-                  <p className="text-xs text-muted-foreground tabular-nums">{r.stops.length} fermate · {r.km_total} km · {r.travel_min_total}′ viaggio</p>
+                  <p className="text-xs text-muted-foreground tabular-nums">
+                    {r.stops.length} fermate{r.km_total != null ? ` · ${r.km_total} km · ${r.travel_min_total}′ viaggio` : ''}
+                  </p>
                 </div>
                 <p className="text-xs text-muted-foreground">Partenza {r.start_time} · Sede Kilolava{r.end_time ? ` → rientro previsto ${r.end_time}` : ''}</p>
                 <div className="mt-1 space-y-0.5">
                   {r.stops.map((s, i) => (
                     <div key={s.fermata_id} className="flex items-center gap-2 text-xs" data-testid={`giro-stop-${s.fermata_id}`}>
                       <span className="w-4 h-4 rounded-full bg-muted font-bold flex items-center justify-center shrink-0">{i + 1}</span>
-                      <span className="font-mono font-semibold tabular-nums w-11 shrink-0">{s.eta}</span>
+                      <span className="font-mono font-semibold tabular-nums w-11 shrink-0">{s.eta || '—'}</span>
                       <span className="min-w-0 truncate">
                         {s.klv_code && <span className="font-mono font-bold text-primary mr-1">{s.klv_code}</span>}{s.destination}
                       </span>
                       {s.time_window_end && <span className="shrink-0 text-amber-600 font-semibold">entro {s.time_window_end}</span>}
-                      <span className="shrink-0 text-muted-foreground">{s.km} km · {s.travel_min}′</span>
+                      {s.km != null && <span className="shrink-0 text-muted-foreground">{s.km} km · {s.travel_min}′</span>}
                     </div>
                   ))}
                 </div>
@@ -129,7 +132,7 @@ function GiriProposalDialog({ proposal, onClose, onConfirmed }) {
   );
 }
 
-function GiroMap({ sede, fermate, byRider, riderColor, onOpenFermata }) {
+function GiroMap({ sede, fermate, byRider, riderColor, onOpenFermata, routeData, routeColor }) {
   const apiKey = process.env.REACT_APP_GOOGLE_MAPS_API_KEY;
   const mapId = process.env.REACT_APP_GOOGLE_MAP_ID;
   const orderMap = useMemo(() => {
@@ -140,13 +143,19 @@ function GiroMap({ sede, fermate, byRider, riderColor, onOpenFermata }) {
   const located = fermate.filter(f => f.latitude != null && f.status !== 'cancelled');
   if (!apiKey) return <div className="h-full flex items-center justify-center text-sm text-muted-foreground">Chiave Google Maps non configurata</div>;
   return (
-    <APIProvider apiKey={apiKey}>
+    <APIProvider apiKey={apiKey} libraries={['geometry']}>
       <Map style={{ width: '100%', height: '100%' }}
         defaultCenter={sede?.latitude ? { lat: sede.latitude, lng: sede.longitude } : { lat: 45.6495, lng: 13.7768 }}
         defaultZoom={13} mapId={mapId || undefined} gestureHandling="greedy" disableDefaultUI zoomControl>
+        {routeData?.polyline && <RoutePolyline encoded={routeData.polyline} color={routeColor || '#2563eb'} />}
         {sede?.latitude && (
           <AdvancedMarker position={{ lat: sede.latitude, lng: sede.longitude }} title={sede.address}>
             <div className="w-8 h-8 rounded-lg bg-gray-900 text-white flex items-center justify-center text-xs font-bold shadow-lg border-2 border-white" data-testid="map-sede-marker">KLV</div>
+          </AdvancedMarker>
+        )}
+        {routeData?.origin?.source === 'gps' && (
+          <AdvancedMarker position={{ lat: routeData.origin.latitude, lng: routeData.origin.longitude }} title="Posizione rider">
+            <div className="w-5 h-5 rounded-full bg-blue-600 border-[3px] border-white shadow-lg" data-testid="map-rider-origin" />
           </AdvancedMarker>
         )}
         {located.map(f => {
@@ -182,6 +191,9 @@ export default function OrganizzazionePage() {
   const [availRider, setAvailRider] = useState(null);
   const [proposal, setProposal] = useState(null);
   const [proposing, setProposing] = useState(false);
+  const [routeRider, setRouteRider] = useState(null);
+  const [routeData, setRouteData] = useState(null);
+  const [routeLoading, setRouteLoading] = useState(false);
 
   const load = useCallback(() => {
     setLoading(true);
@@ -195,6 +207,16 @@ export default function OrganizzazionePage() {
 
   useEffect(() => { load(); }, [load]);
   useEffect(() => { api.get('/impostazioni-operative').then(r => setSede({ address: r.data.sede_address, latitude: r.data.sede_lat, longitude: r.data.sede_lng })).catch(() => {}); }, []);
+  useEffect(() => { setRouteRider(null); setRouteData(null); }, [date]);
+
+  useEffect(() => {
+    if (!routeRider) { setRouteData(null); return; }
+    setRouteLoading(true);
+    api.get('/consegne/giro-percorso', { params: { rider_id: routeRider, date } })
+      .then(r => setRouteData(r.data))
+      .catch(() => setRouteData(null))
+      .finally(() => setRouteLoading(false));
+  }, [routeRider, date, fermate]);
 
   const riders = useMemo(() => dayRiders.filter(r => r.availability?.available !== false), [dayRiders]);
   const riderColor = useCallback((rid) => RIDER_COLORS[Math.max(0, dayRiders.findIndex(r => r.id === rid)) % RIDER_COLORS.length], [dayRiders]);
@@ -350,7 +372,40 @@ export default function OrganizzazionePage() {
 
           {/* DESTRA: MAPPA GRANDE */}
           <div className="flex-1 w-full rounded-xl border border-border overflow-hidden h-[420px] xl:h-[calc(100vh-320px)] xl:sticky xl:top-4 relative" data-testid="giro-map">
-            <GiroMap sede={sede} fermate={fermate} byRider={byRider} riderColor={riderColor} onOpenFermata={(f) => navigate(`/consegne/fermata/${f.id}`)} />
+            <GiroMap sede={sede} fermate={fermate} byRider={byRider} riderColor={riderColor}
+              routeData={routeData} routeColor={routeRider ? riderColor(routeRider) : undefined}
+              onOpenFermata={(f) => navigate(`/consegne/fermata/${f.id}`)} />
+            {/* Selettore percorso Google */}
+            <div className="absolute top-2 left-2 z-10 flex items-center gap-1.5 flex-wrap max-w-[calc(100%-16px)]" data-testid="route-selector">
+              <span className="text-xs font-semibold bg-card/95 border border-border rounded-full px-2.5 py-1 shadow-sm flex items-center gap-1">
+                <Route className="h-3 w-3 text-primary" />Percorso
+              </span>
+              <button onClick={() => setRouteRider(null)}
+                className={cn('text-xs rounded-full px-2.5 py-1 border shadow-sm transition-colors',
+                  !routeRider ? 'bg-foreground text-background border-foreground' : 'bg-card/95 border-border hover:border-primary/50')}
+                data-testid="route-rider-none">Nessuno</button>
+              {riders.filter(r => (byRider[r.id] || []).length > 0).map(r => (
+                <button key={r.id} onClick={() => setRouteRider(r.id)}
+                  className={cn('text-xs rounded-full px-2.5 py-1 border shadow-sm font-medium transition-colors',
+                    routeRider === r.id ? 'text-white' : 'bg-card/95 border-border hover:border-primary/50')}
+                  style={routeRider === r.id ? { backgroundColor: riderColor(r.id), borderColor: riderColor(r.id) } : undefined}
+                  data-testid={`route-rider-${r.id}`}>{r.name}</button>
+              ))}
+            </div>
+            {routeRider && (
+              <div className="absolute bottom-3 left-1/2 -translate-x-1/2 z-10 bg-card/95 border border-border rounded-full px-4 py-1.5 shadow-md" data-testid="route-summary">
+                {routeLoading ? (
+                  <p className="text-xs text-muted-foreground flex items-center gap-1.5"><Loader2 className="h-3 w-3 animate-spin" />Calcolo percorso Google…</p>
+                ) : routeData?.route_available ? (
+                  <p className="text-xs font-semibold tabular-nums">
+                    {routeData.km_total} km · {routeData.min_total} min
+                    {routeData.stops?.filter(s => s.eta).slice(-1)[0]?.eta ? ` · ultima fermata ETA ${routeData.stops.filter(s => s.eta).slice(-1)[0].eta}` : ''}
+                  </p>
+                ) : (
+                  <p className="text-xs font-medium text-amber-600">Percorso temporaneamente non disponibile</p>
+                )}
+              </div>
+            )}
             {fermate.filter(f => f.status !== 'cancelled').length === 0 && (
               <div className="absolute top-3 left-1/2 -translate-x-1/2 bg-card/95 border border-border rounded-full px-4 py-1.5 shadow-sm">
                 <p className="text-xs font-medium text-muted-foreground">Nessuna fermata per questa giornata</p>

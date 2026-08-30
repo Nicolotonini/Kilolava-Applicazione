@@ -295,6 +295,8 @@ class StructureResponse(BaseModel):
     expected_cleaning_minutes: Optional[int] = None
     latitude: Optional[float] = None
     longitude: Optional[float] = None
+    geocoded_at: Optional[str] = None
+    geocode_formatted: Optional[str] = None
     linea: Optional[str] = None
     notes: Optional[str] = None
     is_active: bool
@@ -977,6 +979,8 @@ def build_structure_response(structure: dict, client_name: Optional[str], unit_c
         "expected_cleaning_minutes": structure.get("expected_cleaning_minutes"),
         "latitude": structure.get("latitude"),
         "longitude": structure.get("longitude"),
+        "geocoded_at": structure.get("geocoded_at"),
+        "geocode_formatted": structure.get("geocode_formatted"),
         "linea": structure.get("linea"),
         "notes": structure.get("notes"),
         "is_active": structure.get("is_active", True),
@@ -5819,6 +5823,11 @@ async def set_impostazioni_operative(data: OperativeSettingsUpdate, current_user
     upd = {k: v for k, v in data.model_dump(exclude_unset=True).items()}
     if upd.get("stagione") and upd["stagione"] not in ("estivo", "invernale"):
         raise HTTPException(status_code=400, detail="Stagione non valida")
+    if upd.get("sede_address") and "sede_lat" not in upd:
+        from services.google_maps import geocode_address
+        g = await geocode_address(upd["sede_address"])
+        if g:
+            upd["sede_lat"], upd["sede_lng"] = g["lat"], g["lng"]
     await db.app_settings.update_one({"_id": "operative"}, {"$set": upd}, upsert=True)
     from services.planning import get_operative_settings
     return await get_operative_settings()
