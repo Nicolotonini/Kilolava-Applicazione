@@ -111,15 +111,21 @@ const getHomeRoute = (role) => {
 };
 
 // Public Route Component (redirects to dashboard if authenticated)
+const KILOLAVA_LOGO = 'https://customer-assets.emergentagent.com/job_kilolava-core/artifacts/wuuhyigy_images.png';
+
+// Loader brandizzato: mai schermata bianca durante verifica sessione/redirect
+export const AppLoader = () => (
+  <div className="min-h-screen flex flex-col items-center justify-center gap-5 bg-background" data-testid="app-loader">
+    <img src={KILOLAVA_LOGO} alt="Kilolava" className="h-12 w-auto object-contain" />
+    <div className="h-6 w-6 rounded-full border-2 border-[#F24E75] border-t-transparent animate-spin" />
+  </div>
+);
+
 const PublicRoute = ({ children }) => {
   const { isAuthenticated, loading, user } = useAuth();
 
   if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
-        <div className="animate-pulse text-muted-foreground">Caricamento...</div>
-      </div>
-    );
+    return <AppLoader />;
   }
 
   if (isAuthenticated) {
@@ -135,11 +141,7 @@ const RoleRoute = ({ children, allowedRoles }) => {
   const effectiveRole = user?.role === 'manager' ? 'admin' : user?.role;
 
   if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
-        <div className="animate-pulse text-muted-foreground">Caricamento...</div>
-      </div>
-    );
+    return <AppLoader />;
   }
 
   if (!isAuthenticated) {
@@ -156,7 +158,7 @@ const RoleRoute = ({ children, allowedRoles }) => {
 // Catch-all redirect that sends users to their home route
 const CatchAllRedirect = () => {
   const { isAuthenticated, loading, user } = useAuth();
-  if (loading) return <div className="min-h-screen flex items-center justify-center bg-background"><div className="animate-pulse text-muted-foreground">Caricamento...</div></div>;
+  if (loading) return <AppLoader />;
   if (!isAuthenticated) return <Navigate to="/login" replace />;
   return <Navigate to={getHomeRoute(user?.role)} replace />;
 };

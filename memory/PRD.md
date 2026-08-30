@@ -1,5 +1,13 @@
 # Kilolava - Product Requirements Document
 
+## Phase 40 (30/08/2026) — UI/UX Prima attivazione + loading brandizzato — COMPLETATO (self-tested 360/390/412/desktop, light+dark, e2e ok)
+- LoginPage.js riscritta lato UI (logica auth INVARIATA): attivazione a UNA colonna su mobile (grid-cols-1 sm:grid-cols-2), campi full width h-11 uniformi, label sopra senza wrap; card mx-5 p-6 su mobile, logo h-14 sm:h-20 mai tagliato, niente overflow orizzontale.
+- SecretInput riutilizzabile con occhio mostra/nascondi indipendente per: codice attivazione (default visibile), password login, nuova password, conferma, PIN, conferma PIN, PIN setpin (default nascosti). Solo visualizzazione: nessun dato in chiaro salvato.
+- Codice attivazione auto-formattato XXXX-XXXX (maiuscole, trattino automatico, niente spazi; il backend normalizza già con _norm_code).
+- Validazione inline sotto i campi (no popup): 'Le password non coincidono', 'Il PIN deve contenere 6 cifre', 'I PIN non coincidono' — testid act-password-mismatch/act-pin-length/act-pin-mismatch + setpin-*.
+- PIN: inputMode numeric + pattern [0-9]* (tastiera numerica iOS anche su type=password), autocomplete off; username autocomplete=username; password new-password; codice one-time-code.
+- Anti schermata bianca: AppLoader brandizzato (logo + spinner magenta, bg-background) esportato da App.js e usato in PublicRoute/RoleRoute/CatchAllRedirect; script inline in public/index.html applica classe tema + background hsl PRIMA del paint (niente flash bianco in dark mode).
+
 ## Phase 39 (Giugno 2026) — Auth/Utenti overhaul: username Kilolava, attivazione, PIN+dispositivi, dati amministrativi protetti — COMPLETATO (iteration_32: 34/34 backend + frontend 100%) — IMPORT 19 UTENTI REALI IN ATTESA DEI DATI
 - **Ruoli rinominati (solo etichette UI, enum invariati)**: admin='Super Admin', operations_manager='Responsabile Generale', cleaner='Pulizie', rider='Rider', laundry='Lavanderia', maintenance='Manutentore' (usePermissions.js ROLE_LABELS). Permessi/guard invariati.
 - **Account speciali**: USR-0000 = Nicolò Tonini (login nicolo.tonini@kilolava.it, role admin, tipo_rapporto=direzione, excluded_from_planning, IN ATTESA DI ATTIVAZIONE: senza password/PIN/codice — il codice lo genera lui dalla scheda utente). USR-0001 = account tecnico 'Super Admin' (ex Test User, login super.admin@kilolava.it O email legacy test_user@kilolava.com, password TestPass123!, tipo_rapporto=account_tecnico, escluso pianificazione). Migrazione startup idempotente.

@@ -22,6 +22,16 @@
         Learn how to configure a non-root public URL by running `npm run build`.
         -->
         <title>Emergent | Fullstack App</title>
+        <script>
+            (function () {
+                try {
+                    var t = localStorage.getItem("kilolava_theme");
+                    if (!t) { t = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light"; }
+                    document.documentElement.classList.add(t);
+                    document.documentElement.style.backgroundColor = t === "dark" ? "hsl(222 47% 7%)" : "hsl(210 20% 98%)";
+                } catch (e) {}
+            })();
+        </script>
         <script>window.addEventListener("error",function(e){if(e.error instanceof DOMException&&e.error.name==="DataCloneError"&&e.message&&e.message.includes("PerformanceServerTiming")){e.stopImmediatePropagation();e.preventDefault()}},true);</script>
         <script src="https://assets.emergent.sh/scripts/emergent-main.js"></script>
     </head>
