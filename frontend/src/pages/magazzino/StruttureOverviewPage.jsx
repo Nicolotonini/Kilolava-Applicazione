@@ -49,7 +49,7 @@ export default function StruttureOverviewPage() {
           <KpiCard label="Strutture monitorate" value={kpi.structures_monitored} testId="kpi-ms-monitored" />
           <KpiCard label="Fabbisogni lavanderia" value={kpi.fabbisogni_lavanderia} accent={kpi.fabbisogni_lavanderia > 0 ? 'text-red-600' : 'text-emerald-600'} onClick={() => navigate('/magazzino-strutture/noleggio')} testId="kpi-ms-lavanderia" />
           <KpiCard label="Forniture da reintegrare" value={kpi.forniture_da_reintegrare} accent={kpi.forniture_da_reintegrare > 0 ? 'text-amber-600' : 'text-emerald-600'} onClick={() => navigate('/magazzino-strutture/forniture')} testId="kpi-ms-forniture" />
-          <KpiCard label="Kit pulizie incompleti" value={kpi.kit_pulizie_incompleti} accent={kpi.kit_pulizie_incompleti > 0 ? 'text-amber-600' : 'text-emerald-600'} onClick={() => navigate('/magazzino-strutture/kit-pulizie')} testId="kpi-ms-kit" />
+          <KpiCard label="Richieste aperte" value={kpi.fabbisogni_aperti} accent={kpi.fabbisogni_aperti > 0 ? 'text-amber-600' : 'text-emerald-600'} testId="kpi-ms-fabbisogni" />
           <KpiCard label="Anomalie" value={kpi.anomalie} accent={kpi.anomalie > 0 ? 'text-red-600' : 'text-emerald-600'} onClick={() => navigate('/segnalazioni')} testId="kpi-ms-anomalie" />
           <KpiCard label="Movimenti oggi" value={kpi.movements_today} onClick={() => navigate('/magazzino-strutture/movimenti')} testId="kpi-ms-movements" />
         </KpiGrid>
@@ -71,9 +71,6 @@ export default function StruttureOverviewPage() {
             <div className="flex items-center gap-3 flex-wrap">
               <LavanderiaState a={a} />
               {a.forniture_missing > 0 && <span className="text-xs text-amber-600 font-medium">⚠ Forniture: {a.forniture_missing} articoli da reintegrare</span>}
-              {a.kit === 'incompleto' && <span className="text-xs text-amber-600 font-medium">⚠ Kit Pulizie: {a.kit_missing} mancanze</span>}
-              {a.kit === 'kit_non_configurato' && <span className="text-xs text-amber-600 font-medium">⚠ Kit Pulizie non configurato</span>}
-              {a.kit === 'ok' && <span className="text-xs text-emerald-600 font-medium">✓ Kit Pulizie completo</span>}
             </div>
           </button>
         ))}

@@ -125,7 +125,10 @@ export default function FornitureDetailPage() {
                         <td className="px-3 py-2 font-medium">
                           <div className="flex items-center gap-2.5">
                             <ProductThumb photo={i.photo} size="w-9 h-9" testId={`supply-thumb-${i.product_id}`} />
-                            <span>{i.name}</span>
+                            <span>
+                              {i.name}
+                              {i.code && <span className="block font-mono text-xs font-bold text-primary">{i.code}</span>}
+                            </span>
                           </div>
                         </td>
                         <td className={cn('px-3 py-2 tabular-nums font-semibold', i.below_min && 'text-amber-600')}>{i.qty}</td>

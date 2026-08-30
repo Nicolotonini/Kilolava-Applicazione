@@ -12,7 +12,6 @@ import DashboardPage from './pages/DashboardPage';
 import ClientsPage from './pages/ClientsPage';
 import ClientDetailPage from './pages/ClientDetailPage';
 import CalendarPage from './pages/CalendarPage';
-import InventoryPage from './pages/InventoryPage';
 import RiderViewPage from './pages/RiderViewPage';
 import ConsegnePanoramicaPage from './pages/consegne/ConsegnePanoramicaPage';
 import DaOrganizzarePage from './pages/consegne/DaOrganizzarePage';
@@ -44,8 +43,6 @@ import StructureDetailPage from './pages/StructureDetailPage';
 import StruttureOverviewPage from './pages/magazzino/StruttureOverviewPage';
 import GeneraleOverviewPage from './pages/magazzino/GeneraleOverviewPage';
 import CentralStockPage from './pages/magazzino/CentralStockPage';
-import KitPulizieListPage from './pages/magazzino/KitPulizieListPage';
-import KitPulizieDetailPage from './pages/magazzino/KitPulizieDetailPage';
 import NoleggioPage from './pages/magazzino/NoleggioPage';
 import NoleggioDetailPage from './pages/magazzino/NoleggioDetailPage';
 import FornitureListPage from './pages/magazzino/FornitureListPage';
@@ -209,7 +206,7 @@ function AppRoutes() {
         <Route path="clients" element={<ClientsPage />} />
         <Route path="clients/:clientId" element={<ClientDetailPage />} />
         <Route path="calendar" element={<CalendarPage />} />
-        <Route path="inventory" element={<InventoryPage />} />
+        <Route path="inventory" element={<Navigate to="/magazzino-generale/noleggio" replace />} />
         <Route path="consegne" element={<ConsegnePanoramicaPage />} />
         <Route path="mappa" element={<MappaOperativaPage />} />
         <Route path="consegne/da-organizzare" element={<DaOrganizzarePage />} />
@@ -228,8 +225,7 @@ function AppRoutes() {
         <Route path="magazzino-strutture/noleggio/:structureId" element={<NoleggioDetailPage />} />
         <Route path="magazzino-strutture/forniture" element={<FornitureListPage />} />
         <Route path="magazzino-strutture/forniture/:structureId" element={<FornitureDetailPage />} />
-        <Route path="magazzino-strutture/kit-pulizie" element={<KitPulizieListPage />} />
-        <Route path="magazzino-strutture/kit-pulizie/:structureId" element={<KitPulizieDetailPage />} />
+        <Route path="magazzino-strutture/kit-pulizie" element={<Navigate to="/magazzino-strutture" replace />} />
         <Route path="magazzino-strutture/movimenti" element={<MovimentiPage scope="strutture" />} />
         <Route path="magazzino-generale" element={<GeneraleOverviewPage />} />
         <Route path="magazzino-generale/noleggio" element={<CentralStockPage domain="noleggio" />} />
@@ -243,8 +239,8 @@ function AppRoutes() {
         <Route path="magazzino/noleggio/:id" element={<LegacyDetailRedirect base="/magazzino-strutture/noleggio" />} />
         <Route path="magazzino/forniture" element={<Navigate to="/magazzino-strutture/forniture" replace />} />
         <Route path="magazzino/forniture/:id" element={<LegacyDetailRedirect base="/magazzino-strutture/forniture" />} />
-        <Route path="magazzino/pulizie" element={<Navigate to="/magazzino-strutture/kit-pulizie" replace />} />
-        <Route path="magazzino/pulizie/:id" element={<LegacyDetailRedirect base="/magazzino-strutture/kit-pulizie" />} />
+        <Route path="magazzino/pulizie" element={<Navigate to="/magazzino-strutture" replace />} />
+        <Route path="magazzino/pulizie/:id" element={<Navigate to="/magazzino-strutture" replace />} />
         <Route path="magazzino/zaini" element={<Navigate to="/magazzino-generale/zaini" replace />} />
         <Route path="magazzino/zaini/:id" element={<LegacyDetailRedirect base="/magazzino-generale/zaini" />} />
         <Route path="magazzino/movimenti" element={<Navigate to="/magazzino-strutture/movimenti" replace />} />

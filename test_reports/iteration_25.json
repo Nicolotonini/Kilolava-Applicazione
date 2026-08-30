@@ -1,0 +1,26 @@
+{
+  "summary": "Iteration 25 — Verifica riorganizzazione moduli Magazzino: rimozione 'Lavanderia a Noleggio' top-level, rimozione COMPLETA 'Kit Pulizie Strutture', visibilità codici NOL/FOR/PUL/KLV, motore unico movimenti/storno/inventario/kit-transfer. Backend: 15/15 pytest PASS (test_iter25_magazzino_restructure.py). Frontend: sidebar corretto (MS: Panoramica/Noleggio/Forniture/Movimenti; MG: +Prodotti Pulizie +Zaini +Movimenti), redirect /inventory→/magazzino-generale/noleggio, /magazzino-strutture/kit-pulizie→/magazzino-strutture, /structure-inventory→/magazzino-strutture, /magazzino/pulizie→/magazzino-strutture tutti OK; CentralStockPage mostra colonna Codice per NOL (23 celle central-code-*), FOR (8) e PUL (23); overview strutture senza card 'Kit Pulizie'; API strutture/overview senza kit_pulizie_incompleti. Cataloghi intatti: 23 NOL, 8 FOR, 23 PUL, 8 KIT-NOL.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_iter25_magazzino_restructure.py",
+    "/app/test_reports/pytest/iter25.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Nessun endpoint DELETE su /api/magazzino/zaini/{id} — è per design ma rende impossibile ripulire zaini di test via API (ho rimosso via mongosh dopo il test). Se in futuro serve chiusura definitiva di uno zaino, valutare un endpoint DELETE o uno stato 'archiviato'.",
+    "warehouse_movements non ha DELETE per design (storno = meccanismo corretto), ma i movimenti 'annullamento' e i movimenti di rettifica inventario NON possono essere stornati a loro volta: se un test crea rettifiche o kit-transfer con qty molto grandi, riportare gli stock a 0 richiede un ulteriore ciclo di inventario (fatto manualmente al cleanup di questa iterazione).",
+    "In magazzino.py apply_movement (line ~200), il fallback `product.get('code')` funziona ma dipende dal fatto che il catalog abbia sempre il campo code. Verificato che le 3 collezioni cataloghi (rental_catalog/supply_catalog/cleaning_catalog) espongono code su tutti i 54 record, quindi no regressione, ma buona idea documentare l'invariante.",
+    "AppLayout.js — voce children 'Lavanderia a Noleggio' compare due volte (una sotto MS, una sotto MG): OK per design, ma se in futuro si aggiungeranno tooltip/analytics, distinguerle con key più esplicite (già fatto con ms-noleggio vs mg-noleggio)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter25_magazzino_restructure.py (new)"
+  ],
+  "success_rate": {"backend": "100% (15/15)", "frontend": "100% (menu, 4/4 redirect, 3/3 code columns, overview KPI, mobile no legacy voices)"},
+  "test_credentials": "test_user@kilolava.com / TestPass123!",
+  "seed_data_creation": "TEST_ITER25 client + TEST_ITER25_STRUCT structure + 1 zaino TEST_ITER25_ZAINO — TUTTI ELIMINATI a fine test. Movimenti di test rimossi via db.warehouse_movements.deleteMany({note:/TEST ITER25/}) (nessun DELETE endpoint by design). Stock centrale riportato a 0 via /api/magazzino/inventario con counted=0 su tutti i prodotti toccati. Stock struttura orfano rimosso via mongosh. Verifica finale: db.structures = 0, db.clients = 0, db.zaini = 0, db.stock_levels = 0, warehouse_movements con note TEST = 0.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Test file /app/backend/tests/test_iter25_magazzino_restructure.py è la regressione principale per la riorganizzazione magazzino: cataloghi (23/8/23) + kits (8) + overview senza kit_pulizie_incompleti + motore unico movimenti (carico, transfer, storno, doppio storno=400, rettifica inventario, kit-transfer) + zaino con code KLV-Z00X. Il test fa cleanup ma NON zera i movimenti (per design) — se rieseguito ripetutamente, i codici KLV-Z avanzano (KLV-Z001, Z002...) perché seq è persistente in app_settings. Nessun impatto funzionale. La collection legacy 'articles' è stata verificata vuota (/api/inventory endpoint non esiste più oppure risponde []). Cataloghi reali PRESERVATI. Google tokens NON toccati.",
+  "rca of the issue": "Nessuna issue rilevata. La prima esecuzione playwright ha mostrato due 'falsi negativi' su redirect /structure-inventory e /magazzino-strutture/kit-pulizie e 0 code su forniture: causa reale = timeout 1500ms insufficiente per il React Router Navigate + fetch API. Al retest con wait_for_selector + 3s timeout tutti gli asserti passano. Fix precedenti del main agent (rimozione voci menu, redirect Navigate, product_code in apply_movement, data-testid central-code-/mov-code-) confermati funzionanti."
+}

@@ -30,7 +30,7 @@ function LocPicker({ label, value, onChange, structures, zaini, testId }) {
           <select value={value.id || ''} onChange={e => onChange({ ...value, id: e.target.value })}
             className="w-full h-9 rounded-md border border-border bg-background px-2 text-sm" data-testid={`${testId}-structure`}>
             <option value="">Seleziona...</option>
-            {structures.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+            {structures.map(s => <option key={s.id} value={s.id}>{s.klv_code ? `${s.klv_code} — ` : ''}{s.name}</option>)}
           </select>
         </div>
       )}
@@ -116,7 +116,7 @@ export function MovementDialog({ defaultDomain = 'pulizie', lockDomain, defaultT
               <select value={productId} onChange={e => setProductId(e.target.value)}
                 className="w-full h-9 rounded-md border border-border bg-background px-2 text-sm" data-testid="mov-product">
                 <option value="">Seleziona...</option>
-                {products.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                {products.map(p => <option key={p.id} value={p.id}>{p.code ? `${p.code} — ` : ''}{p.name}</option>)}
               </select>
             </div>
             <div>
@@ -143,7 +143,7 @@ export function MovementDialog({ defaultDomain = 'pulizie', lockDomain, defaultT
 }
 
 export function InventoryDialog({ domain, locationType, locationId, items, title, onClose, onDone }) {
-  const [counts, setCounts] = useState(items.map(i => ({ product_id: i.product_id, name: i.name, system: i.qty ?? i.present ?? 0, counted: i.qty ?? i.present ?? 0 })));
+  const [counts, setCounts] = useState(items.map(i => ({ product_id: i.product_id, name: i.name, code: i.code, system: i.qty ?? i.present ?? 0, counted: i.qty ?? i.present ?? 0 })));
   const [saving, setSaving] = useState(false);
 
   const save = async () => {
@@ -170,7 +170,7 @@ export function InventoryDialog({ domain, locationType, locationId, items, title
         <div className="space-y-1.5">
           {counts.map((c, i) => (
             <div key={c.product_id} className="flex items-center gap-2 text-sm">
-              <span className="flex-1 min-w-0 truncate">{c.name}</span>
+              <span className="flex-1 min-w-0 truncate">{c.code ? <span className="font-mono text-xs font-bold text-primary mr-1.5">{c.code}</span> : null}{c.name}</span>
               <span className="text-xs text-muted-foreground w-16 text-right">sistema {c.system}</span>
               <Input type="number" min="0" value={c.counted} className="w-20 h-8 text-sm"
                 onChange={e => setCounts(cs => cs.map((x, j) => j === i ? { ...x, counted: e.target.value } : x))}

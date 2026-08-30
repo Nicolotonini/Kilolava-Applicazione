@@ -109,7 +109,10 @@ export default function NoleggioDetailPage() {
             <div className="rounded-xl border border-border divide-y divide-border/60">
               {data.items.map(i => (
                 <div key={i.product_id} className="flex items-center justify-between px-3 py-2 text-sm" data-testid={`stock-${i.product_id}`}>
-                  <span>{i.name}</span>
+                  <span>
+                    {i.name}
+                    {i.code && <span className="block font-mono text-xs font-bold text-primary">{i.code}</span>}
+                  </span>
                   <span className="font-semibold tabular-nums">{i.qty}</span>
                 </div>
               ))}

@@ -32,7 +32,10 @@ export function MovementsTable({ items, compact, onStorno }) {
           {items.map(m => (
             <tr key={m.id} className={cn('border-t border-border row-hover', m.reversed_by && 'opacity-50 line-through')} data-testid={`mov-row-${m.id}`}>
               <td className="px-3 py-2 whitespace-nowrap text-muted-foreground">{fmtDT(m.at)}</td>
-              <td className="px-3 py-2 font-medium">{m.product_name}</td>
+              <td className="px-3 py-2 font-medium">
+                {m.product_name}
+                {m.product_code && <span className="block font-mono text-xs font-bold text-primary" data-testid={`mov-code-${m.id}`}>{m.product_code}</span>}
+              </td>
               <td className="px-3 py-2 tabular-nums font-semibold">{m.qty}</td>
               {!compact && <td className="px-3 py-2 text-muted-foreground">{DOMAIN_LABELS[m.domain]}</td>}
               <td className="px-3 py-2"><StatusBadge tone={m.movement_type === 'annullamento' ? 'cancelled' : m.movement_type === 'rettifica_inventario' ? 'waiting' : 'neutral'}>{MOVEMENT_TYPE_LABELS[m.movement_type] || m.movement_type}</StatusBadge></td>

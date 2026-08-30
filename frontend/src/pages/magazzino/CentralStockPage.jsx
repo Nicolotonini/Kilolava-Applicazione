@@ -82,6 +82,7 @@ export default function CentralStockPage({ domain }) {
           <table className="w-full text-sm min-w-[640px]">
             <thead>
               <tr className="bg-muted/40 text-left text-xs uppercase tracking-wider text-muted-foreground">
+                <th className="px-3 py-2.5">Codice</th>
                 <th className="px-3 py-2.5">Articolo</th>
                 <th className="px-3 py-2.5">Categoria</th>
                 {domain === 'pulizie' && <th className="px-3 py-2.5">Tipo</th>}
@@ -94,6 +95,7 @@ export default function CentralStockPage({ domain }) {
             <tbody>
               {filtered.map(p => (
                 <tr key={p.id} className="border-t border-border row-hover" data-testid={`central-row-${p.id}`}>
+                  <td className="px-3 py-2.5 font-mono text-xs font-bold text-primary whitespace-nowrap" data-testid={`central-code-${p.id}`}>{p.code || '—'}</td>
                   <td className="px-3 py-2.5 font-medium">
                     <div className="flex items-center gap-2.5">
                       <ProductThumb photo={p.photo} size="w-9 h-9" testId={`central-thumb-${p.id}`} />

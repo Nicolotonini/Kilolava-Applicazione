@@ -7,7 +7,7 @@ import { NotificationBell } from '../NotificationBell';
 import {
   LayoutDashboard, Users, CalendarDays, Truck, Settings, LogOut, Menu, X,
   Sun, Moon, Shield, Sparkles, Wrench, FileText, ChevronDown, ChevronRight,
-  Eye, Building2, Shirt, Layers, Boxes, KeyRound, AlertTriangle, Warehouse, MapPin,
+  Eye, Building2, Shirt, Boxes, KeyRound, AlertTriangle, Warehouse, MapPin,
 } from 'lucide-react';
 import { useSegnalazioniBadge } from '../../hooks/useSegnalazioniBadge';
 import { Button } from '../ui/button';
@@ -47,7 +47,6 @@ const NAV = [
       { key: 'ms-overview', path: '/magazzino-strutture', label: 'Panoramica' },
       { key: 'ms-noleggio', path: '/magazzino-strutture/noleggio', label: 'Lavanderia a Noleggio' },
       { key: 'ms-forniture', path: '/magazzino-strutture/forniture', label: 'Forniture / Consumabili' },
-      { key: 'ms-kit-pulizie', path: '/magazzino-strutture/kit-pulizie', label: 'Kit Pulizie Strutture' },
       { key: 'ms-movimenti', path: '/magazzino-strutture/movimenti', label: 'Movimenti' },
     ],
   },
@@ -65,12 +64,6 @@ const NAV = [
     type: 'group', key: 'private-laundry', icon: Shirt, label: 'Lavanderia Privata', children: [
       { key: 'pl-jobs', path: '/private-laundry/jobs', label: 'Lavorazioni' },
       { key: 'pl-history', path: '/private-laundry/history', label: 'Storico' },
-    ],
-  },
-  {
-    type: 'group', key: 'rental-laundry', icon: Layers, label: 'Lavanderia a Noleggio', children: [
-      { key: 'rl-warehouse', path: '/inventory?tab=articles', label: 'Magazzino Noleggio' },
-      { key: 'rl-movements', path: '/inventory?tab=movements', label: 'Movimenti / Storico' },
     ],
   },
   { type: 'item', key: 'maintenance', path: '/maintenance', icon: Wrench, label: 'Manutenzioni' },
@@ -101,15 +94,7 @@ const ROLE_ICONS = {
   client: Users,
 };
 
-const INVENTORY_TAB_LABELS = {
-  articles: 'Magazzino Noleggio',
-  movements: 'Movimenti / Storico',
-  register: 'Movimenti / Storico',
-  pricing: 'Articoli & Kit',
-};
-
 function getBreadcrumb(pathname, search) {
-  const tab = new URLSearchParams(search).get('tab') || 'articles';
   if (pathname === '/dashboard') return { title: 'Dashboard', crumbs: [] };
   if (pathname === '/calendar') return { title: 'Calendario', crumbs: [{ label: 'Pulizie' }] };
   if (pathname === '/clients') return { title: 'Clienti', crumbs: [] };
@@ -130,8 +115,6 @@ function getBreadcrumb(pathname, search) {
   if (pathname.startsWith('/magazzino-strutture/noleggio/')) return { title: 'Noleggio in struttura', crumbs: [{ label: 'Lavanderia a Noleggio', to: '/magazzino-strutture/noleggio' }] };
   if (pathname === '/magazzino-strutture/forniture') return { title: 'Forniture / Consumabili', crumbs: [{ label: 'Magazzino nelle Strutture' }] };
   if (pathname.startsWith('/magazzino-strutture/forniture/')) return { title: 'Forniture struttura', crumbs: [{ label: 'Forniture / Consumabili', to: '/magazzino-strutture/forniture' }] };
-  if (pathname === '/magazzino-strutture/kit-pulizie') return { title: 'Kit Pulizie Strutture', crumbs: [{ label: 'Magazzino nelle Strutture' }] };
-  if (pathname.startsWith('/magazzino-strutture/kit-pulizie/')) return { title: 'Kit Pulizie della struttura', crumbs: [{ label: 'Kit Pulizie Strutture', to: '/magazzino-strutture/kit-pulizie' }] };
   if (pathname === '/magazzino-strutture/movimenti') return { title: 'Movimenti Strutture', crumbs: [{ label: 'Magazzino nelle Strutture' }] };
   if (pathname === '/magazzino-generale') return { title: 'Panoramica', crumbs: [{ label: 'Magazzino Generale' }] };
   if (pathname === '/magazzino-generale/noleggio') return { title: 'Lavanderia a Noleggio', crumbs: [{ label: 'Magazzino Generale' }] };
@@ -151,7 +134,6 @@ function getBreadcrumb(pathname, search) {
   if (pathname === '/consegne/storico') return { title: 'Storico', crumbs: [{ label: 'Consegne' }] };
   if (pathname === '/private-laundry/jobs') return { title: 'Lavorazioni', crumbs: [{ label: 'Lavanderia Privata' }] };
   if (pathname === '/private-laundry/history') return { title: 'Storico', crumbs: [{ label: 'Lavanderia Privata' }] };
-  if (pathname === '/inventory') return { title: INVENTORY_TAB_LABELS[tab] || 'Magazzino Noleggio', crumbs: [{ label: 'Lavanderia a Noleggio' }] };
   if (pathname === '/maintenance') return { title: 'Manutenzioni', crumbs: [] };
   if (pathname === '/documents') return { title: 'Documenti / DDT', crumbs: [{ label: 'Amministrazione' }] };
   if (pathname === '/documents/new') return { title: 'Nuovo documento', crumbs: [{ label: 'Documenti / DDT', to: '/documents' }] };
@@ -179,14 +161,7 @@ const AppLayout = ({ children }) => {
   const segBadge = useSegnalazioniBadge();
 
   const isPathActive = (path) => {
-    const [p, q] = path.split('?');
-    if (p === '/inventory') {
-      if (location.pathname !== '/inventory') return false;
-      const curTab = new URLSearchParams(location.search).get('tab') || 'articles';
-      let navTab = q ? new URLSearchParams(q).get('tab') : 'articles';
-      if (curTab === 'register') return navTab === 'movements';
-      return curTab === navTab;
-    }
+    const [p] = path.split('?');
     if (p === '/magazzino-strutture' || p === '/magazzino-generale' || p === '/consegne') return location.pathname === p;
     return location.pathname === p || location.pathname.startsWith(p + '/');
   };

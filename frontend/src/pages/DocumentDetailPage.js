@@ -495,7 +495,7 @@ const DocumentDetailPage = () => {
               )}
               {doc.movement_id && (
                 <button
-                  onClick={() => navigate('/inventory')}
+                  onClick={() => navigate('/magazzino-generale/movimenti')}
                   className="flex items-center gap-2 w-full p-2.5 rounded-lg bg-teal-50 dark:bg-teal-900/20 hover:bg-teal-100 dark:hover:bg-teal-900/30 transition-colors text-left"
                   data-testid="linked-movement"
                 >

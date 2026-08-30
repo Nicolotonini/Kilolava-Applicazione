@@ -123,6 +123,7 @@ export default function ZainoDetailPage() {
                               {d.source === 'kit' && <span className="ml-1.5 text-xs text-primary font-medium">Kit</span>}
                               {d.source === 'override' && <span className="ml-1.5 text-xs text-muted-foreground">Personalizzato</span>}
                               {d.extra && <span className="ml-1.5 text-xs text-muted-foreground">(extra)</span>}
+                              {d.code && <span className="block font-mono text-xs font-bold text-primary">{d.code}</span>}
                             </span>
                           </div>
                         </td>
@@ -204,7 +205,7 @@ export default function ZainoDetailPage() {
 }
 
 function CheckDialog({ zaino, onClose, onDone }) {
-  const [counts, setCounts] = useState(zaino.dotation.map(d => ({ product_id: d.product_id, name: d.name, system: d.present, counted: d.present })));
+  const [counts, setCounts] = useState(zaino.dotation.map(d => ({ product_id: d.product_id, name: d.name, code: d.code, system: d.present, counted: d.present })));
   const [saving, setSaving] = useState(false);
 
   const save = async () => {
@@ -231,7 +232,7 @@ function CheckDialog({ zaino, onClose, onDone }) {
         <div className="space-y-1.5">
           {counts.map((c, i) => (
             <div key={c.product_id} className="flex items-center gap-2 text-sm">
-              <span className="flex-1 min-w-0 truncate">{c.name}</span>
+              <span className="flex-1 min-w-0 truncate">{c.code ? <span className="font-mono text-xs font-bold text-primary mr-1.5">{c.code}</span> : null}{c.name}</span>
               <span className="text-xs text-muted-foreground w-16 text-right">sistema {c.system}</span>
               <Input type="number" min="0" value={c.counted} className="w-20 h-8 text-sm"
                 onChange={e => setCounts(cs => cs.map((x, j) => j === i ? { ...x, counted: e.target.value } : x))}
@@ -252,7 +253,7 @@ function CheckDialog({ zaino, onClose, onDone }) {
 }
 
 function ReintegroDialog({ zaino, onClose, onDone }) {
-  const [items, setItems] = useState(zaino.missing_items.map(m => ({ product_id: m.product_id, name: m.name, qty: m.missing })));
+  const [items, setItems] = useState(zaino.missing_items.map(m => ({ product_id: m.product_id, name: m.name, code: m.code, qty: m.missing })));
   const [saving, setSaving] = useState(false);
 
   const save = async () => {
@@ -277,7 +278,7 @@ function ReintegroDialog({ zaino, onClose, onDone }) {
         <div className="space-y-1.5">
           {items.map((it, i) => (
             <div key={it.product_id} className="flex items-center gap-2 text-sm">
-              <span className="flex-1 min-w-0 truncate">{it.name}</span>
+              <span className="flex-1 min-w-0 truncate">{it.code ? <span className="font-mono text-xs font-bold text-primary mr-1.5">{it.code}</span> : null}{it.name}</span>
               <Input type="number" min="0" value={it.qty} className="w-20 h-8 text-sm"
                 onChange={e => setItems(xs => xs.map((x, j) => j === i ? { ...x, qty: e.target.value } : x))}
                 data-testid={`reint-qty-${it.product_id}`} />
