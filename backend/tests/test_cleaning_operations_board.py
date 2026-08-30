@@ -353,13 +353,13 @@ def test_performance_30_cleaners_100_tasks(admin):
         # 30 cleaners
         for i in range(30):
             email = f"testperf_{uuid.uuid4().hex[:8]}@kilolava-perf.com"
-            r = requests.post(f"{API}/auth/register", json={
+            r = admin.post(f"{API}/users", json={
+                "first_name": f"TEST_PERF_{i}", "last_name": "Perf",
                 "email": email, "password": "TestPerf123!",
-                "name": f"TEST_PERF_{i}",
                 "role": "cleaner", "language": "it"
             }, timeout=15)
             assert r.status_code == 200, r.text
-            created_users.append(r.json()["user"]["id"])
+            created_users.append(r.json()["id"])
         # 100 tasks (unassigned, on dd)
         for i in range(100):
             r = admin.post(f"{API}/cleaning-tasks", json={

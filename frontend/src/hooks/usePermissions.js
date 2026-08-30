@@ -44,12 +44,12 @@ const NAV_VISIBILITY = {
 const IMPERSONATION_KEY = 'kilolava_impersonate_role';
 
 export const ROLE_LABELS = {
-  admin: 'Admin',
-  operations_manager: 'Responsabile Operativo',
-  cleaner: 'Operatrice Pulizie',
+  admin: 'Super Admin',
+  operations_manager: 'Responsabile Generale',
+  cleaner: 'Pulizie',
   rider: 'Rider',
   maintenance: 'Manutentore',
-  laundry: 'Addetto Lavanderia',
+  laundry: 'Lavanderia',
   client: 'Cliente',
 };
 

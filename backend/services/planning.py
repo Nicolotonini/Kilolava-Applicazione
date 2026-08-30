@@ -74,7 +74,8 @@ async def merged_day_availability(date: str, role: str):
     """Disponibilità del giorno = standard utente sovrascritta dall'override giornaliero (mai viceversa).
     Include gli utenti con il ruolo principale O aggiuntivo, attivi e con disponibilità standard Attiva."""
     users = await db.users.find({"$or": [{"role": role}, {"extra_roles": role}],
-                                 "is_active": {"$ne": False}, "standard_available": {"$ne": False}},
+                                 "is_active": {"$ne": False}, "standard_available": {"$ne": False},
+                                 "excluded_from_planning": {"$ne": True}},
                                 {"_id": 0, "id": 1, "name": 1, "ops_availability": 1, "anagrafica": 1}).to_list(200)
     overrides = {o["user_id"]: o async for o in db.day_availability.find({"date": date, "role": role}, {"_id": 0})}
     out = []

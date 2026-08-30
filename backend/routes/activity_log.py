@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from core.database import db
 
 MUTATING = {'POST', 'PUT', 'PATCH', 'DELETE'}
-SKIP_PREFIXES = ('/api/auth/login', '/api/activity', '/api/scheduler')
+SKIP_PREFIXES = ('/api/auth/', '/api/activity', '/api/scheduler')
 
 
 def init_activity_middleware(app, secret_key, algorithm):

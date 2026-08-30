@@ -1,0 +1,49 @@
+{
+  "summary": "Iterazione 32 — Fase 39 Auth/Users overhaul. BACKEND: 34/34 pytest PASS (~19s, test_iter32_auth_module.py, seriale). Coperti: login username kilolava (super.admin@kilolava.it) + email legacy (test_user@kilolava.com) → token+pin_set+device_authorized; brute force lockout su username fittizio (5 falliti → 429); creazione admin-only POST /users senza password → activation_code monouso (formato XXXX-XXXX Crockford), login_username auto-generato nome.cognome@kilolava.it, usr_code progressivo (USR-0038+); creazione con password → activation_status=active; USR-0001 duplicato → 400. Flusso attivazione: codice errato → 401; codice giusto → password+PIN+device autorizzati e login token valido; secondo uso stesso codice → 401 (monouso); PIN != 6 cifre → 400. PIN login: OK su device autorizzato; nuovo device → 403; 5 PIN errati → lock/429 con messaggio 'accedi con la password'; login password resetta il lock. Sessioni: POST /users/{id}/revoke-sessions invalida i token esistenti (401 'Sessione revocata: accedi di nuovo'); GET /users/{id}/devices ritorna devices[] + active_sessions; DELETE /users/{id}/devices/{device_id} revoca device+sessioni. Force-reactivation: azzera password/PIN, revoca sessioni+dispositivi, ritorna nuovo codice; login vecchia password → 403 'Account da attivare'; self → 400. Reset password admin revoca sessioni. Dati amministrativi: admin PUT full (incl. IBAN) + status='completi'; NIENTE tax_code/vat/iban/iban_holder/admin_notes/admin_data mai in GET /users e GET /users/{id}; audit user.admin_data_update contiene SOLO valori 'impostato'|'modificato'|'rimosso' (nessun valore IBAN/CF); operations_manager GET → iban_hidden=true + iban/iban_holder assenti + can_edit=false, PUT → 403; cleaner GET → 403. admin_data_status: dipendente senza CF/IBAN='da_completare'→dopo PUT='completi'; PIVA richiede vat_number. Contract: determinato senza end_date → 400; apprendistato salva weekly_hours/transformation_date/apprenticeship_end; end_date passato → contract_status='scaduto'; tipo_rapporto non valido → 400. excluded_from_planning: cleaner escluso NON in /cleaning-tasks/cleaners né in /cleaning-board.cleaners; rider escluso NON in /logistics/riders. /auth/register → 403 (registrazione pubblica disabilitata). Regressione: GET /users ordinata per usr_code con USR-0000 Tonini pending + USR-0001 admin active; login_username unicità su PUT (400) + formato invalido (400); /users/{id}/service-status e /audit OK per admin. FRONTEND desktop (1920x1080) + mobile (390x844): (a) /login pannello password con login-username/password-input/login-btn + activation-link; (b) activation-panel espone tutti i testid richiesti (act-code/password/password2/pin/pin2 + act-submit-btn + back-to-login-btn), verificato solo UI; (c) login admin → setpin-panel visibile (setpin-pin-input/pin2-input/save-btn/skip-btn) → 'Salta per ora' → redirect /dashboard (admin PIN NON impostato, verificato in Mongo pin_hash=null); (d) /users mostra 9 testid users-filter-* con etichette nuove (Super Admin/Responsabile Generale/Pulizie/Rider/Manutentore/Lavanderia/admin/operations_manager/cleaner/rider/maintenance/laundry chiavi), users-search input, new-user-btn, badge 'Da attivare' su USR-0000, colonna admin-data-status; (e) new-user-dialog: nu-first-name/last-name/display-name/role/tipo-rapporto/login-username auto-suggerito (testui.iter32ui32x@kilolava.it) + creazione SENZA password → activation-code-view con ac-code (FB9C-DJJZ) + ac-username + ac-copy-btn + ac-done-btn; (f) /users/{id} detail: ud-display-name/ud-tipo-rapporto/ud-contract-type/ud-excluded-planning/ud-tax-code/ud-vat-number/ud-iban/ud-admin-data-status/ud-save-admin-data/ud-login-username/ud-activation-status/ud-pin-state; su utente pending presente ud-gen-code-btn; (g) USR-0000 Tonini detail: ud-gen-code-btn presente MA NON CLICCATO come da vincolo. CLEANUP FINALE VERIFICATO via Motor: users=2 (SOLO USR-0000 Tonini pending pin=no e USR-0001 Admin active pin=no); tutti i TEST_ eliminati; PIN admin NON impostato. Mobile smoke: login+setpin+skip+dashboard tutto OK.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "GET /api/users/{user_id}", "issue": "Ereditato da iter31: doppia definizione (server.py:4650 get_user e stub duplicato precedente). La prima registrata prevale. Non blocca il test, ma va rimosso il duplicato residuo (verificare anche linea originaria segnalata in iter31 riga 4507 se ancora presente)."},
+    {"endpoint": "GET /api/users/{id}/admin-data (direzione/account_tecnico)", "issue": "admin_data_status per tipo_rapporto='direzione' con dati vuoti ritorna 'completi' (required tuple vuota → all([]) = True). Coerente con la spec (Direzione non richiede CF/IBAN), ma può risultare fuorviante in UI: valutare se mostrare 'n/d' invece di badge verde 'Completi' su Nicolò Tonini USR-0000."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "UserDetailPage — Identità", "issues": ["Il campo 'Data di nascita' usa <Input type='date'> nativo (mostra placeholder mm/dd/yyyy in inglese anche in UI italiana). Considerare shadcn calendar per uniformità."]},
+      {"screen": "UserDetailPage USR-0000", "issues": ["Sezione Dati amministrativi mostra badge verde 'Completi' anche se tutti i campi CF/P.IVA/IBAN sono vuoti (per tipo_rapporto=direzione). Comportamento coerente con la logica lato server (nessun campo obbligatorio per direzione/account_tecnico) ma comunicativamente ambiguo."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter32_auth_module.py",
+    "/app/test_reports/pytest/iter32.xml"
+  ],
+  "action_items": [
+    "OPTIONAL/MINOR: valutare fix design admin_data_status='n/d' per direzione/account_tecnico invece di 'completi' su dati vuoti.",
+    "OPTIONAL: usare shadcn calendar per Data di nascita (attualmente input date nativo → locale mm/dd/yyyy).",
+    "MINOR (from iter31, verificare se ancora presente): eliminare eventuale duplicato di route GET /users/{user_id} in server.py."
+  ],
+  "critical_code_review_comments": [
+    "auth: _norm_username lowercases + strip, coerente per login/lookup. login_username validato con regex [a-z0-9._-]+@[a-z0-9.-]+ (accetta anche non-kilolava, ma requisito UX è nome.cognome@kilolava.it — validazione via _unique_login_username che forza @kilolava.it solo in auto-generazione).",
+    "activate_account: la validazione _validate_pin(data.pin) avviene DOPO la verifica del codice: quindi con codice sbagliato+PIN sbagliato si ritorna 401 (attesa) e con codice giusto+PIN sbagliato → 400. Test coperto.",
+    "pin-login: pin_locked_until confrontato con now_iso() come stringa ISO → funziona SOLO se entrambi in UTC con stesso formato. Corretto qui (entrambi from datetime.now(timezone.utc).isoformat()).",
+    "get_user_admin_data: admin ha can_edit=true (comparazione string 'admin'). Per operations_manager can_edit=false e iban/iban_holder rimossi dal dict di risposta. OK.",
+    "_admin_data_status: required tuple vuota per direzione/account_tecnico → all([]) = True → 'completi' anche a dati vuoti. Design ambiguo (segnalato).",
+    "list_users: hard-coded projection esclude password_hash MA NON pin_hash, activation.code_hash. Verificato che _build_user_response non li propaga (usa solo pin_set boolean). OK ma pin_hash e activation.code_hash arrivano dal DB in memory server — ok, non nel payload.",
+    "force_reactivation: $unset password_hash e pin_hash + revoca sessioni + devices. OK. Non cancella login_attempts residui su username: se admin ha bloccato l'utente in precedenza con 5 tentativi, potrebbe restare il lock. Non testato ma da tenere in mente.",
+    "delete_user cancella user_devices + user_sessions ma NON login_attempts (chiavi per identifier, non user_id): OK, si autopurgano dopo cooldown.",
+    "UI: LoginPage setpin-skip-btn commit sessione SENZA impostare PIN — flusso corretto per USR-0001 admin.",
+    "UI: New-user-btn in UsersPage.js chiama POST /users e in caso di risposta con activation_code passa ad activation-code-view; ac-copy-btn copia negli appunti, ac-done-btn chiude e resetta filtro."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter32_auth_module.py (nuovo, 34 test)"
+  ],
+  "success_rate": {"backend": "100% (34/34)", "frontend": "100% (login desktop+mobile, activation panel UI, setpin-skip, /users lista+filtri+badge pending+admin-data-status, new-user-dialog+activation-code-view, /users/{id} detail sezioni complete, USR-0000 ud-gen-code-btn NON cliccato)"},
+  "test_credentials": "Super Admin: super.admin@kilolava.it (o test_user@kilolava.com) / TestPass123!",
+  "seed_data_creation": "Utenti temporanei TEST_iter32_* (~24) creati durante il run + 1 UI TEST (testui.iter32ui32x). TUTTI eliminati in teardown. Cleanup finale via Motor confermato: users=2 (solo USR-0000 pending e USR-0001 active senza PIN).",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "test_iter32_auth_module.py (34 test seriali, ~19s) è la regressione Fase 39. Fixture module-scoped ammin_h; CREATED_USER_IDS raccolto e cleanup autouse. Nel test PIN-lock resetta con login password. Il device_id admin ADMIN_DEV è random per run, quindi genera un device autorizzato nuovo per ogni esecuzione (attenzione: crescono user_devices per USR-0001, considerare purge periodico). USR counter progressivo permanente (attualmente ~USR-0038+). NB per E1: nel migration startup USR-0000 viene creato con excluded_from_planning=True. Per UI le etichette nuove sono in usePermissions.js ROLE_LABELS (Super Admin/Responsabile Generale/Pulizie/Rider/Lavanderia/Manutentore).",
+  "rca of the issue": "Nessun bug funzionale. Due micro-osservazioni design (admin_data_status='completi' su direzione con dati vuoti; input date nativo per compleanno) non bloccanti — main agent può valutare in autonomia."
+}

@@ -7,7 +7,6 @@ import { ThemeProvider } from './contexts/ThemeContext';
 
 // Pages
 import LoginPage from './pages/LoginPage';
-import RegisterPage from './pages/RegisterPage';
 import DashboardPage from './pages/DashboardPage';
 import ClientsPage from './pages/ClientsPage';
 import ClientDetailPage from './pages/ClientDetailPage';
@@ -174,14 +173,7 @@ function AppRoutes() {
           </PublicRoute>
         }
       />
-      <Route
-        path="/register"
-        element={
-          <PublicRoute>
-            <RegisterPage />
-          </PublicRoute>
-        }
-      />
+      <Route path="/register" element={<Navigate to="/login" replace />} />
 
       {/* Maintenance View - standalone mobile-first layout (MUST be before admin routes) */}
       <Route

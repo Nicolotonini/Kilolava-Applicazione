@@ -12,6 +12,9 @@ from pathlib import Path
 from pydantic import BaseModel, Field, EmailStr, ConfigDict
 from typing import List, Optional
 import uuid
+import re
+import secrets
+import unicodedata
 from datetime import datetime, timezone, timedelta
 from zoneinfo import ZoneInfo
 
@@ -119,8 +122,34 @@ class UserCreate(BaseModel):
     notes: Optional[str] = None
 
 class UserLogin(BaseModel):
-    email: EmailStr
+    username: Optional[str] = None
+    email: Optional[str] = None  # compat legacy: accettato come username
     password: str
+    device_id: Optional[str] = None
+    device_name: Optional[str] = None
+
+class PinLoginPayload(BaseModel):
+    username: str
+    pin: str
+    device_id: str
+
+class ActivateAccountPayload(BaseModel):
+    username: str
+    code: str
+    new_password: str
+    pin: str
+    device_id: Optional[str] = None
+    device_name: Optional[str] = None
+
+class LoginOptionsPayload(BaseModel):
+    username: str
+    device_id: Optional[str] = None
+
+class SetPinPayload(BaseModel):
+    password: str
+    pin: str
+    device_id: Optional[str] = None
+    device_name: Optional[str] = None
 
 class UserResponse(BaseModel):
     model_config = ConfigDict(extra="ignore")
@@ -143,6 +172,13 @@ class UserResponse(BaseModel):
     contract: Optional[dict] = None
     contract_status: Optional[str] = None
     last_login: Optional[str] = None
+    login_username: Optional[str] = None
+    display_name: Optional[str] = None
+    tipo_rapporto: Optional[str] = None
+    excluded_from_planning: bool = False
+    admin_data_status: Optional[str] = None
+    pin_set: bool = False
+    activation_status: str = "active"
     permissions: List[str] = []
     created_at: str
 
@@ -150,6 +186,8 @@ class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
     user: UserResponse
+    pin_set: bool = False
+    device_authorized: bool = False
 
 # ============== CLIENT MODELS ==============
 
@@ -396,12 +434,103 @@ def create_access_token(data: dict) -> str:
     to_encode.update({"exp": expire})
     return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
 
+
+# ---- Sicurezza accessi: username interni, sessioni, dispositivi, PIN, lockout ----
+
+LOGIN_MAX_ATTEMPTS = 5
+LOGIN_LOCK_MINUTES = 15
+ACTIVATION_CODE_HOURS = 72
+_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+
+
+def _norm_username(v: Optional[str]) -> str:
+    return (v or "").strip().lower()
+
+
+def _validate_pin(pin: str):
+    if not re.fullmatch(r"\d{6}", pin or ""):
+        raise HTTPException(status_code=400, detail="Il PIN deve essere di 6 cifre")
+
+
+def _gen_activation_code() -> str:
+    raw = "".join(secrets.choice(_CODE_ALPHABET) for _ in range(8))
+    return f"{raw[:4]}-{raw[4:]}"
+
+
+def _norm_code(code: str) -> str:
+    return re.sub(r"[^A-Z0-9]", "", (code or "").upper())
+
+
+async def _find_user_by_login(username: str) -> Optional[dict]:
+    u = _norm_username(username)
+    if not u:
+        return None
+    return await db.users.find_one({"$or": [{"login_username": u}, {"email": u}]}, {"_id": 0})
+
+
+async def _check_login_lock(identifier: str):
+    rec = await db.login_attempts.find_one({"identifier": identifier})
+    if rec and rec.get("count", 0) >= LOGIN_MAX_ATTEMPTS and str(rec.get("locked_until") or "") > now_iso():
+        raise HTTPException(status_code=429, detail="Troppi tentativi falliti: riprova tra qualche minuto")
+
+
+async def _record_login_failure(identifier: str):
+    locked_until = (datetime.now(timezone.utc) + timedelta(minutes=LOGIN_LOCK_MINUTES)).isoformat()
+    await db.login_attempts.update_one(
+        {"identifier": identifier},
+        {"$inc": {"count": 1}, "$set": {"last_at": now_iso(), "locked_until": locked_until}}, upsert=True)
+
+
+async def _clear_login_failures(identifier: str):
+    await db.login_attempts.delete_one({"identifier": identifier})
+
+
+async def _authorize_device(user_id: str, device_id: Optional[str], device_name: Optional[str] = None) -> bool:
+    if not device_id:
+        return False
+    now = now_iso()
+    set_fields = {"revoked": False, "last_used_at": now}
+    if device_name:
+        set_fields["name"] = device_name
+    await db.user_devices.update_one(
+        {"user_id": user_id, "device_id": device_id},
+        {"$set": set_fields, "$setOnInsert": {"id": str(uuid.uuid4()), "created_at": now}},
+        upsert=True)
+    return True
+
+
+async def _device_authorized(user_id: str, device_id: Optional[str]) -> bool:
+    if not device_id:
+        return False
+    return bool(await db.user_devices.find_one(
+        {"user_id": user_id, "device_id": device_id, "revoked": {"$ne": True}}))
+
+
+async def _issue_token(user_id: str, device_id: Optional[str] = None) -> str:
+    sid = str(uuid.uuid4())
+    await db.user_sessions.insert_one({"id": sid, "user_id": user_id, "device_id": device_id,
+                                       "created_at": now_iso(), "revoked": False})
+    return create_access_token({"sub": user_id, "sid": sid})
+
+
+async def _revoke_user_sessions(user_id: str, device_id: Optional[str] = None) -> int:
+    q = {"user_id": user_id, "revoked": {"$ne": True}}
+    if device_id:
+        q["device_id"] = device_id
+    r = await db.user_sessions.update_many(q, {"$set": {"revoked": True, "revoked_at": now_iso()}})
+    return r.modified_count
+
 async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
     try:
         payload = jwt.decode(credentials.credentials, SECRET_KEY, algorithms=[ALGORITHM])
         user_id = payload.get("sub")
         if user_id is None:
             raise HTTPException(status_code=401, detail="Token non valido")
+        sid = payload.get("sid")
+        if sid:
+            sess = await db.user_sessions.find_one({"id": sid}, {"_id": 0, "revoked": 1})
+            if not sess or sess.get("revoked"):
+                raise HTTPException(status_code=401, detail="Sessione revocata: accedi di nuovo")
         user = await db.users.find_one({"id": user_id}, {"_id": 0})
         if user is None:
             raise HTTPException(status_code=401, detail="Utente non trovato")
@@ -444,8 +573,8 @@ def _acts_as_cleaner(user: dict) -> bool:
 
 
 def _contract_status(contract: Optional[dict]) -> Optional[str]:
-    """scaduto | scade_7 | scade_30 | ok (solo per contratti Determinato con data fine)."""
-    if not contract or contract.get("type") != "determinato" or not contract.get("end_date"):
+    """scaduto | scade_7 | scade_30 | ok (per ogni contratto con data fine prevista)."""
+    if not contract or not contract.get("end_date"):
         return None
     try:
         from datetime import date as _date
@@ -472,15 +601,22 @@ def _build_user_response(user: dict) -> UserResponse:
         parts = name.split(" ", 1)
         first = parts[0]
         last = parts[1] if len(parts) > 1 else ""
-    display_name = f"{first} {last}".strip() or name or user.get("email", "")
+    real_name = f"{first} {last}".strip() or name or user.get("email") or user.get("login_username") or ""
+    display_name = (user.get("display_name") or "").strip() or None
+    shown_name = display_name or real_name
     role = user.get("role", "client")
     # Migrate legacy "manager" role
     if role == "manager":
         role = "admin"
     contract = user.get("contract")
+    act = user.get("activation") or {}
+    if act.get("status"):
+        activation_status = "pending" if act["status"] == "pending" else "active"
+    else:
+        activation_status = "active" if user.get("password_hash") else "pending"
     return UserResponse(
-        id=user["id"], email=user.get("email", ""),
-        first_name=first, last_name=last, name=display_name,
+        id=user["id"], email=user.get("email") or "",
+        first_name=first, last_name=last, name=shown_name,
         role=role, language=user.get("language", "it"),
         phone=user.get("phone"), vehicle_type=user.get("vehicle_type"),
         client_id=user.get("client_id"), is_active=user.get("is_active", True),
@@ -492,6 +628,13 @@ def _build_user_response(user: dict) -> UserResponse:
         contract=contract,
         contract_status=_contract_status(contract),
         last_login=user.get("last_login"),
+        login_username=user.get("login_username"),
+        display_name=display_name,
+        tipo_rapporto=user.get("tipo_rapporto") or ("dipendente" if role != "client" else None),
+        excluded_from_planning=bool(user.get("excluded_from_planning")),
+        admin_data_status=_admin_data_status(user) if role != "client" else None,
+        pin_set=bool(user.get("pin_hash")),
+        activation_status=activation_status,
         permissions=ROLE_PERMISSIONS.get(role, []),
         created_at=user.get("created_at", ""),
     )
@@ -535,6 +678,8 @@ def get_object(path: str):
 
 @api_router.post("/auth/register", response_model=TokenResponse)
 async def register(user_data: UserCreate):
+    if await db.users.count_documents({}) > 0:
+        raise HTTPException(status_code=403, detail="Registrazione pubblica disabilitata: gli account vengono creati dal Super Admin")
     existing = await db.users.find_one({"email": user_data.email})
     if existing:
         raise HTTPException(status_code=400, detail="Email già registrata")
@@ -561,14 +706,108 @@ async def register(user_data: UserCreate):
 
 @api_router.post("/auth/login", response_model=TokenResponse)
 async def login(login_data: UserLogin):
-    user = await db.users.find_one({"email": login_data.email}, {"_id": 0})
+    ident = _norm_username(login_data.username or login_data.email)
+    if not ident:
+        raise HTTPException(status_code=400, detail="Inserisci il nome utente")
+    await _check_login_lock(ident)
+    user = await _find_user_by_login(ident)
+    if user and not user.get("password_hash"):
+        raise HTTPException(status_code=403, detail="Account da attivare: usa 'Prima attivazione' con il codice ricevuto")
     if not user or not verify_password(login_data.password, user["password_hash"]):
-        raise HTTPException(status_code=401, detail="Email o password non validi")
+        await _record_login_failure(ident)
+        raise HTTPException(status_code=401, detail="Credenziali non valide")
     if not user.get("is_active", True):
         raise HTTPException(status_code=403, detail="Account disattivato")
-    await db.users.update_one({"id": user["id"]}, {"$set": {"last_login": now_iso()}})
-    access_token = create_access_token({"sub": user["id"]})
-    return TokenResponse(access_token=access_token, user=_build_user_response(user))
+    await _clear_login_failures(ident)
+    device_ok = await _authorize_device(user["id"], login_data.device_id, login_data.device_name)
+    await db.users.update_one({"id": user["id"]}, {"$set": {
+        "last_login": now_iso(), "pin_failed_attempts": 0, "pin_locked_until": None}})
+    access_token = await _issue_token(user["id"], login_data.device_id)
+    return TokenResponse(access_token=access_token, user=_build_user_response(user),
+                         pin_set=bool(user.get("pin_hash")), device_authorized=device_ok)
+
+
+@api_router.post("/auth/pin-login", response_model=TokenResponse)
+async def pin_login(data: PinLoginPayload):
+    user = await _find_user_by_login(data.username)
+    if not user or not user.get("pin_hash"):
+        raise HTTPException(status_code=401, detail="PIN non configurato: accedi con la password")
+    if not user.get("is_active", True):
+        raise HTTPException(status_code=403, detail="Account disattivato")
+    if user.get("pin_locked_until") and str(user["pin_locked_until"]) > now_iso():
+        raise HTTPException(status_code=429, detail="Troppi tentativi PIN: accedi con la password")
+    if not await _device_authorized(user["id"], data.device_id):
+        raise HTTPException(status_code=403, detail="Dispositivo non autorizzato: accedi con la password")
+    if not verify_password(data.pin, user["pin_hash"]):
+        attempts = (user.get("pin_failed_attempts") or 0) + 1
+        upd = {"pin_failed_attempts": attempts}
+        if attempts >= LOGIN_MAX_ATTEMPTS:
+            upd["pin_locked_until"] = (datetime.now(timezone.utc) + timedelta(minutes=LOGIN_LOCK_MINUTES)).isoformat()
+        await db.users.update_one({"id": user["id"]}, {"$set": upd})
+        detail = "Troppi tentativi PIN: accedi con la password" if attempts >= LOGIN_MAX_ATTEMPTS else f"PIN errato ({attempts}/{LOGIN_MAX_ATTEMPTS})"
+        raise HTTPException(status_code=401, detail=detail)
+    await db.users.update_one({"id": user["id"]}, {"$set": {
+        "last_login": now_iso(), "pin_failed_attempts": 0, "pin_locked_until": None}})
+    await _authorize_device(user["id"], data.device_id)
+    access_token = await _issue_token(user["id"], data.device_id)
+    return TokenResponse(access_token=access_token, user=_build_user_response(user),
+                         pin_set=True, device_authorized=True)
+
+
+@api_router.post("/auth/activate", response_model=TokenResponse)
+async def activate_account(data: ActivateAccountPayload):
+    ident = _norm_username(data.username)
+    lock_key = f"activate:{ident}"
+    await _check_login_lock(lock_key)
+    user = await _find_user_by_login(ident)
+    act = (user or {}).get("activation") or {}
+    valid = bool(user) and act.get("code_hash") and str(act.get("code_expires_at") or "9999") > now_iso()
+    if not valid or not verify_password(_norm_code(data.code), act["code_hash"]):
+        await _record_login_failure(lock_key)
+        raise HTTPException(status_code=401, detail="Codice di attivazione non valido o scaduto")
+    if not user.get("is_active", True):
+        raise HTTPException(status_code=403, detail="Account disattivato")
+    if len(data.new_password) < 8:
+        raise HTTPException(status_code=400, detail="La password deve avere almeno 8 caratteri")
+    _validate_pin(data.pin)
+    await _clear_login_failures(lock_key)
+    await db.users.update_one({"id": user["id"]}, {"$set": {
+        "password_hash": get_password_hash(data.new_password),
+        "pin_hash": get_password_hash(data.pin),
+        "pin_failed_attempts": 0, "pin_locked_until": None,
+        "activation": {"status": "active", "activated_at": now_iso()},
+        "last_login": now_iso(), "updated_at": now_iso(),
+    }})
+    device_ok = await _authorize_device(user["id"], data.device_id, data.device_name)
+    await _log_user_audit(user, user, "user.first_activation", {"note": "Attivazione con codice monouso: password e PIN impostati"})
+    updated = await db.users.find_one({"id": user["id"]}, {"_id": 0})
+    access_token = await _issue_token(user["id"], data.device_id)
+    return TokenResponse(access_token=access_token, user=_build_user_response(updated),
+                         pin_set=True, device_authorized=device_ok)
+
+
+@api_router.post("/auth/login-options")
+async def login_options(data: LoginOptionsPayload):
+    user = await _find_user_by_login(data.username)
+    if not user:
+        return {"exists": False, "pin_available": False, "pending_activation": False}
+    pending = not user.get("password_hash")
+    pin_locked = bool(user.get("pin_locked_until")) and str(user["pin_locked_until"]) > now_iso()
+    pin_ok = bool(user.get("pin_hash")) and not pin_locked and await _device_authorized(user["id"], data.device_id)
+    return {"exists": True, "pin_available": pin_ok, "pending_activation": pending}
+
+
+@api_router.post("/auth/set-pin")
+async def set_own_pin(data: SetPinPayload, current_user: dict = Depends(get_current_user)):
+    if not current_user.get("password_hash") or not verify_password(data.password, current_user["password_hash"]):
+        raise HTTPException(status_code=403, detail="Password non corretta")
+    _validate_pin(data.pin)
+    await db.users.update_one({"id": current_user["id"]}, {"$set": {
+        "pin_hash": get_password_hash(data.pin), "pin_failed_attempts": 0,
+        "pin_locked_until": None, "updated_at": now_iso()}})
+    if data.device_id:
+        await _authorize_device(current_user["id"], data.device_id, data.device_name)
+    return {"ok": True, "message": "PIN impostato"}
 
 @api_router.get("/auth/me", response_model=UserResponse)
 async def get_me(current_user: dict = Depends(get_current_user)):
@@ -3209,8 +3448,9 @@ async def logistics_day_summary(
 @api_router.get("/logistics/riders")
 async def list_riders(current_user: dict = Depends(get_current_user)):
     riders = await db.users.find({"$or": [{"role": UserRole.RIDER}, {"extra_roles": UserRole.RIDER}],
-                                  "is_active": {"$ne": False}, "standard_available": {"$ne": False}},
-                                 {"_id": 0, "password_hash": 0}).to_list(100)
+                                  "is_active": {"$ne": False}, "standard_available": {"$ne": False},
+                                  "excluded_from_planning": {"$ne": True}},
+                                 {"_id": 0, "password_hash": 0, "pin_hash": 0, "activation": 0, "admin_data": 0}).to_list(100)
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     result = []
     for r in riders:
@@ -3226,7 +3466,7 @@ async def list_riders(current_user: dict = Depends(get_current_user)):
         result.append(RiderResponse(
             id=r["id"],
             name=r.get("name", ""),
-            email=r.get("email", ""),
+            email=r.get("email") or "",
             phone=r.get("phone"),
             vehicle_type=r.get("vehicle_type"),
             is_active=r.get("is_active", True),
@@ -3281,7 +3521,7 @@ async def update_rider(rider_id: str, data: RiderUpdate, current_user: dict = De
     return RiderResponse(
         id=updated["id"],
         name=updated.get("name", ""),
-        email=updated.get("email", ""),
+        email=updated.get("email") or "",
         phone=updated.get("phone"),
         vehicle_type=updated.get("vehicle_type"),
         is_active=updated.get("is_active", True),
@@ -4235,14 +4475,20 @@ async def portal_report(
 # ============== USER MANAGEMENT (Admin) ==============
 
 class UserManageCreate(BaseModel):
-    email: EmailStr
-    password: str
     first_name: str
     last_name: str = ""
+    display_name: Optional[str] = None
+    login_username: Optional[str] = None
+    email: Optional[EmailStr] = None
+    password: Optional[str] = None  # se assente: attivazione con codice monouso
     role: str
     extra_roles: List[str] = []
+    tipo_rapporto: str = "dipendente"
+    excluded_from_planning: bool = False
     standard_available: bool = True
     contract: Optional[dict] = None
+    admin_data: Optional[dict] = None
+    usr_code: Optional[str] = None  # solo per import utenti reali (es. USR-0000)
     language: str = "it"
     phone: Optional[str] = None
     vehicle_type: Optional[str] = None
@@ -4253,9 +4499,13 @@ class UserManageCreate(BaseModel):
 class UserManageUpdate(BaseModel):
     first_name: Optional[str] = None
     last_name: Optional[str] = None
+    display_name: Optional[str] = None
+    login_username: Optional[str] = None
     email: Optional[EmailStr] = None
     role: Optional[str] = None
     extra_roles: Optional[List[str]] = None
+    tipo_rapporto: Optional[str] = None
+    excluded_from_planning: Optional[bool] = None
     standard_available: Optional[bool] = None
     contract: Optional[dict] = None
     language: Optional[str] = None
@@ -4269,6 +4519,41 @@ class UserManageUpdate(BaseModel):
 
 INTERNAL_ROLES = ["admin", "operations_manager", "cleaner", "rider", "maintenance", "laundry"]
 SUPPORTED_LANGUAGES = ["it", "en"]
+RAPPORTO_TYPES = ["dipendente", "collaboratore_piva", "direzione", "account_tecnico"]
+CONTRACT_TYPES = ["indeterminato", "determinato", "apprendistato", "intermittente", "altro", "collaborazione"]
+ADMIN_DATA_FIELDS = ("tax_code", "vat_number", "iban", "iban_holder", "admin_notes")
+
+
+def _admin_data_status(user: dict) -> Optional[str]:
+    """Indicatore calcolato: mai i valori, solo Completi / Da completare / Non richiesti."""
+    if user.get("role") == "client":
+        return None
+    tipo = user.get("tipo_rapporto") or "dipendente"
+    if tipo in ("direzione", "account_tecnico"):
+        return "non_richiesti"
+    required = {"dipendente": ("tax_code", "iban"),
+                "collaboratore_piva": ("tax_code", "vat_number", "iban")}.get(tipo, ())
+    ad = user.get("admin_data") or {}
+    return "completi" if all((ad.get(f) or "").strip() for f in required) else "da_completare"
+
+
+def _slug_name(s: str) -> str:
+    s = unicodedata.normalize("NFKD", s or "").encode("ascii", "ignore").decode()
+    return re.sub(r"[^a-z0-9]+", "", s.lower())
+
+
+async def _unique_login_username(first: str, last: str, exclude_id: Optional[str] = None) -> str:
+    base = ".".join([p for p in (_slug_name(first), _slug_name(last)) if p]) or "utente"
+    i = 1
+    cand = f"{base}@kilolava.it"
+    while True:
+        q = {"$or": [{"login_username": cand}, {"email": cand}]}
+        if exclude_id:
+            q["id"] = {"$ne": exclude_id}
+        if not await db.users.find_one(q):
+            return cand
+        i += 1
+        cand = f"{base}{i}@kilolava.it"
 
 
 def require_admin(user: dict):
@@ -4287,10 +4572,22 @@ def _validate_contract(contract: Optional[dict]) -> Optional[dict]:
     if contract is None:
         return None
     ctype = contract.get("type") or "indeterminato"
-    if ctype not in ("indeterminato", "determinato"):
-        raise HTTPException(status_code=400, detail="Durata rapporto non valida (indeterminato|determinato)")
+    if ctype not in CONTRACT_TYPES:
+        raise HTTPException(status_code=400, detail="Tipologia contratto non valida")
+    wh = contract.get("weekly_hours")
+    if wh in (None, ""):
+        wh = None
+    else:
+        try:
+            wh = float(wh)
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=400, detail="Ore settimanali non valide")
     out = {"type": ctype, "start_date": contract.get("start_date") or None,
-           "end_date": contract.get("end_date") or None, "notes": contract.get("notes") or ""}
+           "end_date": contract.get("end_date") or None,
+           "weekly_hours": wh,
+           "transformation_date": contract.get("transformation_date") or None,
+           "apprenticeship_end": contract.get("apprenticeship_end") or None,
+           "notes": contract.get("notes") or ""}
     if ctype == "determinato" and not out["end_date"]:
         raise HTTPException(status_code=400, detail="Data fine contratto obbligatoria per il rapporto Determinato")
     if ctype == "indeterminato":
@@ -4369,34 +4666,79 @@ async def create_user(data: UserManageCreate, current_user: dict = Depends(get_c
         raise HTTPException(status_code=400, detail=f"Ruolo non valido: {data.role}")
     if data.language not in SUPPORTED_LANGUAGES:
         raise HTTPException(status_code=400, detail="Lingua non supportata")
-    existing = await db.users.find_one({"email": data.email})
-    if existing:
+    if data.tipo_rapporto not in RAPPORTO_TYPES:
+        raise HTTPException(status_code=400, detail="Tipo di rapporto non valido")
+    if data.email and await db.users.find_one({"$or": [{"email": data.email}, {"login_username": data.email}]}):
         raise HTTPException(status_code=400, detail="Email gia registrata")
+    if data.login_username:
+        lu = _norm_username(data.login_username)
+        if not re.fullmatch(r"[a-z0-9._-]+@[a-z0-9.-]+", lu):
+            raise HTTPException(status_code=400, detail="Nome utente non valido (formato nome.cognome@kilolava.it)")
+        if await db.users.find_one({"$or": [{"login_username": lu}, {"email": lu}]}):
+            raise HTTPException(status_code=400, detail="Nome utente già in uso")
+    else:
+        lu = await _unique_login_username(data.first_name, data.last_name) if data.role != "client" else None
     extra_roles = _validate_extra_roles(data.extra_roles, data.role)
-    contract = _validate_contract(data.contract) or {"type": "indeterminato", "start_date": None, "end_date": None, "notes": ""}
+    contract = _validate_contract(data.contract)
+    if contract is None and data.tipo_rapporto == "dipendente" and data.role != "client":
+        contract = {"type": "indeterminato", "start_date": None, "end_date": None, "weekly_hours": None,
+                    "transformation_date": None, "apprenticeship_end": None, "notes": ""}
+
+    usr_code = None
+    if data.role != "client":
+        if data.usr_code:
+            if not re.fullmatch(r"USR-\d{4}", data.usr_code):
+                raise HTTPException(status_code=400, detail="Formato codice USR non valido")
+            if await db.users.find_one({"usr_code": data.usr_code}):
+                raise HTTPException(status_code=400, detail="Codice USR già assegnato: i codici non si riutilizzano mai")
+            usr_code = data.usr_code
+        else:
+            usr_code = await next_usr_code()
 
     user_id = str(uuid.uuid4())
     now = now_iso()
-    display_name = f"{data.first_name} {data.last_name}".strip()
+    display = (data.display_name or "").strip() or None
+    real_name = f"{data.first_name} {data.last_name}".strip()
+    admin_data = {k: (((data.admin_data or {}).get(k) or "").strip() or None) for k in ADMIN_DATA_FIELDS}
+    activation_code = None
     doc = {
-        "id": user_id, "email": data.email,
-        "password_hash": get_password_hash(data.password),
+        "id": user_id, "email": data.email, "login_username": lu,
         "first_name": data.first_name, "last_name": data.last_name,
-        "name": display_name, "role": data.role,
+        "display_name": display, "name": display or real_name,
+        "role": data.role,
         "extra_roles": extra_roles, "standard_available": data.standard_available,
-        "contract": contract,
+        "tipo_rapporto": data.tipo_rapporto, "excluded_from_planning": data.excluded_from_planning,
+        "contract": contract, "admin_data": admin_data,
         "language": data.language, "phone": data.phone,
         "vehicle_type": data.vehicle_type, "client_id": data.client_id,
         "is_active": True, "notes": data.notes,
         "anagrafica": data.anagrafica,
+        "pin_hash": None,
         "created_at": now, "updated_at": now,
     }
-    if data.role != "client":
-        doc["usr_code"] = await next_usr_code()
+    if usr_code:
+        doc["usr_code"] = usr_code
+    if data.password:
+        if len(data.password) < 8:
+            raise HTTPException(status_code=400, detail="La password deve avere almeno 8 caratteri")
+        doc["password_hash"] = get_password_hash(data.password)
+        doc["activation"] = {"status": "active"}
+    else:
+        activation_code = _gen_activation_code()
+        expires = (datetime.now(timezone.utc) + timedelta(hours=ACTIVATION_CODE_HOURS)).isoformat()
+        doc["password_hash"] = None
+        doc["activation"] = {"status": "pending", "code_hash": get_password_hash(_norm_code(activation_code)),
+                             "code_expires_at": expires}
     await db.users.insert_one(doc)
     await _log_user_audit(current_user, doc, "user.create",
-                          {"role": data.role, "extra_roles": extra_roles, "usr_code": doc.get("usr_code")})
-    return _build_user_response(doc)
+                          {"role": data.role, "extra_roles": extra_roles, "usr_code": doc.get("usr_code"),
+                           "tipo_rapporto": data.tipo_rapporto,
+                           "attivazione": "codice monouso" if activation_code else "password impostata"})
+    resp = _build_user_response(doc).model_dump()
+    if activation_code:
+        resp["activation_code"] = activation_code
+        resp["activation_expires_at"] = doc["activation"]["code_expires_at"]
+    return resp
 
 
 @api_router.put("/users/{user_id}")
@@ -4421,16 +4763,32 @@ async def update_user(user_id: str, data: UserManageUpdate, current_user: dict =
         payload["extra_roles"] = _validate_extra_roles(payload["extra_roles"], new_role)
     if "contract" in payload and payload["contract"] is not None:
         payload["contract"] = _validate_contract(payload["contract"])
+    if "tipo_rapporto" in payload and payload["tipo_rapporto"] and payload["tipo_rapporto"] not in RAPPORTO_TYPES:
+        raise HTTPException(status_code=400, detail="Tipo di rapporto non valido")
+    if "login_username" in payload and payload["login_username"]:
+        lu = _norm_username(payload["login_username"])
+        if not re.fullmatch(r"[a-z0-9._-]+@[a-z0-9.-]+", lu):
+            raise HTTPException(status_code=400, detail="Nome utente non valido (formato nome.cognome@kilolava.it)")
+        if await db.users.find_one({"id": {"$ne": user_id}, "$or": [{"login_username": lu}, {"email": lu}]}):
+            raise HTTPException(status_code=400, detail="Nome utente già in uso")
+        payload["login_username"] = lu
+    if "email" in payload and payload["email"]:
+        if await db.users.find_one({"id": {"$ne": user_id}, "$or": [{"email": payload["email"]}, {"login_username": payload["email"]}]}):
+            raise HTTPException(status_code=400, detail="Email già in uso")
     for key, val in payload.items():
-        if val is not None:
+        if val is not None or key == "display_name":
             update_data[key] = val
+    if payload.get("tipo_rapporto") in ("direzione", "account_tecnico") and "contract" in payload and payload["contract"] is None:
+        update_data["contract"] = None
 
-    if "first_name" in update_data or "last_name" in update_data:
+    if any(k in update_data for k in ("first_name", "last_name", "display_name")):
         fn = update_data.get("first_name", user.get("first_name", ""))
         ln = update_data.get("last_name", user.get("last_name", ""))
-        update_data["name"] = f"{fn} {ln}".strip()
+        dn = (update_data.get("display_name", user.get("display_name")) or "").strip()
+        update_data["name"] = (dn or f"{fn} {ln}").strip()
 
-    audit_fields = ("role", "extra_roles", "is_active", "standard_available", "contract")
+    audit_fields = ("role", "extra_roles", "is_active", "standard_available", "contract",
+                    "tipo_rapporto", "excluded_from_planning", "login_username")
     changes = {k: {"da": user.get(k), "a": update_data[k]} for k in audit_fields
                if k in update_data and update_data[k] != user.get(k)}
 
@@ -4451,6 +4809,8 @@ async def toggle_user_active(user_id: str, current_user: dict = Depends(get_curr
         raise HTTPException(status_code=400, detail="Non puoi disattivare il tuo account")
     new_status = not user.get("is_active", True)
     await db.users.update_one({"id": user_id}, {"$set": {"is_active": new_status, "updated_at": now_iso()}})
+    if not new_status:
+        await _revoke_user_sessions(user_id)
     await _log_user_audit(current_user, user, "user.activate" if new_status else "user.deactivate",
                           {"is_active": {"da": user.get("is_active", True), "a": new_status}})
     return {"is_active": new_status, "message": f"Utente {'attivato' if new_status else 'disattivato'}"}
@@ -4464,6 +4824,7 @@ USER_HISTORY_CHECKS = [
     ("maintenance_issues", lambda uid: {"$or": [{"assigned_to": uid}, {"created_by": uid}]}, "manutenzioni"),
     ("laundry_jobs", lambda uid: {"$or": [{"created_by": uid}, {"weighed_by": uid}, {"ready_by": uid}]}, "lavorazioni"),
     ("day_availability", lambda uid: {"user_id": uid}, "disponibilità"),
+    ("user_locations", lambda uid: {"user_id": uid}, "posizioni GPS"),
 ]
 
 
@@ -4483,6 +4844,8 @@ async def delete_user(user_id: str, current_user: dict = Depends(get_current_use
         raise HTTPException(status_code=400,
                             detail=f"Utente con storico operativo ({', '.join(refs)}): usa Disattiva. Lo storico deve conservare USR, nome e attività.")
     await db.users.delete_one({"id": user_id})
+    await db.user_devices.delete_many({"user_id": user_id})
+    await db.user_sessions.delete_many({"user_id": user_id})
     await _log_user_audit(current_user, user, "user.delete", {"usr_code": user.get("usr_code"), "email": user.get("email")})
     return {"message": "Utente eliminato"}
 
@@ -4499,8 +4862,11 @@ async def admin_reset_password(user_id: str, data: ResetPasswordPayload, current
     user = await db.users.find_one({"id": user_id}, {"_id": 0})
     if not user:
         raise HTTPException(status_code=404, detail="Utente non trovato")
-    await db.users.update_one({"id": user_id}, {"$set": {"password_hash": get_password_hash(data.new_password), "updated_at": now_iso()}})
-    await _log_user_audit(current_user, user, "user.password_reset", {"note": "Password reimpostata dall'Admin"})
+    await db.users.update_one({"id": user_id}, {"$set": {"password_hash": get_password_hash(data.new_password),
+                                                         "pin_failed_attempts": 0, "pin_locked_until": None,
+                                                         "updated_at": now_iso()}})
+    await _revoke_user_sessions(user_id)
+    await _log_user_audit(current_user, user, "user.password_reset", {"note": "Password reimpostata dall'Admin, sessioni revocate"})
     return {"ok": True, "message": "Password reimpostata"}
 
 
@@ -4531,6 +4897,138 @@ async def user_audit(user_id: str, current_user: dict = Depends(get_current_user
     rows = await db.activity_logs.find({"entity_type": "users", "entity_id": user_id, "method": "AUDIT"},
                                        {"_id": 0}).sort("timestamp", -1).to_list(30)
     return rows
+
+
+# ---- Dati amministrativi protetti (CF / P.IVA / IBAN): mai in liste, log o AI ----
+
+class AdminDataPayload(BaseModel):
+    tax_code: Optional[str] = None
+    vat_number: Optional[str] = None
+    iban: Optional[str] = None
+    iban_holder: Optional[str] = None
+    admin_notes: Optional[str] = None
+
+
+@api_router.get("/users/{user_id}/admin-data")
+async def get_user_admin_data(user_id: str, current_user: dict = Depends(get_current_user)):
+    role = current_user.get("role")
+    if role not in ("admin", "operations_manager"):
+        raise HTTPException(status_code=403, detail="Dati amministrativi riservati")
+    user = await db.users.find_one({"id": user_id}, {"_id": 0})
+    if not user:
+        raise HTTPException(status_code=404, detail="Utente non trovato")
+    ad = user.get("admin_data") or {}
+    out = {"tax_code": ad.get("tax_code"), "vat_number": ad.get("vat_number"),
+           "admin_notes": ad.get("admin_notes"), "status": _admin_data_status(user),
+           "can_edit": role == "admin"}
+    if role == "admin":
+        out["iban"] = ad.get("iban")
+        out["iban_holder"] = ad.get("iban_holder")
+        out["iban_hidden"] = False
+    else:
+        out["iban_hidden"] = True
+    return out
+
+
+@api_router.put("/users/{user_id}/admin-data")
+async def update_user_admin_data(user_id: str, data: AdminDataPayload, current_user: dict = Depends(get_current_user)):
+    require_admin(current_user)
+    user = await db.users.find_one({"id": user_id}, {"_id": 0})
+    if not user:
+        raise HTTPException(status_code=404, detail="Utente non trovato")
+    old = user.get("admin_data") or {}
+    new = dict(old)
+    changes = {}
+    for k, v in data.model_dump(exclude_unset=True).items():
+        if k not in ADMIN_DATA_FIELDS:
+            continue
+        v = (v or "").strip() or None
+        if new.get(k) != v:
+            changes[k] = "rimosso" if v is None else ("modificato" if old.get(k) else "impostato")
+        new[k] = v
+    await db.users.update_one({"id": user_id}, {"$set": {"admin_data": new, "updated_at": now_iso()}})
+    if changes:
+        # Audit SENZA valori: registra solo quali campi sono cambiati
+        await _log_user_audit(current_user, user, "user.admin_data_update", changes)
+    return await get_user_admin_data(user_id, current_user)
+
+
+# ---- Attivazione, sessioni e dispositivi autorizzati ----
+
+@api_router.post("/users/{user_id}/activation-code")
+async def generate_activation_code(user_id: str, current_user: dict = Depends(get_current_user)):
+    require_admin(current_user)
+    user = await db.users.find_one({"id": user_id}, {"_id": 0})
+    if not user:
+        raise HTTPException(status_code=404, detail="Utente non trovato")
+    if user.get("password_hash"):
+        raise HTTPException(status_code=400, detail="Account già attivo: usa 'Forza nuova attivazione'")
+    code = _gen_activation_code()
+    expires = (datetime.now(timezone.utc) + timedelta(hours=ACTIVATION_CODE_HOURS)).isoformat()
+    await db.users.update_one({"id": user_id}, {"$set": {
+        "activation": {"status": "pending", "code_hash": get_password_hash(_norm_code(code)),
+                       "code_expires_at": expires},
+        "updated_at": now_iso()}})
+    await _log_user_audit(current_user, user, "user.activation_code", {"scadenza": expires})
+    return {"activation_code": code, "expires_at": expires, "login_username": user.get("login_username")}
+
+
+@api_router.post("/users/{user_id}/force-reactivation")
+async def force_reactivation(user_id: str, current_user: dict = Depends(get_current_user)):
+    require_admin(current_user)
+    if user_id == current_user["id"]:
+        raise HTTPException(status_code=400, detail="Non puoi forzare la riattivazione del tuo stesso account")
+    user = await db.users.find_one({"id": user_id}, {"_id": 0})
+    if not user:
+        raise HTTPException(status_code=404, detail="Utente non trovato")
+    code = _gen_activation_code()
+    expires = (datetime.now(timezone.utc) + timedelta(hours=ACTIVATION_CODE_HOURS)).isoformat()
+    await db.users.update_one({"id": user_id}, {
+        "$set": {"activation": {"status": "pending", "code_hash": get_password_hash(_norm_code(code)),
+                                "code_expires_at": expires},
+                 "pin_failed_attempts": 0, "pin_locked_until": None, "updated_at": now_iso()},
+        "$unset": {"password_hash": "", "pin_hash": ""}})
+    await _revoke_user_sessions(user_id)
+    await db.user_devices.update_many({"user_id": user_id}, {"$set": {"revoked": True}})
+    for ident in filter(None, [user.get("login_username"), user.get("email")]):
+        await _clear_login_failures(_norm_username(ident))
+    await _log_user_audit(current_user, user, "user.force_reactivation",
+                          {"note": "Password e PIN azzerati, sessioni e dispositivi revocati"})
+    return {"activation_code": code, "expires_at": expires, "login_username": user.get("login_username")}
+
+
+@api_router.post("/users/{user_id}/revoke-sessions")
+async def revoke_user_sessions_endpoint(user_id: str, current_user: dict = Depends(get_current_user)):
+    require_admin(current_user)
+    user = await db.users.find_one({"id": user_id}, {"_id": 0})
+    if not user:
+        raise HTTPException(status_code=404, detail="Utente non trovato")
+    count = await _revoke_user_sessions(user_id)
+    await _log_user_audit(current_user, user, "user.sessions_revoked", {"sessioni": count})
+    return {"revoked": count, "message": f"{count} sessioni revocate"}
+
+
+@api_router.get("/users/{user_id}/devices")
+async def list_user_devices(user_id: str, current_user: dict = Depends(get_current_user)):
+    if not is_ops_user(current_user):
+        raise HTTPException(status_code=403, detail="Non autorizzato")
+    devices = await db.user_devices.find({"user_id": user_id}, {"_id": 0}).sort("last_used_at", -1).to_list(50)
+    active_sessions = await db.user_sessions.count_documents({"user_id": user_id, "revoked": {"$ne": True}})
+    return {"devices": devices, "active_sessions": active_sessions}
+
+
+@api_router.delete("/users/{user_id}/devices/{device_id}")
+async def revoke_user_device(user_id: str, device_id: str, current_user: dict = Depends(get_current_user)):
+    require_admin(current_user)
+    dev = await db.user_devices.find_one({"user_id": user_id, "device_id": device_id}, {"_id": 0})
+    if not dev:
+        raise HTTPException(status_code=404, detail="Dispositivo non trovato")
+    await db.user_devices.update_one({"user_id": user_id, "device_id": device_id}, {"$set": {"revoked": True}})
+    revoked = await _revoke_user_sessions(user_id, device_id)
+    user = await db.users.find_one({"id": user_id}, {"_id": 0})
+    await _log_user_audit(current_user, user or {"id": user_id}, "user.device_revoked",
+                          {"dispositivo": dev.get("name") or device_id[:8], "sessioni_revocate": revoked})
+    return {"ok": True, "message": "Dispositivo revocato"}
 
 
 @api_router.get("/permissions/roles")
@@ -4844,7 +5342,9 @@ async def list_cleaners(current_user: dict = Depends(get_current_user)):
     if not is_ops_user(current_user):
         raise HTTPException(status_code=403, detail="Non autorizzato")
     cleaners = await db.users.find(
-        {"$or": [{"role": UserRole.CLEANER}, {"extra_roles": UserRole.CLEANER}], "is_active": True}, {"_id": 0, "id": 1, "name": 1, "first_name": 1, "last_name": 1, "email": 1}
+        {"$or": [{"role": UserRole.CLEANER}, {"extra_roles": UserRole.CLEANER}], "is_active": True,
+         "excluded_from_planning": {"$ne": True}},
+        {"_id": 0, "id": 1, "name": 1, "first_name": 1, "last_name": 1, "email": 1}
     ).to_list(200)
     for c in cleaners:
         if not c.get("name"):
@@ -7825,6 +8325,44 @@ async def startup_event():
                                    {"$set": {"contract": {"type": "indeterminato", "start_date": None, "end_date": None, "notes": ""}}})
     except Exception as e:
         logger.error(f"USR migration failed: {e}")
+    # Migrazione Auth/Ruoli: Super Admin tecnico (USR-0001) + Nicolò (USR-0000) + default (idempotente)
+    try:
+        tech = await db.users.find_one({"usr_code": "USR-0001"}, {"_id": 0})
+        if tech and not tech.get("login_username"):
+            await db.users.update_one({"id": tech["id"]}, {"$set": {
+                "login_username": "super.admin@kilolava.it",
+                "first_name": "Super", "last_name": "Admin", "name": "Super Admin",
+                "tipo_rapporto": "account_tecnico", "excluded_from_planning": True,
+                "standard_available": False, "contract": None,
+                "activation": {"status": "active"}, "updated_at": now_iso()}})
+            logger.info("USR-0001 migrato ad account tecnico Super Admin")
+        if not await db.users.find_one({"$or": [{"usr_code": "USR-0000"}, {"login_username": "nicolo.tonini@kilolava.it"}]}):
+            _now = now_iso()
+            await db.users.insert_one({
+                "id": str(uuid.uuid4()), "usr_code": "USR-0000",
+                "login_username": "nicolo.tonini@kilolava.it", "email": None,
+                "password_hash": None, "pin_hash": None,
+                "first_name": "Nicolò", "last_name": "Tonini", "name": "Nicolò Tonini",
+                "display_name": None, "role": "admin", "extra_roles": [],
+                "tipo_rapporto": "direzione", "excluded_from_planning": True,
+                "standard_available": False, "contract": None, "admin_data": {},
+                "language": "it", "phone": None, "is_active": True,
+                "activation": {"status": "pending"},
+                "created_at": _now, "updated_at": _now})
+            logger.info("USR-0000 Nicolò Tonini creato (in attesa di attivazione)")
+        await db.users.update_many({"role": {"$nin": ["client"]}, "tipo_rapporto": {"$exists": False}},
+                                   {"$set": {"tipo_rapporto": "dipendente"}})
+        await db.users.update_many({"role": {"$nin": ["client"]}, "excluded_from_planning": {"$exists": False}},
+                                   {"$set": {"excluded_from_planning": False}})
+        await db.users.update_many({"activation": {"$exists": False}, "password_hash": {"$nin": [None, ""]}},
+                                   {"$set": {"activation": {"status": "active"}}})
+        await db.users.update_many({"activation": {"$exists": False}},
+                                   {"$set": {"activation": {"status": "pending"}}})
+        await db.user_devices.create_index([("user_id", 1), ("device_id", 1)], unique=True)
+        await db.user_sessions.create_index("id", unique=True)
+        await db.login_attempts.create_index("identifier")
+    except Exception as e:
+        logger.error(f"Auth migration failed: {e}")
     # Assign KLV codes to structures missing one (idempotent)
     try:
         await ensure_klv_codes()
