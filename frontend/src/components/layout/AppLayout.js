@@ -76,7 +76,7 @@ const NAV = [
   },
   {
     type: 'group', key: 'system', icon: Settings, label: 'Sistema', children: [
-      { key: 'users', path: '/users', label: 'Utenti & Ruoli' },
+      { key: 'users', path: '/users', label: 'Utenti Interni' },
       { key: 'cataloghi-prodotti', path: '/cataloghi-prodotti', label: 'Cataloghi Prodotti' },
       { key: 'kit', path: '/kit', label: 'Kit' },
       { key: 'integrations', path: '/integrations', label: 'Integrazioni' },
@@ -98,6 +98,7 @@ const ROLE_ICONS = {
 function getBreadcrumb(pathname, search) {
   if (pathname === '/dashboard') return { title: 'Dashboard', crumbs: [] };
   if (pathname === '/assistant') return { title: 'Assistente AI', crumbs: [] };
+  if (pathname.startsWith('/users/')) return { title: 'Dettaglio Utente', crumbs: [{ label: 'Utenti Interni', to: '/users' }] };
   if (pathname === '/calendar') return { title: 'Calendario', crumbs: [{ label: 'Pulizie' }] };
   if (pathname === '/clients') return { title: 'Clienti', crumbs: [] };
   if (pathname.startsWith('/clients/')) return { title: 'Dettaglio cliente', crumbs: [{ label: 'Clienti', to: '/clients' }] };
@@ -160,6 +161,14 @@ const AppLayout = ({ children }) => {
   const [openGroups, setOpenGroups] = useState({});
   const accountRef = useRef(null);
   const segBadge = useSegnalazioniBadge();
+
+  // L'Addetto Lavanderia vive solo dentro Lavanderia Privata
+  const laundryOnly = role === 'laundry';
+  useEffect(() => {
+    if (laundryOnly && !location.pathname.startsWith('/private-laundry')) {
+      navigate('/private-laundry/jobs', { replace: true });
+    }
+  }, [laundryOnly, location.pathname, navigate]);
 
   const isPathActive = (path) => {
     const [p] = path.split('?');

@@ -12,6 +12,7 @@ import {
   LogOut, Moon, Sun, KeyRound,
 } from 'lucide-react';
 import { cn } from '../lib/utils';
+import { QuickActions } from '../components/kilolava/QuickActions';
 import { APIProvider, Map, AdvancedMarker } from '@vis.gl/react-google-maps';
 import { RoutePolyline, FitPoints } from '../components/kilolava/RoutePolyline';
 
@@ -461,6 +462,7 @@ const RiderViewPage = () => {
           </div>
         )}
       </div>
+      <QuickActions />
     </div>
   );
 };

@@ -23,6 +23,7 @@ import MappaOperativaPage from './pages/MappaOperativaPage';
 import AssistantPage from './pages/AssistantPage';
 import ActivityLogPage from './pages/ActivityLogPage';
 import UsersPage from './pages/UsersPage';
+import UserDetailPage from './pages/UserDetailPage';
 import IntegrationsPage from './pages/IntegrationsPage';
 import CleanerView from './pages/CleanerView';
 import MaintenanceView from './pages/MaintenanceView';
@@ -146,7 +147,7 @@ const RoleRoute = ({ children, allowedRoles }) => {
     return <Navigate to="/login" replace />;
   }
 
-  if (!allowedRoles.includes(effectiveRole)) {
+  if (!allowedRoles.some((r) => r === effectiveRole || (user?.extra_roles || []).includes(r))) {
     return <Navigate to={getHomeRoute(user?.role)} replace />;
   }
 
@@ -196,7 +197,7 @@ function AppRoutes() {
       <Route
         path="/"
         element={
-          <RoleRoute allowedRoles={['admin', 'operations_manager']}>
+          <RoleRoute allowedRoles={['admin', 'operations_manager', 'laundry']}>
             <AppLayout />
           </RoleRoute>
         }
@@ -261,6 +262,7 @@ function AppRoutes() {
         <Route path="cleaning-issues" element={<Navigate to="/segnalazioni" replace />} />
         <Route path="checklist-templates" element={<ChecklistTemplatesPage />} />
         <Route path="users" element={<UsersPage />} />
+        <Route path="users/:userId" element={<UserDetailPage />} />
         <Route path="integrations" element={<IntegrationsPage />} />
         <Route path="activity" element={<ActivityLogPage />} />
         <Route path="notifications" element={<NotificationsPage />} />

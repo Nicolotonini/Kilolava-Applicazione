@@ -72,6 +72,7 @@ ROLE_PERMISSIONS = {
     "cleaner": ["tasks.own.read", "tasks.own.write"],
     "rider": ["logistics.own.read", "logistics.own.write"],
     "maintenance": ["maintenance.own.read", "maintenance.own.write"],
+    "laundry": ["laundry.own.read", "laundry.own.write"],
     "client": ["portal.read", "portal.write"],
 }
 
@@ -136,6 +137,12 @@ class UserResponse(BaseModel):
     is_active: bool = True
     notes: Optional[str] = None
     anagrafica: Optional[dict] = None
+    usr_code: Optional[str] = None
+    extra_roles: List[str] = []
+    standard_available: bool = True
+    contract: Optional[dict] = None
+    contract_status: Optional[str] = None
+    last_login: Optional[str] = None
     permissions: List[str] = []
     created_at: str
 
@@ -425,6 +432,37 @@ def is_ops_user(user: dict) -> bool:
     return user.get("role") in OPS_ROLES
 
 
+def user_has_role(user: dict, role: str) -> bool:
+    """Una persona = un utente: vero se il ruolo è principale O aggiuntivo."""
+    if not user:
+        return False
+    return user.get("role") == role or role in (user.get("extra_roles") or [])
+
+
+def _acts_as_cleaner(user: dict) -> bool:
+    return user_has_role(user, UserRole.CLEANER) and not is_ops_user(user)
+
+
+def _contract_status(contract: Optional[dict]) -> Optional[str]:
+    """scaduto | scade_7 | scade_30 | ok (solo per contratti Determinato con data fine)."""
+    if not contract or contract.get("type") != "determinato" or not contract.get("end_date"):
+        return None
+    try:
+        from datetime import date as _date
+        end = _date.fromisoformat(str(contract["end_date"])[:10])
+        today = datetime.now(ZoneInfo("Europe/Rome")).date()
+    except (ValueError, TypeError):
+        return None
+    delta = (end - today).days
+    if delta < 0:
+        return "scaduto"
+    if delta <= 7:
+        return "scade_7"
+    if delta <= 30:
+        return "scade_30"
+    return "ok"
+
+
 def _build_user_response(user: dict) -> UserResponse:
     """Build UserResponse from a raw user document."""
     first = user.get("first_name", "")
@@ -439,6 +477,7 @@ def _build_user_response(user: dict) -> UserResponse:
     # Migrate legacy "manager" role
     if role == "manager":
         role = "admin"
+    contract = user.get("contract")
     return UserResponse(
         id=user["id"], email=user.get("email", ""),
         first_name=first, last_name=last, name=display_name,
@@ -447,6 +486,12 @@ def _build_user_response(user: dict) -> UserResponse:
         client_id=user.get("client_id"), is_active=user.get("is_active", True),
         notes=user.get("notes"),
         anagrafica=user.get("anagrafica"),
+        usr_code=user.get("usr_code"),
+        extra_roles=user.get("extra_roles") or [],
+        standard_available=user.get("standard_available", True),
+        contract=contract,
+        contract_status=_contract_status(contract),
+        last_login=user.get("last_login"),
         permissions=ROLE_PERMISSIONS.get(role, []),
         created_at=user.get("created_at", ""),
     )
@@ -521,6 +566,7 @@ async def login(login_data: UserLogin):
         raise HTTPException(status_code=401, detail="Email o password non validi")
     if not user.get("is_active", True):
         raise HTTPException(status_code=403, detail="Account disattivato")
+    await db.users.update_one({"id": user["id"]}, {"$set": {"last_login": now_iso()}})
     access_token = create_access_token({"sub": user["id"]})
     return TokenResponse(access_token=access_token, user=_build_user_response(user))
 
@@ -3162,7 +3208,9 @@ async def logistics_day_summary(
 
 @api_router.get("/logistics/riders")
 async def list_riders(current_user: dict = Depends(get_current_user)):
-    riders = await db.users.find({"role": UserRole.RIDER}, {"_id": 0, "password_hash": 0}).to_list(100)
+    riders = await db.users.find({"$or": [{"role": UserRole.RIDER}, {"extra_roles": UserRole.RIDER}],
+                                  "is_active": {"$ne": False}, "standard_available": {"$ne": False}},
+                                 {"_id": 0, "password_hash": 0}).to_list(100)
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     result = []
     for r in riders:
@@ -4192,6 +4240,10 @@ class UserManageCreate(BaseModel):
     first_name: str
     last_name: str = ""
     role: str
+    extra_roles: List[str] = []
+    standard_available: bool = True
+    contract: Optional[dict] = None
+    language: str = "it"
     phone: Optional[str] = None
     vehicle_type: Optional[str] = None
     client_id: Optional[str] = None
@@ -4203,6 +4255,10 @@ class UserManageUpdate(BaseModel):
     last_name: Optional[str] = None
     email: Optional[EmailStr] = None
     role: Optional[str] = None
+    extra_roles: Optional[List[str]] = None
+    standard_available: Optional[bool] = None
+    contract: Optional[dict] = None
+    language: Optional[str] = None
     phone: Optional[str] = None
     vehicle_type: Optional[str] = None
     client_id: Optional[str] = None
@@ -4211,28 +4267,88 @@ class UserManageUpdate(BaseModel):
     is_active: Optional[bool] = None
 
 
+INTERNAL_ROLES = ["admin", "operations_manager", "cleaner", "rider", "maintenance", "laundry"]
+SUPPORTED_LANGUAGES = ["it", "en"]
+
+
+def require_admin(user: dict):
+    if user.get("role") not in ("admin", "manager"):
+        raise HTTPException(status_code=403, detail="Operazione riservata all'Admin")
+
+
+async def next_usr_code() -> str:
+    """Codice USR progressivo globale, permanente, mai riutilizzato."""
+    c = await db.counters.find_one_and_update(
+        {"_id": "usr_code"}, {"$inc": {"seq": 1}}, upsert=True, return_document=ReturnDocument.AFTER)
+    return f"USR-{c['seq']:04d}"
+
+
+def _validate_contract(contract: Optional[dict]) -> Optional[dict]:
+    if contract is None:
+        return None
+    ctype = contract.get("type") or "indeterminato"
+    if ctype not in ("indeterminato", "determinato"):
+        raise HTTPException(status_code=400, detail="Durata rapporto non valida (indeterminato|determinato)")
+    out = {"type": ctype, "start_date": contract.get("start_date") or None,
+           "end_date": contract.get("end_date") or None, "notes": contract.get("notes") or ""}
+    if ctype == "determinato" and not out["end_date"]:
+        raise HTTPException(status_code=400, detail="Data fine contratto obbligatoria per il rapporto Determinato")
+    if ctype == "indeterminato":
+        out["end_date"] = None
+    return out
+
+
+def _validate_extra_roles(extra_roles: List[str], primary_role: str) -> List[str]:
+    if primary_role == "client" and extra_roles:
+        raise HTTPException(status_code=400, detail="Gli account Cliente non hanno ruoli aggiuntivi")
+    out = []
+    for r in extra_roles or []:
+        if r not in INTERNAL_ROLES:
+            raise HTTPException(status_code=400, detail=f"Ruolo aggiuntivo non valido: {r}")
+        if r != primary_role and r not in out:
+            out.append(r)
+    return out
+
+
+async def _log_user_audit(actor: dict, target: dict, action: str, details: dict):
+    await db.activity_logs.insert_one({
+        "id": str(uuid.uuid4()), "timestamp": now_iso(),
+        "user_id": actor.get("id"), "user_name": actor.get("name", ""), "user_role": actor.get("role"),
+        "method": "AUDIT", "path": f"/users/{target.get('id')}", "action": action,
+        "entity_type": "users", "entity_id": target.get("id"),
+        "entity_label": f"{target.get('usr_code') or ''} {target.get('name') or target.get('email', '')}".strip(),
+        "details": details, "status_code": 200,
+    })
+
+
 @api_router.get("/users")
 async def list_users(
     role: Optional[str] = None,
     search: Optional[str] = None,
     is_active: Optional[bool] = None,
+    internal: Optional[bool] = None,
     current_user: dict = Depends(get_current_user),
 ):
     if not is_ops_user(current_user):
         raise HTTPException(status_code=403, detail="Non autorizzato")
     query = {}
     if role:
-        query["role"] = role
+        query["$or"] = [{"role": role}, {"extra_roles": role}]
+    if internal:
+        query["role"] = {"$nin": ["client"]}
     if is_active is not None:
         query["is_active"] = is_active
     if search:
-        query["$or"] = [
+        query.setdefault("$and", []).append({"$or": [
             {"name": {"$regex": search, "$options": "i"}},
             {"first_name": {"$regex": search, "$options": "i"}},
             {"last_name": {"$regex": search, "$options": "i"}},
             {"email": {"$regex": search, "$options": "i"}},
-        ]
+            {"usr_code": {"$regex": search, "$options": "i"}},
+            {"phone": {"$regex": search, "$options": "i"}},
+        ]})
     users = await db.users.find(query, {"_id": 0, "password_hash": 0}).sort("created_at", -1).to_list(500)
+    users.sort(key=lambda u: u.get("usr_code") or "USR-9999")
     return [_build_user_response(u) for u in users]
 
 
@@ -4248,13 +4364,16 @@ async def get_user(user_id: str, current_user: dict = Depends(get_current_user))
 
 @api_router.post("/users")
 async def create_user(data: UserManageCreate, current_user: dict = Depends(get_current_user)):
-    if not is_ops_user(current_user):
-        raise HTTPException(status_code=403, detail="Non autorizzato")
+    require_admin(current_user)
     if data.role not in ALL_ROLES:
         raise HTTPException(status_code=400, detail=f"Ruolo non valido: {data.role}")
+    if data.language not in SUPPORTED_LANGUAGES:
+        raise HTTPException(status_code=400, detail="Lingua non supportata")
     existing = await db.users.find_one({"email": data.email})
     if existing:
         raise HTTPException(status_code=400, detail="Email gia registrata")
+    extra_roles = _validate_extra_roles(data.extra_roles, data.role)
+    contract = _validate_contract(data.contract) or {"type": "indeterminato", "start_date": None, "end_date": None, "notes": ""}
 
     user_id = str(uuid.uuid4())
     now = now_iso()
@@ -4264,26 +4383,45 @@ async def create_user(data: UserManageCreate, current_user: dict = Depends(get_c
         "password_hash": get_password_hash(data.password),
         "first_name": data.first_name, "last_name": data.last_name,
         "name": display_name, "role": data.role,
-        "language": "it", "phone": data.phone,
+        "extra_roles": extra_roles, "standard_available": data.standard_available,
+        "contract": contract,
+        "language": data.language, "phone": data.phone,
         "vehicle_type": data.vehicle_type, "client_id": data.client_id,
         "is_active": True, "notes": data.notes,
         "anagrafica": data.anagrafica,
         "created_at": now, "updated_at": now,
     }
+    if data.role != "client":
+        doc["usr_code"] = await next_usr_code()
     await db.users.insert_one(doc)
+    await _log_user_audit(current_user, doc, "user.create",
+                          {"role": data.role, "extra_roles": extra_roles, "usr_code": doc.get("usr_code")})
     return _build_user_response(doc)
 
 
 @api_router.put("/users/{user_id}")
 async def update_user(user_id: str, data: UserManageUpdate, current_user: dict = Depends(get_current_user)):
-    if not is_ops_user(current_user):
-        raise HTTPException(status_code=403, detail="Non autorizzato")
+    require_admin(current_user)
     user = await db.users.find_one({"id": user_id}, {"_id": 0})
     if not user:
         raise HTTPException(status_code=404, detail="Utente non trovato")
 
     update_data = {"updated_at": now_iso()}
-    for key, val in data.model_dump(exclude_unset=True).items():
+    payload = data.model_dump(exclude_unset=True)
+    if "role" in payload and payload["role"]:
+        if payload["role"] not in ALL_ROLES:
+            raise HTTPException(status_code=400, detail="Ruolo non valido")
+        was_client = user.get("role") == "client"
+        if was_client != (payload["role"] == "client"):
+            raise HTTPException(status_code=400, detail="Non si può convertire un Utente Interno in account Cliente (o viceversa)")
+    if "language" in payload and payload["language"] and payload["language"] not in SUPPORTED_LANGUAGES:
+        raise HTTPException(status_code=400, detail="Lingua non supportata")
+    new_role = payload.get("role") or user.get("role")
+    if "extra_roles" in payload and payload["extra_roles"] is not None:
+        payload["extra_roles"] = _validate_extra_roles(payload["extra_roles"], new_role)
+    if "contract" in payload and payload["contract"] is not None:
+        payload["contract"] = _validate_contract(payload["contract"])
+    for key, val in payload.items():
         if val is not None:
             update_data[key] = val
 
@@ -4292,33 +4430,107 @@ async def update_user(user_id: str, data: UserManageUpdate, current_user: dict =
         ln = update_data.get("last_name", user.get("last_name", ""))
         update_data["name"] = f"{fn} {ln}".strip()
 
+    audit_fields = ("role", "extra_roles", "is_active", "standard_available", "contract")
+    changes = {k: {"da": user.get(k), "a": update_data[k]} for k in audit_fields
+               if k in update_data and update_data[k] != user.get(k)}
+
     await db.users.update_one({"id": user_id}, {"$set": update_data})
+    if changes:
+        await _log_user_audit(current_user, user, "user.update", changes)
     updated = await db.users.find_one({"id": user_id}, {"_id": 0, "password_hash": 0})
     return _build_user_response(updated)
 
 
 @api_router.put("/users/{user_id}/toggle-active")
 async def toggle_user_active(user_id: str, current_user: dict = Depends(get_current_user)):
-    if not is_ops_user(current_user):
-        raise HTTPException(status_code=403, detail="Non autorizzato")
+    require_admin(current_user)
     user = await db.users.find_one({"id": user_id}, {"_id": 0})
     if not user:
         raise HTTPException(status_code=404, detail="Utente non trovato")
+    if user_id == current_user["id"]:
+        raise HTTPException(status_code=400, detail="Non puoi disattivare il tuo account")
     new_status = not user.get("is_active", True)
     await db.users.update_one({"id": user_id}, {"$set": {"is_active": new_status, "updated_at": now_iso()}})
+    await _log_user_audit(current_user, user, "user.activate" if new_status else "user.deactivate",
+                          {"is_active": {"da": user.get("is_active", True), "a": new_status}})
     return {"is_active": new_status, "message": f"Utente {'attivato' if new_status else 'disattivato'}"}
+
+
+USER_HISTORY_CHECKS = [
+    ("cleaning_tasks", lambda uid: {"assigned_cleaner_ids": uid}, "pulizie"),
+    ("logistics_tasks", lambda uid: {"rider_id": uid}, "consegne"),
+    ("warehouse_movements", lambda uid: {"user_id": uid}, "movimenti"),
+    ("segnalazioni", lambda uid: {"$or": [{"created_by": uid}, {"assignee_id": uid}]}, "segnalazioni"),
+    ("maintenance_issues", lambda uid: {"$or": [{"assigned_to": uid}, {"created_by": uid}]}, "manutenzioni"),
+    ("laundry_jobs", lambda uid: {"$or": [{"created_by": uid}, {"weighed_by": uid}, {"ready_by": uid}]}, "lavorazioni"),
+    ("day_availability", lambda uid: {"user_id": uid}, "disponibilità"),
+]
 
 
 @api_router.delete("/users/{user_id}")
 async def delete_user(user_id: str, current_user: dict = Depends(get_current_user)):
-    if current_user.get("role") not in ["admin", "manager"]:
-        raise HTTPException(status_code=403, detail="Solo admin puo eliminare utenti")
+    require_admin(current_user)
     if user_id == current_user["id"]:
         raise HTTPException(status_code=400, detail="Non puoi eliminare il tuo account")
-    result = await db.users.delete_one({"id": user_id})
-    if result.deleted_count == 0:
+    user = await db.users.find_one({"id": user_id}, {"_id": 0})
+    if not user:
         raise HTTPException(status_code=404, detail="Utente non trovato")
+    refs = []
+    for coll, qf, label in USER_HISTORY_CHECKS:
+        if await db[coll].count_documents(qf(user_id)) > 0:
+            refs.append(label)
+    if refs:
+        raise HTTPException(status_code=400,
+                            detail=f"Utente con storico operativo ({', '.join(refs)}): usa Disattiva. Lo storico deve conservare USR, nome e attività.")
+    await db.users.delete_one({"id": user_id})
+    await _log_user_audit(current_user, user, "user.delete", {"usr_code": user.get("usr_code"), "email": user.get("email")})
     return {"message": "Utente eliminato"}
+
+
+class ResetPasswordPayload(BaseModel):
+    new_password: str
+
+
+@api_router.post("/users/{user_id}/reset-password")
+async def admin_reset_password(user_id: str, data: ResetPasswordPayload, current_user: dict = Depends(get_current_user)):
+    require_admin(current_user)
+    if len(data.new_password) < 8:
+        raise HTTPException(status_code=400, detail="La nuova password deve avere almeno 8 caratteri")
+    user = await db.users.find_one({"id": user_id}, {"_id": 0})
+    if not user:
+        raise HTTPException(status_code=404, detail="Utente non trovato")
+    await db.users.update_one({"id": user_id}, {"$set": {"password_hash": get_password_hash(data.new_password), "updated_at": now_iso()}})
+    await _log_user_audit(current_user, user, "user.password_reset", {"note": "Password reimpostata dall'Admin"})
+    return {"ok": True, "message": "Password reimpostata"}
+
+
+@api_router.get("/users/{user_id}/service-status")
+async def user_service_status(user_id: str, current_user: dict = Depends(get_current_user)):
+    """Stato servizio/GPS (solo ruoli autorizzati): sessione attiva, recency, ultimo aggiornamento."""
+    if not is_ops_user(current_user):
+        raise HTTPException(status_code=403, detail="Non autorizzato")
+    loc = await db.user_locations.find_one({"user_id": user_id, "active": True}, {"_id": 0})
+    if not loc:
+        return {"in_service": False, "gps_state": "off", "last_update": None, "session_type": None}
+    sec = None
+    if loc.get("timestamp"):
+        try:
+            ts = datetime.fromisoformat(str(loc["timestamp"]).replace("Z", "+00:00"))
+            sec = int((datetime.now(timezone.utc) - ts).total_seconds())
+        except ValueError:
+            sec = None
+    state = "live" if (sec is not None and sec <= 120) else ("recente" if (sec is not None and sec <= 600) else "non_aggiornata")
+    return {"in_service": True, "gps_state": state, "last_update": loc.get("timestamp"),
+            "session_type": loc.get("session_type") or loc.get("role")}
+
+
+@api_router.get("/users/{user_id}/audit")
+async def user_audit(user_id: str, current_user: dict = Depends(get_current_user)):
+    if not is_ops_user(current_user):
+        raise HTTPException(status_code=403, detail="Non autorizzato")
+    rows = await db.activity_logs.find({"entity_type": "users", "entity_id": user_id, "method": "AUDIT"},
+                                       {"_id": 0}).sort("timestamp", -1).to_list(30)
+    return rows
 
 
 @api_router.get("/permissions/roles")
@@ -4632,7 +4844,7 @@ async def list_cleaners(current_user: dict = Depends(get_current_user)):
     if not is_ops_user(current_user):
         raise HTTPException(status_code=403, detail="Non autorizzato")
     cleaners = await db.users.find(
-        {"role": UserRole.CLEANER, "is_active": True}, {"_id": 0, "id": 1, "name": 1, "first_name": 1, "last_name": 1, "email": 1}
+        {"$or": [{"role": UserRole.CLEANER}, {"extra_roles": UserRole.CLEANER}], "is_active": True}, {"_id": 0, "id": 1, "name": 1, "first_name": 1, "last_name": 1, "email": 1}
     ).to_list(200)
     for c in cleaners:
         if not c.get("name"):
@@ -4646,7 +4858,7 @@ async def get_cleaning_task(task_id: str, current_user: dict = Depends(get_curre
     if not task:
         raise HTTPException(status_code=404, detail="Task non trovato")
     # Cleaners can only see their own tasks
-    if current_user["role"] == UserRole.CLEANER and not _cleaner_can_access(task, current_user):
+    if _acts_as_cleaner(current_user) and not _cleaner_can_access(task, current_user):
         raise HTTPException(status_code=403, detail="Non autorizzato")
     return await _enrich_cleaning_task(task)
 
@@ -4748,7 +4960,7 @@ async def assign_cleaner_to_task(task_id: str, data: AssignCleanerRequest, curre
     task = await db.cleaning_tasks.find_one({"id": task_id}, {"_id": 0})
     if not task:
         raise HTTPException(status_code=404, detail="Task non trovato")
-    cleaner = await db.users.find_one({"id": data.cleaner_id, "role": UserRole.CLEANER}, {"_id": 0, "id": 1, "name": 1})
+    cleaner = await db.users.find_one({"id": data.cleaner_id, "$or": [{"role": UserRole.CLEANER}, {"extra_roles": UserRole.CLEANER}]}, {"_id": 0, "id": 1, "name": 1})
     if not cleaner:
         raise HTTPException(status_code=404, detail="Addetta non trovata")
     ids = _cleaner_ids_of(task)
@@ -4885,11 +5097,11 @@ async def update_cleaning_task_status(task_id: str, data: CleaningStatusUpdate, 
     task = await db.cleaning_tasks.find_one({"id": task_id}, {"_id": 0})
     if not task:
         raise HTTPException(status_code=404, detail="Task non trovato")
-    if current_user["role"] == UserRole.CLEANER and not _cleaner_can_access(task, current_user):
+    if _acts_as_cleaner(current_user) and not _cleaner_can_access(task, current_user):
         raise HTTPException(status_code=403, detail="Non autorizzato")
     if data.status not in CLEANING_TASK_STATUSES:
         raise HTTPException(status_code=400, detail="Stato non valido")
-    if current_user["role"] == UserRole.CLEANER and data.status in (CleaningTaskStatus.IN_PROGRESS, CleaningTaskStatus.COMPLETED, CleaningTaskStatus.CANCELLED):
+    if _acts_as_cleaner(current_user) and data.status in (CleaningTaskStatus.IN_PROGRESS, CleaningTaskStatus.COMPLETED, CleaningTaskStatus.CANCELLED):
         raise HTTPException(status_code=400, detail="La pulizia inizia con il video iniziale e si completa con 'Completa pulizia'")
 
     update = {"status": data.status, "updated_at": now_iso()}
@@ -4927,7 +5139,7 @@ async def update_checklist_response(task_id: str, data: ChecklistResponseUpdate,
     task = await db.cleaning_tasks.find_one({"id": task_id}, {"_id": 0})
     if not task:
         raise HTTPException(status_code=404, detail="Task non trovato")
-    if current_user["role"] == UserRole.CLEANER and not _cleaner_can_access(task, current_user):
+    if _acts_as_cleaner(current_user) and not _cleaner_can_access(task, current_user):
         raise HTTPException(status_code=403, detail="Non autorizzato")
     if not task.get("checklist"):
         raise HTTPException(status_code=400, detail="Nessuna checklist associata")
@@ -4955,7 +5167,7 @@ async def upload_cleaning_photo(
     task = await db.cleaning_tasks.find_one({"id": task_id}, {"_id": 0})
     if not task:
         raise HTTPException(status_code=404, detail="Task non trovato")
-    if current_user["role"] == UserRole.CLEANER and not _cleaner_can_access(task, current_user):
+    if _acts_as_cleaner(current_user) and not _cleaner_can_access(task, current_user):
         raise HTTPException(status_code=403, detail="Non autorizzato")
 
     ext = file.filename.split(".")[-1] if "." in file.filename else "jpg"
@@ -4995,7 +5207,7 @@ async def report_cleaning_issue(
     task = await db.cleaning_tasks.find_one({"id": task_id}, {"_id": 0})
     if not task:
         raise HTTPException(status_code=404, detail="Task non trovato")
-    if current_user["role"] == UserRole.CLEANER and not _cleaner_can_access(task, current_user):
+    if _acts_as_cleaner(current_user) and not _cleaner_can_access(task, current_user):
         raise HTTPException(status_code=403, detail="Non autorizzato")
     if data.category not in ISSUE_CATEGORIES:
         raise HTTPException(status_code=400, detail="Categoria non valida")
@@ -5115,7 +5327,7 @@ async def upload_cleaning_media(
     task = await db.cleaning_tasks.find_one({"id": task_id}, {"_id": 0})
     if not task:
         raise HTTPException(status_code=404, detail="Task non trovato")
-    if current_user["role"] == UserRole.CLEANER and not _cleaner_can_access(task, current_user):
+    if _acts_as_cleaner(current_user) and not _cleaner_can_access(task, current_user):
         raise HTTPException(status_code=403, detail="Non autorizzato")
     if media_type not in CLEANING_MEDIA_TYPES:
         raise HTTPException(status_code=400, detail="Tipo media non valido")
@@ -5194,7 +5406,7 @@ async def add_cleaning_note(task_id: str, data: CleaningNoteCreate, current_user
     task = await db.cleaning_tasks.find_one({"id": task_id}, {"_id": 0})
     if not task:
         raise HTTPException(status_code=404, detail="Task non trovato")
-    if current_user["role"] == UserRole.CLEANER and not _cleaner_can_access(task, current_user):
+    if _acts_as_cleaner(current_user) and not _cleaner_can_access(task, current_user):
         raise HTTPException(status_code=403, detail="Non autorizzato")
     note = {
         "id": str(uuid.uuid4()),
@@ -5229,7 +5441,7 @@ async def complete_cleaning_task(task_id: str, current_user: dict = Depends(get_
     task = await db.cleaning_tasks.find_one({"id": task_id}, {"_id": 0})
     if not task:
         raise HTTPException(status_code=404, detail="Task non trovato")
-    if current_user["role"] == UserRole.CLEANER and not _cleaner_can_access(task, current_user):
+    if _acts_as_cleaner(current_user) and not _cleaner_can_access(task, current_user):
         raise HTTPException(status_code=403, detail="Non autorizzato")
     if task.get("status") == CleaningTaskStatus.COMPLETED:
         return await _enrich_cleaning_task(task)
@@ -5402,9 +5614,9 @@ async def cleaning_task_operational(task_id: str, current_user: dict = Depends(g
     task = await db.cleaning_tasks.find_one({"id": task_id}, {"_id": 0})
     if not task:
         raise HTTPException(status_code=404, detail="Task non trovato")
-    if current_user["role"] == UserRole.CLEANER and not _cleaner_can_access(task, current_user):
+    if _acts_as_cleaner(current_user) and not _cleaner_can_access(task, current_user):
         raise HTTPException(status_code=403, detail="Non autorizzato")
-    if current_user["role"] not in (UserRole.CLEANER,) and not is_ops_user(current_user):
+    if not user_has_role(current_user, UserRole.CLEANER) and not is_ops_user(current_user):
         raise HTTPException(status_code=403, detail="Non autorizzato")
     result = {"structure": None, "media": {"arrive": [], "enter": [], "warehouse": []}}
     sid = task.get("structure_id")
@@ -7598,6 +7810,21 @@ async def startup_event():
     result = await db.users.update_many({"role": "manager"}, {"$set": {"role": "admin"}})
     if result.modified_count > 0:
         logger.info(f"Migrated {result.modified_count} users from 'manager' to 'admin' role")
+    # Codici USR permanenti agli utenti interni esistenti + default (idempotente)
+    try:
+        missing = await db.users.find({"role": {"$nin": ["client"]}, "usr_code": {"$exists": False}},
+                                      {"_id": 0, "id": 1}).sort("created_at", 1).to_list(500)
+        for u in missing:
+            await db.users.update_one({"id": u["id"], "usr_code": {"$exists": False}},
+                                      {"$set": {"usr_code": await next_usr_code()}})
+        if missing:
+            logger.info(f"USR codes assegnati a {len(missing)} utenti interni")
+        await db.users.update_many({"role": {"$nin": ["client"]}, "standard_available": {"$exists": False}},
+                                   {"$set": {"standard_available": True}})
+        await db.users.update_many({"role": {"$nin": ["client"]}, "contract": {"$exists": False}},
+                                   {"$set": {"contract": {"type": "indeterminato", "start_date": None, "end_date": None, "notes": ""}}})
+    except Exception as e:
+        logger.error(f"USR migration failed: {e}")
     # Assign KLV codes to structures missing one (idempotent)
     try:
         await ensure_klv_codes()

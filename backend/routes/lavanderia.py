@@ -82,6 +82,12 @@ def create_lavanderia_router(get_current_user, is_ops_user):
         if not is_ops_user(user):
             raise HTTPException(status_code=403, detail="Non autorizzato")
 
+    def require_operativo(user):
+        """Ops oppure Addetto Lavanderia (ruolo principale o aggiuntivo)."""
+        if is_ops_user(user) or user.get("role") == "laundry" or "laundry" in (user.get("extra_roles") or []):
+            return
+        raise HTTPException(status_code=403, detail="Non autorizzato")
+
     async def _enrich(j: dict) -> dict:
         out = _job_out(j)
         if j.get("client_id") and not out.get("client_name"):
@@ -92,7 +98,7 @@ def create_lavanderia_router(get_current_user, is_ops_user):
     @router.get("/jobs")
     async def list_jobs(status: Optional[str] = None, client_id: Optional[str] = None,
                         current_user: dict = Depends(get_current_user)):
-        require_ops(current_user)
+        require_operativo(current_user)
         q = {}
         if status:
             q["status"] = status
@@ -125,7 +131,7 @@ def create_lavanderia_router(get_current_user, is_ops_user):
 
     @router.post("/jobs")
     async def create_job(data: JobCreate, current_user: dict = Depends(get_current_user)):
-        require_ops(current_user)
+        require_operativo(current_user)
         now = now_iso()
         c = await db.clients.find_one({"id": data.client_id}, {"_id": 0})
         if not c:
@@ -149,7 +155,7 @@ def create_lavanderia_router(get_current_user, is_ops_user):
 
     @router.put("/jobs/{job_id}")
     async def update_job(job_id: str, data: JobUpdate, current_user: dict = Depends(get_current_user)):
-        require_ops(current_user)
+        require_operativo(current_user)
         job = await db.laundry_jobs.find_one({"id": job_id}, {"_id": 0})
         if not job:
             raise HTTPException(status_code=404, detail="Lavorazione non trovata")
@@ -170,7 +176,7 @@ def create_lavanderia_router(get_current_user, is_ops_user):
 
     @router.post("/jobs/{job_id}/pronta")
     async def mark_ready(job_id: str, data: ProntaPayload, current_user: dict = Depends(get_current_user)):
-        require_ops(current_user)
+        require_operativo(current_user)
         job = await db.laundry_jobs.find_one({"id": job_id}, {"_id": 0})
         if not job:
             raise HTTPException(status_code=404, detail="Lavorazione non trovata")
@@ -202,7 +208,7 @@ def create_lavanderia_router(get_current_user, is_ops_user):
 
     @router.put("/jobs/{job_id}/peso")
     async def set_weight(job_id: str, data: PesoPayload, current_user: dict = Depends(get_current_user)):
-        require_ops(current_user)
+        require_operativo(current_user)
         job = await db.laundry_jobs.find_one({"id": job_id}, {"_id": 0})
         if not job:
             raise HTTPException(status_code=404, detail="Lavorazione non trovata")
@@ -225,7 +231,7 @@ def create_lavanderia_router(get_current_user, is_ops_user):
 
     @router.post("/jobs/{job_id}/foto-bilancia")
     async def upload_scale_photo(job_id: str, file: UploadFile = File(...), current_user: dict = Depends(get_current_user)):
-        require_ops(current_user)
+        require_operativo(current_user)
         job = await db.laundry_jobs.find_one({"id": job_id}, {"_id": 0})
         if not job:
             raise HTTPException(status_code=404, detail="Lavorazione non trovata")

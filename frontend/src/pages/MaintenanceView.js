@@ -13,6 +13,7 @@ import {
   Package, MoreHorizontal, Image, ChevronRight, MessageSquare, X
 } from 'lucide-react';
 import { cn } from '../lib/utils';
+import { QuickActions } from '../components/kilolava/QuickActions';
 import { LocationBanner, useLocationState, LocationRequiredDialog } from '../components/LocationBanner';
 
 const STATUS_BADGE = {
@@ -434,6 +435,7 @@ const MaintenanceView = () => {
           </div>
         )}
       </div>
+      <QuickActions bottomOffset="5.5rem" />
     </div>
   );
 };

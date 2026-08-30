@@ -461,6 +461,17 @@ def create_consegne_router(get_current_user, is_ops_user):
         from services.planning import delivery_propose
         return await delivery_propose(data.date)
 
+    async def _overlap_warnings(rider_id: str, date: str) -> list:
+        """Utente multi-ruolo: avvisa (senza bloccare) se ha anche pulizie assegnate quel giorno."""
+        u = await db.users.find_one({"id": rider_id}, {"_id": 0, "name": 1})
+        tasks = await db.cleaning_tasks.find(
+            {"date": date, "assigned_cleaner_ids": rider_id, "status": {"$nin": ["cancelled", "completed"]}},
+            {"_id": 0, "scheduled_time": 1, "structure_name": 1}).to_list(20)
+        if not tasks:
+            return []
+        times = ", ".join(f"{t.get('structure_name') or 'pulizia'}{' ore ' + t['scheduled_time'] if t.get('scheduled_time') else ''}" for t in tasks[:4])
+        return [f"⚠ Sovrapposizione attività: {(u or {}).get('name', 'utente')} ha anche {len(tasks)} pulizie il {date} ({times}). Verifica gli orari."]
+
     @router.post("/giri/conferma")
     async def giri_conferma(data: GiriConfermaPayload, current_user: dict = Depends(get_current_user)):
         require_ops(current_user)
@@ -482,7 +493,10 @@ def create_consegne_router(get_current_user, is_ops_user):
                 await _deps["create_notification"](a["rider_id"], "Giro assegnato",
                                                    f"Il tuo giro del {data.date} è stato organizzato",
                                                    "logistics_assigned", "normal", "logistics_task", a["fermata_id"])
-        return {"applied": applied, "riders": len(riders_notified)}
+        warnings = []
+        for rid in riders_notified:
+            warnings.extend(await _overlap_warnings(rid, data.date))
+        return {"applied": applied, "riders": len(riders_notified), "warnings": warnings}
 
     # ---------- Fermate ----------
 
@@ -707,7 +721,10 @@ def create_consegne_router(get_current_user, is_ops_user):
             await db.fabbisogni.update_many({"id": {"$in": t.get("richiesta_ids") or []}, "status": "in_consegna"},
                                             {"$set": {"status": "aperta", "fermata_id": None, "updated_at": now}})
         await db.logistics_tasks.update_one({"id": fermata_id}, {"$set": upd})
-        return await _enrich_fermata(await db.logistics_tasks.find_one({"id": fermata_id}, {"_id": 0}))
+        out = await _enrich_fermata(await db.logistics_tasks.find_one({"id": fermata_id}, {"_id": 0}))
+        if payload.get("rider_id") and payload["rider_id"] != t.get("rider_id"):
+            out["warnings"] = await _overlap_warnings(payload["rider_id"], upd.get("date", t.get("date")))
+        return out
 
     @router.put("/fermate/{fermata_id}/start")
     async def start_fermata(fermata_id: str, current_user: dict = Depends(get_current_user)):

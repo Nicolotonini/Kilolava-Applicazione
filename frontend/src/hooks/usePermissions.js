@@ -13,6 +13,7 @@ const ROLE_PERMISSIONS = {
   cleaner: ['tasks.own.read', 'tasks.own.write'],
   rider: ['logistics.own.read', 'logistics.own.write'],
   maintenance: ['maintenance.own.read', 'maintenance.own.write'],
+  laundry: ['laundry.own.read', 'laundry.own.write'],
   client: ['portal.read', 'portal.write'],
 };
 
@@ -32,10 +33,11 @@ const NAV_KEYS = [
 
 const NAV_VISIBILITY = {
   admin: NAV_KEYS,
-  operations_manager: NAV_KEYS.filter((k) => k !== 'users'),
+  operations_manager: NAV_KEYS,
   cleaner: [],
   rider: [],
   maintenance: [],
+  laundry: ['pl-jobs'],
   client: [],
 };
 
@@ -47,10 +49,12 @@ export const ROLE_LABELS = {
   cleaner: 'Operatrice Pulizie',
   rider: 'Rider',
   maintenance: 'Manutentore',
+  laundry: 'Addetto Lavanderia',
   client: 'Cliente',
 };
 
-export const ALL_ROLES = ['admin', 'operations_manager', 'cleaner', 'rider', 'maintenance', 'client'];
+export const INTERNAL_ROLES = ['admin', 'operations_manager', 'cleaner', 'rider', 'maintenance', 'laundry'];
+export const ALL_ROLES = ['admin', 'operations_manager', 'cleaner', 'rider', 'maintenance', 'laundry', 'client'];
 
 export const usePermissions = () => {
   const { user } = useAuth();
@@ -95,6 +99,8 @@ export const usePermissions = () => {
 
   const isOps = OPS_ROLES.has(effectiveRole);
   const isAdmin = effectiveRole === 'admin';
+  const extraRoles = isImpersonating ? [] : (user?.extra_roles || []);
+  const hasRole = (r) => effectiveRole === r || extraRoles.includes(r);
 
   const canAccessNav = (navItem) => {
     const visible = NAV_VISIBILITY[effectiveRole] || [];
@@ -116,6 +122,8 @@ export const usePermissions = () => {
         return '/cleaner';
       case 'maintenance':
         return '/maintenance';
+      case 'laundry':
+        return '/private-laundry/jobs';
       case 'client':
         return '/portal';
       default:
@@ -126,6 +134,8 @@ export const usePermissions = () => {
   return {
     role: effectiveRole,
     realRole,
+    extraRoles,
+    hasRole,
     permissions: perms,
     hasPermission,
     isOps,

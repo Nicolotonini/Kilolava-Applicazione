@@ -67,6 +67,7 @@ function GiriProposalDialog({ proposal, onClose, onConfirmed }) {
       })));
       const res = await api.post('/consegne/giri/conferma', { date: proposal.date, assignments });
       toast.success(`Giri confermati: ${res.data.applied} fermate assegnate a ${res.data.riders} rider`);
+      (res.data.warnings || []).forEach((w) => toast.warning(w, { duration: 9000 }));
       onConfirmed();
     } catch (e) { toast.error(e.response?.data?.detail || 'Errore'); }
     finally { setSaving(false); }

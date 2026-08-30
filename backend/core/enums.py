@@ -7,13 +7,15 @@ class UserRole:
     CLEANER = "cleaner"
     RIDER = "rider"
     MAINTENANCE = "maintenance"
+    LAUNDRY = "laundry"
     CLIENT = "client"
     # Legacy aliases
     MANAGER = "admin"
     OPS_MANAGER = "operations_manager"
 
 
-ALL_ROLES = ["admin", "operations_manager", "cleaner", "rider", "maintenance", "client"]
+ALL_ROLES = ["admin", "operations_manager", "cleaner", "rider", "maintenance", "laundry", "client"]
+INTERNAL_ROLES = ["admin", "operations_manager", "cleaner", "rider", "maintenance", "laundry"]
 OPS_ROLES = {"admin", "operations_manager"}
 
 
