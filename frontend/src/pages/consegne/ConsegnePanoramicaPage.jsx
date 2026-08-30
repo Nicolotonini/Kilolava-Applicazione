@@ -30,21 +30,23 @@ export default function ConsegnePanoramicaPage() {
         title="Consegne — Panoramica"
         subtitle="Centro logistico Kilolava: richieste, fermate e giri di consegna"
         actions={
-          <Button onClick={() => navigate('/consegne/da-organizzare')} className="h-9 gap-1.5" data-testid="goto-da-organizzare">
-            <PackageSearch className="h-4 w-4" />Da organizzare
+          <Button onClick={() => navigate('/consegne/definizione')} className="h-9 gap-1.5" data-testid="goto-definizione">
+            <PackageSearch className="h-4 w-4" />Organizzazione e definizione
           </Button>
         }
       />
       {loading ? (
-        <KpiSkeleton count={6} />
+        <KpiSkeleton count={8} />
       ) : (
-        <KpiGrid cols={6} testId="consegne-kpi-grid">
-          <KpiCard label="Da organizzare" value={k.da_organizzare} onClick={() => navigate('/consegne/da-organizzare')} testId="kpi-da-organizzare" />
-          <KpiCard label="Programmate oggi" value={k.programmate_oggi} onClick={() => navigate('/consegne/oggi')} testId="kpi-programmate" />
+        <KpiGrid cols={4} testId="consegne-kpi-grid">
+          <KpiCard label="Consegne oggi" value={k.consegne_oggi} onClick={() => navigate('/consegne/giro')} testId="kpi-consegne-oggi" />
+          <KpiCard label="Da verificare" value={k.da_verificare} accent={k.da_verificare > 0 ? 'text-amber-600' : undefined} onClick={() => navigate('/consegne/definizione')} testId="kpi-da-verificare" />
+          <KpiCard label="Da confermare" value={k.da_confermare} accent={k.da_confermare > 0 ? 'text-sky-600' : undefined} onClick={() => navigate('/consegne/definizione')} testId="kpi-da-confermare" />
+          <KpiCard label="Da organizzare" value={k.da_organizzare} onClick={() => navigate('/consegne/definizione')} testId="kpi-da-organizzare" />
+          <KpiCard label="Pronte per il giro" value={k.pronte_giro} onClick={() => navigate('/consegne/giro')} testId="kpi-pronte-giro" />
           <KpiCard label="In corso" value={k.in_corso} accent="text-amber-600" testId="kpi-in-corso" />
-          <KpiCard label="Urgenti" value={k.urgenti} accent={k.urgenti > 0 ? 'text-red-600' : undefined} testId="kpi-urgenti" />
           <KpiCard label="Completate oggi" value={k.completate_oggi} accent="text-emerald-600" testId="kpi-completate" />
-          <KpiCard label="In ritardo" value={k.in_ritardo} accent={k.in_ritardo > 0 ? 'text-red-600' : undefined} testId="kpi-ritardo" />
+          <KpiCard label="Urgenti / Problemi" value={(k.urgenti || 0) + (k.in_ritardo || 0)} accent={(k.urgenti || 0) + (k.in_ritardo || 0) > 0 ? 'text-red-600' : undefined} testId="kpi-urgenti" />
         </KpiGrid>
       )}
 
@@ -59,7 +61,7 @@ export default function ConsegnePanoramicaPage() {
                 const Icon = ATT_ICONS[a.type] || AlertTriangle;
                 const to = a.type === 'fermata' ? `/consegne/fermata/${a.id}`
                   : a.type === 'lavanderia' ? '/private-laundry/jobs'
-                  : a.type === 'rider' ? '/consegne/oggi' : '/consegne/da-organizzare';
+                  : a.type === 'rider' ? '/consegne/giro' : '/consegne/definizione';
                 return (
                   <button
                     key={i}

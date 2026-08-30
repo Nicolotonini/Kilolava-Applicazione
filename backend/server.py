@@ -5,6 +5,7 @@ from fastapi.responses import Response
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
+from pymongo import ReturnDocument
 import os
 import logging
 from pathlib import Path
@@ -199,6 +200,7 @@ class ClientResponse(BaseModel):
     has_portal_account: bool = False
     structure_count: int = 0
     logo_path: Optional[str] = None
+    noleggio_config: Optional[dict] = None
     created_at: str
     updated_at: str
 
@@ -230,6 +232,7 @@ class StructureCreate(BaseModel):
     expected_cleaning_minutes: Optional[int] = None
     latitude: Optional[float] = None
     longitude: Optional[float] = None
+    linea: Optional[str] = None
     notes: Optional[str] = None
     is_active: bool = True
 
@@ -258,6 +261,7 @@ class StructureUpdate(BaseModel):
     expected_cleaning_minutes: Optional[int] = None
     latitude: Optional[float] = None
     longitude: Optional[float] = None
+    linea: Optional[str] = None
     notes: Optional[str] = None
     is_active: Optional[bool] = None
 
@@ -291,6 +295,7 @@ class StructureResponse(BaseModel):
     expected_cleaning_minutes: Optional[int] = None
     latitude: Optional[float] = None
     longitude: Optional[float] = None
+    linea: Optional[str] = None
     notes: Optional[str] = None
     is_active: bool
     unit_count: int = 0
@@ -694,6 +699,7 @@ async def get_clients(
             has_portal_account=client_doc["id"] in portal_set,
             structure_count=counts.get(client_doc["id"], 0),
             logo_path=client_doc.get("logo_path"),
+            noleggio_config=client_doc.get("noleggio_config"),
             created_at=client_doc["created_at"],
             updated_at=client_doc["updated_at"]
         ))
@@ -836,6 +842,7 @@ async def get_client(client_id: str, current_user: dict = Depends(get_current_us
         has_portal_account=has_portal,
         structure_count=structure_count,
         logo_path=client.get("logo_path"),
+        noleggio_config=client.get("noleggio_config"),
         created_at=client["created_at"],
         updated_at=client["updated_at"]
     )
@@ -886,6 +893,7 @@ async def update_client(
         ordering_enabled=updated_client.get("ordering_enabled", False),
         structure_count=structure_count,
         logo_path=updated_client.get("logo_path"),
+        noleggio_config=updated_client.get("noleggio_config"),
         created_at=updated_client["created_at"],
         updated_at=updated_client["updated_at"]
     )
@@ -969,6 +977,7 @@ def build_structure_response(structure: dict, client_name: Optional[str], unit_c
         "expected_cleaning_minutes": structure.get("expected_cleaning_minutes"),
         "latitude": structure.get("latitude"),
         "longitude": structure.get("longitude"),
+        "linea": structure.get("linea"),
         "notes": structure.get("notes"),
         "is_active": structure.get("is_active", True),
         "unit_count": unit_count,
@@ -3914,6 +3923,176 @@ async def cancel_order(order_id: str, current_user: dict = Depends(get_current_u
     return {"message": "Ordine annullato"}
 
 
+# ============== ORDINI CLIENTE v2 (cataloghi reali → richieste in Consegne) ==============
+
+class ClientOrdiniSettings(BaseModel):
+    ordering_enabled: bool
+    orders_categories: List[str] = []
+
+
+@api_router.put("/clients/{client_id}/ordini-settings")
+async def set_client_ordini_settings(client_id: str, data: ClientOrdiniSettings, current_user: dict = Depends(get_current_user)):
+    if not is_ops_user(current_user):
+        raise HTTPException(status_code=403, detail="Non autorizzato")
+    cats = [c for c in data.orders_categories if c in ("noleggio", "forniture", "pulizie")]
+    r = await db.clients.update_one({"id": client_id}, {"$set": {
+        "ordering_enabled": data.ordering_enabled, "orders_categories": cats, "updated_at": now_iso()}})
+    if r.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Cliente non trovato")
+    return {"ordering_enabled": data.ordering_enabled, "orders_categories": cats}
+
+
+class ClientNoleggioConfig(BaseModel):
+    linea: Optional[str] = None
+    stagione: Optional[str] = None
+
+
+@api_router.put("/clients/{client_id}/noleggio-config")
+async def set_client_noleggio_config(client_id: str, data: ClientNoleggioConfig, current_user: dict = Depends(get_current_user)):
+    """Configurazione Kit Noleggio del Cliente: linea (Living/Dream) e stagione (Estivo/Invernale).
+    La stagione NON dipende dal calendario: vale finché non viene cambiata."""
+    if not is_ops_user(current_user):
+        raise HTTPException(status_code=403, detail="Non autorizzato")
+    if data.linea is not None and data.linea not in ("living", "dream"):
+        raise HTTPException(status_code=400, detail="Linea non valida (living|dream)")
+    if data.stagione is not None and data.stagione not in ("estivo", "invernale"):
+        raise HTTPException(status_code=400, detail="Stagione non valida (estivo|invernale)")
+    existing_client = await db.clients.find_one({"id": client_id}, {"_id": 0, "noleggio_config": 1})
+    if not existing_client:
+        raise HTTPException(status_code=404, detail="Cliente non trovato")
+    existing_cfg = existing_client.get("noleggio_config") or {}
+    cfg = {"linea": existing_cfg.get("linea"), "stagione": existing_cfg.get("stagione"),
+           **data.model_dump(exclude_unset=True)}
+    await db.clients.update_one({"id": client_id}, {"$set": {"noleggio_config": cfg, "updated_at": now_iso()}})
+    return {"noleggio_config": cfg}
+
+
+@api_router.get("/portal/ordini/catalogo")
+async def portal_ordini_catalogo(current_user: dict = Depends(get_current_user)):
+    cid = _require_client(current_user)
+    client = await db.clients.find_one({"id": cid}, {"_id": 0})
+    if not client or not client.get("ordering_enabled"):
+        raise HTTPException(status_code=403, detail="Ordini non abilitati per il tuo account")
+    cats = client.get("orders_categories") or ["noleggio", "forniture", "pulizie"]
+    proj = {"_id": 0, "id": 1, "code": 1, "name": 1, "unit": 1, "photo": 1, "category": 1, "type": 1}
+    out = {"categories": cats, "kits": [], "products": {}}
+    if "noleggio" in cats:
+        out["kits"] = await db.kits.find({"domain": "noleggio", "active": {"$ne": False}},
+                                         {"_id": 0, "id": 1, "code": 1, "name": 1, "version": 1, "items": 1}).sort("code", 1).to_list(50)
+        out["products"]["noleggio"] = await db.rental_catalog.find({"active": {"$ne": False}}, proj).sort("code", 1).to_list(100)
+    if "forniture" in cats:
+        out["products"]["forniture"] = await db.supply_catalog.find({"active": {"$ne": False}}, proj).sort("code", 1).to_list(100)
+    if "pulizie" in cats:
+        out["products"]["pulizie"] = await db.cleaning_catalog.find({"active": {"$ne": False}}, proj).sort("code", 1).to_list(100)
+    structures = await db.structures.find({"client_id": cid, "is_active": {"$ne": False}},
+                                          {"_id": 0, "id": 1, "name": 1, "klv_code": 1}).to_list(100)
+    return {**out, "structures": structures}
+
+
+class PortalOrdineCreate(BaseModel):
+    structure_id: str
+    date_preferred: Optional[str] = None
+    time_window: Optional[str] = None
+    items: List[dict] = []
+    kits: List[dict] = []
+    note: Optional[str] = None
+
+
+ORDER_DOMAIN_KIND = {"noleggio": "noleggio", "forniture": "fornitura", "pulizie": "pulizie"}
+ORDER_DOMAIN_COLL = {"noleggio": "rental_catalog", "forniture": "supply_catalog", "pulizie": "cleaning_catalog"}
+
+
+@api_router.post("/portal/ordini")
+async def portal_crea_ordine(data: PortalOrdineCreate, current_user: dict = Depends(get_current_user)):
+    from routes.consegne import expand_kit, merge_items
+    cid = _require_client(current_user)
+    client = await db.clients.find_one({"id": cid}, {"_id": 0})
+    if not client or not client.get("ordering_enabled"):
+        raise HTTPException(status_code=403, detail="Ordini non abilitati per il tuo account")
+    cats = client.get("orders_categories") or ["noleggio", "forniture", "pulizie"]
+    s = await db.structures.find_one({"id": data.structure_id, "client_id": cid}, {"_id": 0, "id": 1, "name": 1, "klv_code": 1})
+    if not s:
+        raise HTTPException(status_code=404, detail="Struttura non trovata")
+    per_domain = {}
+    kits_used = []
+    for k in data.kits or []:
+        if "noleggio" not in cats:
+            raise HTTPException(status_code=403, detail="Kit non ordinabili per il tuo account")
+        snap, kit_items = await expand_kit(k["kit_id"], max(1, int(k.get("qty") or 1)))
+        kits_used.append(snap)
+        per_domain["noleggio"] = merge_items(per_domain.get("noleggio", []), kit_items)
+    for it in data.items or []:
+        dom = it.get("domain")
+        if dom not in ORDER_DOMAIN_KIND or dom not in cats:
+            raise HTTPException(status_code=403, detail="Categoria non abilitata")
+        p = await db[ORDER_DOMAIN_COLL[dom]].find_one({"id": it.get("product_id")}, {"_id": 0, "id": 1, "code": 1, "name": 1})
+        if not p:
+            raise HTTPException(status_code=404, detail="Articolo non trovato")
+        qty = max(1, int(it.get("qty") or 1))
+        per_domain[dom] = merge_items(per_domain.get(dom, []), [{"product_id": p["id"], "code": p.get("code"), "name": p["name"], "qty": qty}])
+    if not per_domain:
+        raise HTTPException(status_code=400, detail="L'ordine è vuoto")
+    c = await db.counters.find_one_and_update({"_id": "client_order"}, {"$inc": {"seq": 1}}, upsert=True, return_document=ReturnDocument.AFTER)
+    order_number = f"ORD-{c['seq']:04d}"
+    now = now_iso()
+    order_id = str(uuid.uuid4())
+    richiesta_ids = []
+    for dom, items in per_domain.items():
+        rid = str(uuid.uuid4())
+        richiesta_ids.append(rid)
+        await db.fabbisogni.insert_one({
+            "id": rid, "kind": ORDER_DOMAIN_KIND[dom], "structure_id": s["id"],
+            "structure_name": s.get("name"), "klv_code": s.get("klv_code"),
+            "zaino_id": None, "zaino_code": None, "client_id": cid, "client_name": None,
+            "destination_label": None, "items": items,
+            "kits_used": kits_used if dom == "noleggio" else [],
+            "date_needed": data.date_preferred, "time_window": data.time_window,
+            "priority": "normal", "status": "aperta", "stage": "da_confermare",
+            "note": (data.note or "") + f" [Ordine Cliente {order_number}]",
+            "source": {"type": "ordine_cliente", "order_id": order_id, "order_number": order_number},
+            "source_id": order_id, "fermata_id": None,
+            "created_by": current_user["id"], "created_by_name": current_user.get("name", ""),
+            "created_at": now, "updated_at": now})
+    order_doc = {"id": order_id, "order_number": order_number, "client_id": cid,
+                 "structure_id": s["id"], "structure_name": s.get("name"), "klv_code": s.get("klv_code"),
+                 "date_preferred": data.date_preferred, "time_window": data.time_window,
+                 "items": [i for its in per_domain.values() for i in its], "kits_used": kits_used,
+                 "note": data.note or "", "richiesta_ids": richiesta_ids,
+                 "created_at": now, "updated_at": now}
+    await db.client_orders.insert_one(order_doc)
+    order_doc.pop("_id", None)
+    await notify_ops_users("Nuovo Ordine Cliente", f"{order_number} — {s.get('name')}: da confermare in Consegne",
+                           "order_created", "important", "client_order", order_id)
+    return {**order_doc, "status": "da_confermare"}
+
+
+def _derive_order_status(richieste: list) -> str:
+    if not richieste:
+        return "annullato"
+    stati = [(r.get("status"), r.get("stage") or "confermata") for r in richieste]
+    if all(s == "annullata" for s, _ in stati):
+        return "annullato"
+    active = [x for x in stati if x[0] != "annullata"]
+    if active and all(s == "evasa" for s, _ in active):
+        return "consegnato"
+    if any(s == "in_consegna" for s, _ in stati):
+        return "pianificato"
+    if any(st == "confermata" and s == "aperta" for s, st in stati):
+        return "confermato"
+    return "in_revisione"
+
+
+@api_router.get("/portal/ordini")
+async def portal_lista_ordini(current_user: dict = Depends(get_current_user)):
+    cid = _require_client(current_user)
+    orders = await db.client_orders.find({"client_id": cid}, {"_id": 0}).sort("created_at", -1).to_list(200)
+    out = []
+    for o in orders:
+        richieste = await db.fabbisogni.find({"id": {"$in": o.get("richiesta_ids", [])}}, {"_id": 0, "status": 1, "stage": 1}).to_list(10)
+        out.append({**o, "status": _derive_order_status(richieste)})
+    return out
+
+
 @api_router.get("/portal/report")
 async def portal_report(
     month: Optional[str] = None,
@@ -5489,18 +5668,20 @@ async def get_cleaning_board(date: str, current_user: dict = Depends(get_current
             enriched["prediction_samples"] = n_samples
             if t.get("predicted_duration_minutes") != pred or t.get("prediction_confidence") != conf:
                 await db.cleaning_tasks.update_one({"id": t["id"]}, {"$set": {"predicted_duration_minutes": pred, "prediction_confidence": conf}})
+        if s:
+            enriched["checkout_time"] = s.get("check_out_time")
+            std_ci = s.get("check_in_time") or "15:00"
+            enriched["early_checkin"] = bool(t.get("checkin_today") and t.get("checkin_time") and t["checkin_time"] < std_ci)
         tasks.append(enriched)
-    cleaners_raw = await db.users.find({"role": UserRole.CLEANER, "is_active": {"$ne": False}}, {"_id": 0, "id": 1, "name": 1, "ops_availability": 1, "anagrafica": 1}).to_list(100)
+    from services.planning import merged_day_availability, _gps_state
+    merged = await merged_day_availability(date, UserRole.CLEANER)
+    gps_map = await _gps_state([m["id"] for m in merged])
     cleaners = []
-    for c in cleaners_raw:
-        streak, last_rest = await _consecutive_work_days(c["id"], date)
-        av = {**DEFAULT_AVAILABILITY, **(c.get("ops_availability") or {})}
-        birth = (c.get("anagrafica") or {}).get("birth_date") or ""
-        is_birthday = bool(birth) and len(birth) >= 10 and birth[5:10] == date[5:10]
-        if is_birthday:
-            av = {**av, "available": False}
-        cleaners.append({"id": c["id"], "name": c["name"], "availability": av,
-                         "is_birthday": is_birthday,
+    for m in merged:
+        streak, last_rest = await _consecutive_work_days(m["id"], date)
+        cleaners.append({"id": m["id"], "name": m["name"], "availability": m["availability"],
+                         "has_override": m["has_override"], "gps": gps_map.get(m["id"]),
+                         "is_birthday": m["is_birthday"],
                          "consecutive_days": streak, "last_rest_day": last_rest})
     groups = await db.cleaning_groups.find({"date": date}, {"_id": 0}).to_list(100)
     layout = await db.board_layouts.find_one({"user_id": current_user["id"]}, {"_id": 0}) or {}
@@ -5564,6 +5745,83 @@ async def update_cleaner_availability(cleaner_id: str, data: AvailabilityUpdate,
             av[field] = val
     await db.users.update_one({"id": cleaner_id}, {"$set": {"ops_availability": av}})
     return av
+
+
+# ---- Disponibilità giornaliera (override del giorno: NON modifica la disponibilità standard) ----
+
+class DayAvailabilityUpdate(BaseModel):
+    date: str
+    user_id: str
+    role: str
+    available: Optional[bool] = None
+    day_off: Optional[bool] = None
+    start_time: Optional[str] = None
+    end_time: Optional[str] = None
+    max_hours: Optional[float] = None
+    note: Optional[str] = None
+    vehicle: Optional[str] = None
+
+
+@api_router.get("/day-availability")
+async def get_day_availability(date: str, role: str, current_user: dict = Depends(get_current_user)):
+    if not is_ops_user(current_user):
+        raise HTTPException(status_code=403, detail="Non autorizzato")
+    from services.planning import merged_day_availability, _gps_state
+    merged = await merged_day_availability(date, role)
+    gps_map = await _gps_state([m["id"] for m in merged])
+    for m in merged:
+        m["gps"] = gps_map.get(m["id"])
+    return merged
+
+
+@api_router.put("/day-availability")
+async def set_day_availability(data: DayAvailabilityUpdate, current_user: dict = Depends(get_current_user)):
+    if not is_ops_user(current_user):
+        raise HTTPException(status_code=403, detail="Non autorizzato")
+    payload = {k: v for k, v in data.model_dump(exclude_unset=True).items() if k not in ("date", "user_id", "role")}
+    if payload.get("day_off"):
+        payload["available"] = False
+    payload.update({"role": data.role, "updated_by": current_user.get("name", ""), "updated_at": now_iso()})
+    await db.day_availability.update_one({"date": data.date, "user_id": data.user_id},
+                                         {"$set": payload}, upsert=True)
+    return await db.day_availability.find_one({"date": data.date, "user_id": data.user_id}, {"_id": 0})
+
+
+@api_router.delete("/day-availability")
+async def reset_day_availability(date: str, user_id: str, current_user: dict = Depends(get_current_user)):
+    if not is_ops_user(current_user):
+        raise HTTPException(status_code=403, detail="Non autorizzato")
+    await db.day_availability.delete_one({"date": date, "user_id": user_id})
+    return {"reset": True}
+
+
+# ---- Impostazioni operative (stagione attiva + sede) ----
+
+class OperativeSettingsUpdate(BaseModel):
+    stagione: Optional[str] = None
+    sede_address: Optional[str] = None
+    sede_lat: Optional[float] = None
+    sede_lng: Optional[float] = None
+
+
+@api_router.get("/impostazioni-operative")
+async def get_impostazioni_operative(current_user: dict = Depends(get_current_user)):
+    if not is_ops_user(current_user):
+        raise HTTPException(status_code=403, detail="Non autorizzato")
+    from services.planning import get_operative_settings
+    return await get_operative_settings()
+
+
+@api_router.put("/impostazioni-operative")
+async def set_impostazioni_operative(data: OperativeSettingsUpdate, current_user: dict = Depends(get_current_user)):
+    if not is_ops_user(current_user):
+        raise HTTPException(status_code=403, detail="Non autorizzato")
+    upd = {k: v for k, v in data.model_dump(exclude_unset=True).items()}
+    if upd.get("stagione") and upd["stagione"] not in ("estivo", "invernale"):
+        raise HTTPException(status_code=400, detail="Stagione non valida")
+    await db.app_settings.update_one({"_id": "operative"}, {"$set": upd}, upsert=True)
+    from services.planning import get_operative_settings
+    return await get_operative_settings()
 
 
 # ---- Gruppi / squadre temporanee ----
@@ -5663,67 +5921,8 @@ async def propose_organization(date: str, current_user: dict = Depends(get_curre
     if not is_ops_user(current_user):
         raise HTTPException(status_code=403, detail="Non autorizzato")
     board = await get_cleaning_board(date, current_user)
-    threshold = board["rest_threshold_days"]
-    tasks = [t for t in board["tasks"] if t.get("status") != CleaningTaskStatus.CANCELLED]
-    unassigned = [t for t in tasks if not (t.get("assigned_cleaner_ids") or t.get("assigned_cleaner_id"))]
-    cleaners = [c for c in board["cleaners"] if c["availability"].get("available", True)]
-    if not cleaners:
-        raise HTTPException(status_code=400, detail="Nessuna addetta disponibile in questa giornata")
-    state = {}
-    for c in cleaners:
-        cap = int((c["availability"].get("max_hours") or 8) * 60)
-        load = sum(t.get("predicted_duration_minutes") or 0 for t in tasks
-                   if c["id"] in (t.get("assigned_cleaner_ids") or []))
-        zones = {t.get("zone_name") for t in tasks if c["id"] in (t.get("assigned_cleaner_ids") or []) and t.get("zone_name")}
-        state[c["id"]] = {"cleaner": c, "capacity": cap, "load": load, "zones": zones, "proposed": []}
-    def sort_key(t):
-        ci = _hhmm_to_min(t.get("checkin_time")) if t.get("checkin_today") else None
-        return (0 if ci is not None else 1, ci or 9999, t.get("zone_name") or "zzz")
-    alerts = []
-    assignments = []
-    for c in board["cleaners"]:
-        if c.get("is_birthday"):
-            alerts.append(f"Oggi è il compleanno di {c['name']}: a casa, non lavora")
-    for t in sorted(unassigned, key=sort_key):
-        pred = t.get("predicted_duration_minutes") or 60
-        best, best_score = None, None
-        for cid, st in state.items():
-            score = 0.0
-            if t.get("zone_name") and t["zone_name"] in st["zones"]:
-                score += 50
-            score += (st["capacity"] - st["load"] - pred) / 10.0
-            if st["cleaner"]["consecutive_days"] >= threshold:
-                score -= 40
-            if st["load"] + pred > st["capacity"]:
-                score -= 25
-            if best_score is None or score > best_score:
-                best, best_score = cid, score
-        st = state[best]
-        st["load"] += pred
-        if t.get("zone_name"):
-            st["zones"].add(t["zone_name"])
-        st["proposed"].append(t)
-        assignments.append({
-            "task_id": t["id"], "structure_name": t.get("structure_name"), "zone_name": t.get("zone_name"),
-            "predicted_duration_minutes": pred, "checkin_time": t.get("checkin_time") if t.get("checkin_today") else None,
-            "cleaner_ids": [best], "cleaner_names": [st["cleaner"]["name"]],
-        })
-        if st["load"] > st["capacity"]:
-            msg = f"{st['cleaner']['name']}: sovraccarico previsto ({st['load']} min su {st['capacity']} disponibili)"
-            if msg not in alerts:
-                alerts.append(msg)
-        if t.get("checkin_today") and pred >= 120:
-            alerts.append(f"{t.get('structure_name')}: consigliate 2 addette per rispettare il check-in {t.get('checkin_time') or ''}".strip())
-    for cid, st in state.items():
-        if st["cleaner"]["consecutive_days"] >= threshold and (st["proposed"] or st["load"] > 0):
-            alerts.append(f"{st['cleaner']['name']} è al {st['cleaner']['consecutive_days']}° giorno consecutivo: valuta riposo")
-    per_cleaner = [{
-        "cleaner_id": cid, "name": st["cleaner"]["name"],
-        "count": len(st["proposed"]), "total_minutes": st["load"], "capacity_minutes": st["capacity"],
-        "zones": sorted(z for z in st["zones"] if z), "consecutive_days": st["cleaner"]["consecutive_days"],
-    } for cid, st in state.items() if st["proposed"] or st["load"] > 0]
-    return {"date": date, "assignments": assignments, "per_cleaner": per_cleaner,
-            "alerts": list(dict.fromkeys(alerts)), "unassigned_count": len(unassigned)}
+    from services.planning import cleaning_propose
+    return await cleaning_propose(date, board)
 
 
 class ProposalApply(BaseModel):
@@ -5746,6 +5945,8 @@ async def apply_proposal(data: ProposalApply, current_user: dict = Depends(get_c
                 ids.append(cid)
             order_by_cleaner.setdefault(cid, []).append(task["id"])
         update = {"assigned_cleaner_ids": ids, "assigned_cleaner_id": ids[0] if ids else None, "updated_at": now_iso()}
+        if a.get("start"):
+            update["scheduled_time"] = a["start"]
         if task.get("status") == CleaningTaskStatus.UNASSIGNED and ids:
             update["status"] = CleaningTaskStatus.ASSIGNED
         await db.cleaning_tasks.update_one({"id": task["id"]}, {"$set": update})
@@ -7354,6 +7555,8 @@ init_lavanderia_deps(
 api_router.include_router(create_lavanderia_router(get_current_user, is_ops_user), prefix="/lavanderia")
 init_mappa_deps(local_today=local_today)
 api_router.include_router(create_mappa_router(get_current_user, is_ops_user))
+from routes.assistant import create_assistant_router  # noqa: E402
+api_router.include_router(create_assistant_router(get_current_user, is_ops_user), prefix="/assistant")
 api_router.include_router(create_sheets_anagrafiche_router(get_current_user, is_ops_user))
 init_activity_middleware(app, SECRET_KEY, ALGORITHM)
 
@@ -7413,6 +7616,16 @@ async def startup_event():
         await migrate_fermate()
     except Exception as e:
         logger.error(f"Migrazione fermate failed: {e}")
+    # Impostazioni operative (stagione + sede) — seed idempotente
+    try:
+        existing_ops = await db.app_settings.find_one({"_id": "operative"})
+        if not existing_ops:
+            await db.app_settings.update_one({"_id": "operative"}, {"$set": {
+                "stagione": "estivo", "sede_address": "Via dei Calderai 8, Trieste",
+                "sede_lat": 45.637806, "sede_lng": 13.772187}}, upsert=True)
+        await db.day_availability.create_index([("date", 1), ("user_id", 1)], unique=True)
+    except Exception as e:
+        logger.error(f"Operative settings seed failed: {e}")
     # Start scheduler with overdue task check every 30 minutes
     try:
         from services.sheets_anagrafiche import auto_backup_job as _sheets_backup_job

@@ -7,9 +7,10 @@ import { NotificationBell } from '../NotificationBell';
 import {
   LayoutDashboard, Users, CalendarDays, Truck, Settings, LogOut, Menu, X,
   Sun, Moon, Shield, Sparkles, Wrench, FileText, ChevronDown, ChevronRight,
-  Eye, Building2, Shirt, Boxes, KeyRound, AlertTriangle, Warehouse, MapPin,
+  Eye, Building2, Shirt, Boxes, KeyRound, AlertTriangle, Warehouse, MapPin, Wand2,
 } from 'lucide-react';
 import { useSegnalazioniBadge } from '../../hooks/useSegnalazioniBadge';
+import { QuickActions } from '../kilolava/QuickActions';
 import { Button } from '../ui/button';
 import { cn } from '../../lib/utils';
 
@@ -18,6 +19,7 @@ const LOGO_URL = 'https://customer-assets.emergentagent.com/job_kilolava-core/ar
 const NAV = [
   { type: 'item', key: 'dashboard', path: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
   { type: 'item', key: 'mappa', path: '/mappa', icon: MapPin, label: 'Mappa Operativa' },
+  { type: 'item', key: 'assistant', path: '/assistant', icon: Wand2, label: 'Assistente AI' },
   {
     type: 'group', key: 'clients-structures', icon: Users, label: 'Clienti e Strutture', children: [
       { key: 'clients', path: '/clients', label: 'Clienti' },
@@ -36,9 +38,8 @@ const NAV = [
   {
     type: 'group', key: 'consegne', icon: Truck, label: 'Consegne', children: [
       { key: 'consegne-overview', path: '/consegne', label: 'Panoramica' },
-      { key: 'consegne-da-organizzare', path: '/consegne/da-organizzare', label: 'Da organizzare' },
-      { key: 'consegne-organizzazione', path: '/consegne/organizzazione', label: 'Organizzazione' },
-      { key: 'consegne-oggi', path: '/consegne/oggi', label: 'Oggi' },
+      { key: 'consegne-definizione', path: '/consegne/definizione', label: 'Organizzazione e definizione' },
+      { key: 'consegne-giro', path: '/consegne/giro', label: 'Organizzazione giro' },
       { key: 'consegne-storico', path: '/consegne/storico', label: 'Storico' },
     ],
   },
@@ -96,6 +97,7 @@ const ROLE_ICONS = {
 
 function getBreadcrumb(pathname, search) {
   if (pathname === '/dashboard') return { title: 'Dashboard', crumbs: [] };
+  if (pathname === '/assistant') return { title: 'Assistente AI', crumbs: [] };
   if (pathname === '/calendar') return { title: 'Calendario', crumbs: [{ label: 'Pulizie' }] };
   if (pathname === '/clients') return { title: 'Clienti', crumbs: [] };
   if (pathname.startsWith('/clients/')) return { title: 'Dettaglio cliente', crumbs: [{ label: 'Clienti', to: '/clients' }] };
@@ -128,9 +130,8 @@ function getBreadcrumb(pathname, search) {
   if (pathname === '/keys') return { title: 'Chiavi', crumbs: [{ label: 'Clienti e Strutture' }] };
   if (pathname.startsWith('/consegne/fermata/')) return { title: 'Dettaglio fermata', crumbs: [{ label: 'Consegne', to: '/consegne' }] };
   if (pathname === '/consegne') return { title: 'Panoramica', crumbs: [{ label: 'Consegne' }] };
-  if (pathname === '/consegne/da-organizzare') return { title: 'Da organizzare', crumbs: [{ label: 'Consegne' }] };
-  if (pathname === '/consegne/organizzazione') return { title: 'Organizzazione', crumbs: [{ label: 'Consegne' }] };
-  if (pathname === '/consegne/oggi') return { title: 'Oggi', crumbs: [{ label: 'Consegne' }] };
+  if (pathname === '/consegne/definizione') return { title: 'Organizzazione e definizione', crumbs: [{ label: 'Consegne' }] };
+  if (pathname === '/consegne/giro') return { title: 'Organizzazione giro', crumbs: [{ label: 'Consegne' }] };
   if (pathname === '/consegne/storico') return { title: 'Storico', crumbs: [{ label: 'Consegne' }] };
   if (pathname === '/private-laundry/jobs') return { title: 'Lavorazioni', crumbs: [{ label: 'Lavanderia Privata' }] };
   if (pathname === '/private-laundry/history') return { title: 'Storico', crumbs: [{ label: 'Lavanderia Privata' }] };
@@ -553,6 +554,7 @@ const AppLayout = ({ children }) => {
           </div>
         </div>
       </main>
+      <QuickActions />
     </div>
   );
 };

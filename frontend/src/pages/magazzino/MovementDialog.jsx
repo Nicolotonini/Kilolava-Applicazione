@@ -107,7 +107,7 @@ export function MovementDialog({ defaultDomain = 'pulizie', lockDomain, defaultT
             <Label className="text-xs">Tipo movimento</Label>
             <select value={type} onChange={e => setType(e.target.value)}
               className="w-full h-9 rounded-md border border-border bg-background px-2 text-sm" data-testid="mov-type">
-              {Object.entries(MOVEMENT_TYPE_LABELS).filter(([k]) => k !== 'annullamento').map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+              {Object.entries(MOVEMENT_TYPE_LABELS).filter(([k]) => k !== 'storno' && k !== 'annullamento').map(([k, l]) => <option key={k} value={k}>{l}</option>)}
             </select>
           </div>
           <div className="grid grid-cols-3 gap-2">

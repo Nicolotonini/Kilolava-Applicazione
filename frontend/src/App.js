@@ -16,11 +16,11 @@ import RiderViewPage from './pages/RiderViewPage';
 import ConsegnePanoramicaPage from './pages/consegne/ConsegnePanoramicaPage';
 import DaOrganizzarePage from './pages/consegne/DaOrganizzarePage';
 import OrganizzazionePage from './pages/consegne/OrganizzazionePage';
-import ConsegneOggiPage from './pages/consegne/ConsegneOggiPage';
 import ConsegneStoricoPage from './pages/consegne/ConsegneStoricoPage';
 import FermataDetailPage from './pages/consegne/FermataDetailPage';
 import SettingsPage from './pages/SettingsPage';
 import MappaOperativaPage from './pages/MappaOperativaPage';
+import AssistantPage from './pages/AssistantPage';
 import ActivityLogPage from './pages/ActivityLogPage';
 import UsersPage from './pages/UsersPage';
 import IntegrationsPage from './pages/IntegrationsPage';
@@ -209,9 +209,13 @@ function AppRoutes() {
         <Route path="inventory" element={<Navigate to="/magazzino-generale/noleggio" replace />} />
         <Route path="consegne" element={<ConsegnePanoramicaPage />} />
         <Route path="mappa" element={<MappaOperativaPage />} />
-        <Route path="consegne/da-organizzare" element={<DaOrganizzarePage />} />
-        <Route path="consegne/organizzazione" element={<OrganizzazionePage />} />
-        <Route path="consegne/oggi" element={<ConsegneOggiPage />} />
+        <Route path="assistant" element={<AssistantPage />} />
+        <Route path="consegne" element={<ConsegnePanoramicaPage />} />
+        <Route path="consegne/definizione" element={<DaOrganizzarePage />} />
+        <Route path="consegne/giro" element={<OrganizzazionePage />} />
+        <Route path="consegne/da-organizzare" element={<Navigate to="/consegne/definizione" replace />} />
+        <Route path="consegne/organizzazione" element={<Navigate to="/consegne/giro" replace />} />
+        <Route path="consegne/oggi" element={<Navigate to="/consegne/giro" replace />} />
         <Route path="consegne/storico" element={<ConsegneStoricoPage />} />
         <Route path="consegne/fermata/:fermataId" element={<FermataDetailPage />} />
         <Route path="logistics" element={<Navigate to="/consegne" replace />} />

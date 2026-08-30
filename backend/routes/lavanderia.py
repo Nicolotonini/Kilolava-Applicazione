@@ -187,7 +187,8 @@ def create_lavanderia_router(get_current_user, is_ops_user):
             "destination_label": job.get("client_name"),
             "items": [{"name": "Biancheria privata" + (f" — {job['bags']} sacchi" if job.get("bags") else ""), "qty": 1}],
             "date_needed": None, "time_window": None, "priority": "normal",
-            "status": "aperta", "note": data.note or "", "source": {"type": "lavanderia", "id": job_id}, "source_id": job_id,
+            "status": "aperta", "stage": "da_verificare", "snoozed": False,
+            "note": data.note or "", "source": {"type": "lavanderia", "id": job_id}, "source_id": job_id,
             "fermata_id": None, "created_by": current_user["id"], "created_by_name": current_user.get("name", ""),
             "created_at": now, "updated_at": now,
         }

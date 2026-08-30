@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import api, { fileUrl } from '../../lib/api';
 import { PageHeader } from '../../components/kilolava/PageHeader';
 import { EmptyState, ListSkeleton } from '../../components/kilolava/EmptyState';
@@ -9,7 +10,7 @@ import { Input } from '../../components/ui/input';
 import { Label } from '../../components/ui/label';
 import { Textarea } from '../../components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../components/ui/select';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '../../components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '../../components/ui/dialog';
 import { toast } from 'sonner';
 import { Plus, Shirt, Scale, Check, Truck, Settings2, Camera, Ban } from 'lucide-react';
 import { cn } from '../../lib/utils';
@@ -30,25 +31,38 @@ const FILTERS = [
   { key: 'in_consegna', label: 'In consegna' },
 ];
 
-function NuovoArrivoDialog({ open, onClose, clients, structures, onCreated }) {
+function NuovoArrivoDialog({ open, onClose, clients, structures, jobs, onCreated, onUseExisting }) {
   const [clientId, setClientId] = useState('');
   const [structureId, setStructureId] = useState('');
   const [bags, setBags] = useState('');
+  const [weight, setWeight] = useState('');
+  const [photo, setPhoto] = useState(null);
   const [note, setNote] = useState('');
   const [saving, setSaving] = useState(false);
 
-  useEffect(() => { if (open) { setClientId(''); setStructureId(''); setBags(''); setNote(''); } }, [open]);
+  useEffect(() => { if (open) { setClientId(''); setStructureId(''); setBags(''); setWeight(''); setPhoto(null); setNote(''); } }, [open]);
 
   const clientStructures = structures.filter((s) => !clientId || s.client_id === clientId);
+  const existing = (jobs || []).filter((j) => structureId && j.structure_id === structureId && ['da_lavorare', 'pronta'].includes(j.status));
 
   const save = async () => {
     if (!clientId) { toast.error('Seleziona il cliente'); return; }
+    if (weight && !(parseFloat(weight) > 0)) { toast.error('Peso non valido'); return; }
     setSaving(true);
     try {
-      await api.post('/lavanderia/jobs', {
+      const r = await api.post('/lavanderia/jobs', {
         client_id: clientId, structure_id: structureId || null,
         bags: bags ? parseInt(bags) : null, note: note || null,
       });
+      const jobId = r.data.id;
+      if (weight) {
+        await api.put(`/lavanderia/jobs/${jobId}/peso`, { final_weight_kg: parseFloat(weight) });
+      }
+      if (photo) {
+        const fd = new FormData();
+        fd.append('file', photo);
+        await api.post(`/lavanderia/jobs/${jobId}/foto-bilancia`, fd, { headers: { 'Content-Type': 'multipart/form-data' } });
+      }
       toast.success('Arrivo registrato');
       onCreated();
     } catch (e) { toast.error(e.response?.data?.detail || 'Errore'); }
@@ -58,7 +72,10 @@ function NuovoArrivoDialog({ open, onClose, clients, structures, onCreated }) {
   return (
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
       <DialogContent className="max-w-md" data-testid="nuovo-arrivo-dialog">
-        <DialogHeader><DialogTitle>Nuovo arrivo — Lavanderia Privata</DialogTitle></DialogHeader>
+        <DialogHeader>
+          <DialogTitle>Nuovo arrivo — Lavanderia Privata</DialogTitle>
+          <DialogDescription className="text-xs">Registra il ritiro: cliente, struttura e, se già disponibili, peso e foto della pesatura.</DialogDescription>
+        </DialogHeader>
         <div className="space-y-4">
           <div className="space-y-1.5">
             <Label className="text-xs">Cliente *</Label>
@@ -80,11 +97,32 @@ function NuovoArrivoDialog({ open, onClose, clients, structures, onCreated }) {
               </SelectContent>
             </Select>
           </div>
+          {existing.length > 0 && (
+            <div className="rounded-lg border border-amber-300 bg-amber-50 dark:bg-amber-900/20 dark:border-amber-800 p-3 space-y-1.5" data-testid="existing-job-hint">
+              <p className="text-xs font-semibold text-amber-700 dark:text-amber-400">Esiste già una lavorazione aperta per questa struttura: evita i doppioni.</p>
+              {existing.map((j) => (
+                <div key={j.id} className="flex items-center justify-between gap-2 text-sm">
+                  <span className="text-xs">{j.client_name} · {JOB_STATUS[j.status]?.label}{j.final_weight_kg ? ` · ${j.final_weight_kg} kg` : ''}</span>
+                  <Button size="sm" variant="outline" className="h-7 text-xs shrink-0" onClick={() => onUseExisting(j)} data-testid={`use-existing-${j.id}`}>
+                    Usa questa
+                  </Button>
+                </div>
+              ))}
+            </div>
+          )}
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <Label className="text-xs">Sacchi (facoltativo)</Label>
               <Input type="number" min={0} value={bags} onChange={(e) => setBags(e.target.value)} data-testid="arrivo-bags-input" />
             </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs">Peso kg (facoltativo)</Label>
+              <Input type="number" step="0.1" min={0} value={weight} onChange={(e) => setWeight(e.target.value)} placeholder="es. 7.5" data-testid="arrivo-weight-input" />
+            </div>
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-xs">Foto bilancia / pesatura (facoltativa ora, obbligatoria prima della consegna)</Label>
+            <Input type="file" accept="image/*" capture="environment" onChange={(e) => setPhoto(e.target.files?.[0] || null)} data-testid="arrivo-photo-input" />
           </div>
           <div className="space-y-1.5">
             <Label className="text-xs">Note</Label>
@@ -173,6 +211,16 @@ export default function LavorazioniPage() {
   const [price, setPrice] = useState(null);
   const [priceOpen, setPriceOpen] = useState(false);
   const [priceInput, setPriceInput] = useState('');
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  useEffect(() => {
+    if (searchParams.get('new') === '1') {
+      setNewOpen(true);
+      searchParams.delete('new');
+      setSearchParams(searchParams, { replace: true });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const load = useCallback(() => {
     setLoading(true);
@@ -197,7 +245,7 @@ export default function LavorazioniPage() {
   const markReady = async (job) => {
     try {
       await api.post(`/lavanderia/jobs/${job.id}/pronta`, {});
-      toast.success('Lavorazione pronta — richiesta logistica creata in Consegne → Da organizzare');
+      toast.success('Pronta: appare in Consegne → Organizzazione e definizione come possibile consegna da valutare');
       load();
     } catch (e) { toast.error(e.response?.data?.detail || 'Errore'); }
   };
@@ -337,7 +385,9 @@ export default function LavorazioniPage() {
         </div>
       )}
 
-      <NuovoArrivoDialog open={newOpen} onClose={() => setNewOpen(false)} clients={clients} structures={structures} onCreated={() => { setNewOpen(false); load(); }} />
+      <NuovoArrivoDialog open={newOpen} onClose={() => setNewOpen(false)} clients={clients} structures={structures} jobs={jobs}
+        onCreated={() => { setNewOpen(false); load(); }}
+        onUseExisting={(j) => { setNewOpen(false); if (!j.consegnabile) setPesaJob(j); toast.info('Lavorazione esistente selezionata'); }} />
       <PesaDialog open={!!pesaJob} onClose={() => setPesaJob(null)} job={pesaJob} onDone={() => { setPesaJob(null); load(); }} />
 
       <Dialog open={priceOpen} onOpenChange={(v) => !v && setPriceOpen(false)}>

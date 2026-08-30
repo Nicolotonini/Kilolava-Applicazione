@@ -21,6 +21,34 @@ KIND_LABELS = {"noleggio": "Lavanderia a Noleggio", "fornitura": "Forniture", "p
                "zaino": "Zaino", "lavanderia_privata": "Lavanderia Privata",
                "manutenzione": "Materiale Manutenzione", "manuale": "Manuale"}
 ACTIVE = ["unassigned", "assigned", "in_progress", "problem"]
+STAGE_LABELS = {"da_verificare": "Da verificare", "da_confermare": "Da confermare", "confermata": "Confermata"}
+SOURCE_LABELS = {"fabbisogno_pulizia": "Fabbisogno Pulizia", "ordine_cliente": "Ordine Cliente", "manuale": "Manuale"}
+
+
+async def expand_kit(kit_id: str, qty: int):
+    """Espande un Kit negli articoli reali, con snapshot codice/nome/versione (il Kit è una scorciatoia)."""
+    kit = await db.kits.find_one({"id": kit_id}, {"_id": 0})
+    if not kit:
+        raise HTTPException(status_code=404, detail="Kit non trovato")
+    items = []
+    for it in kit.get("items") or []:
+        p = await db.rental_catalog.find_one({"id": it["product_id"]}, {"_id": 0, "code": 1, "name": 1})
+        items.append({"product_id": it["product_id"], "code": (p or {}).get("code") or it.get("code"),
+                      "name": it.get("name") or (p or {}).get("name", "Articolo"), "qty": (it.get("qty") or 1) * qty})
+    snapshot = {"kit_id": kit["id"], "kit_code": kit.get("code"), "kit_name": kit.get("name"),
+                "kit_version": kit.get("version", 1), "qty": qty}
+    return snapshot, items
+
+
+def merge_items(base: list, extra: list) -> list:
+    out = [dict(i) for i in (base or [])]
+    for e in extra:
+        found = next((i for i in out if i.get("product_id") and i.get("product_id") == e.get("product_id")), None)
+        if found:
+            found["qty"] = (found.get("qty") or 0) + (e.get("qty") or 0)
+        else:
+            out.append(dict(e))
+    return out
 
 
 def init_consegne_deps(**kwargs):
@@ -41,11 +69,38 @@ class RichiestaCreate(BaseModel):
     structure_id: Optional[str] = None
     client_id: Optional[str] = None
     destination_label: Optional[str] = None
-    items: List[dict]
+    items: List[dict] = []
+    kits: List[dict] = []
     date_needed: Optional[str] = None
     time_window: Optional[str] = None
     priority: str = "normal"
     note: Optional[str] = None
+
+
+class RichiestaUpdate(BaseModel):
+    items: Optional[List[dict]] = None
+    date_needed: Optional[str] = None
+    time_window: Optional[str] = None
+    priority: Optional[str] = None
+    note: Optional[str] = None
+
+
+class KitAddPayload(BaseModel):
+    kit_id: str
+    qty: int = 1
+
+
+class GenerateFabbisogniPayload(BaseModel):
+    date: str
+
+
+class GiriProponiPayload(BaseModel):
+    date: str
+
+
+class GiriConfermaPayload(BaseModel):
+    date: str
+    assignments: List[dict]
 
 
 class FermataCreate(BaseModel):
@@ -99,11 +154,12 @@ def create_consegne_router(get_current_user, is_ops_user):
     async def _laundry_info(f: dict):
         if f.get("kind") != "lavanderia_privata" or not f.get("source_id"):
             return None
-        job = await db.laundry_jobs.find_one({"id": f["source_id"]}, {"_id": 0, "final_weight_kg": 1, "scale_photo": 1, "status": 1})
+        job = await db.laundry_jobs.find_one({"id": f["source_id"]}, {"_id": 0, "final_weight_kg": 1, "scale_photo": 1, "status": 1, "ready_at": 1, "bags": 1})
         if not job:
             return None
         return {"job_id": f["source_id"], "weight_kg": job.get("final_weight_kg"),
                 "weighed": bool(job.get("final_weight_kg")), "has_scale_photo": bool(job.get("scale_photo")),
+                "ready_at": job.get("ready_at"), "bags": job.get("bags"), "job_status": job.get("status"),
                 "consegnabile": bool(job.get("final_weight_kg") and job.get("scale_photo"))}
 
     async def _availability(f: dict):
@@ -122,6 +178,10 @@ def create_consegne_router(get_current_user, is_ops_user):
     async def _enrich_richiesta(f: dict) -> dict:
         out = dict(f)
         out["kind_label"] = KIND_LABELS.get(f.get("kind"), f.get("kind"))
+        out["stage"] = f.get("stage") or "confermata"
+        out["stage_label"] = STAGE_LABELS.get(out["stage"], out["stage"])
+        src = (f.get("source") or {}).get("type")
+        out["source_label"] = SOURCE_LABELS.get(src) or KIND_LABELS.get(f.get("kind"), "")
         out["destination"] = f.get("structure_name") or f.get("zaino_code") or f.get("destination_label") or f.get("client_name") or "—"
         if f.get("client_id") and not out.get("client_name"):
             c = await db.clients.find_one({"id": f["client_id"]}, {"_id": 0})
@@ -143,16 +203,25 @@ def create_consegne_router(get_current_user, is_ops_user):
     @router.post("/richieste")
     async def create_richiesta(data: RichiestaCreate, current_user: dict = Depends(get_current_user)):
         require_ops(current_user)
-        if not data.items:
-            raise HTTPException(status_code=400, detail="Inserisci almeno un articolo")
+        items = list(data.items or [])
+        kits_used = []
+        for k in data.kits or []:
+            snap, kit_items = await expand_kit(k["kit_id"], int(k.get("qty") or 1))
+            kits_used.append(snap)
+            items = merge_items(items, kit_items)
+        if not items:
+            raise HTTPException(status_code=400, detail="Inserisci almeno un articolo o un Kit")
         now = now_iso()
-        doc = {"id": str(uuid.uuid4()), "kind": "manuale", "structure_id": data.structure_id,
+        doc = {"id": str(uuid.uuid4()), "kind": "noleggio" if kits_used and not data.items else "manuale",
+               "structure_id": data.structure_id,
                "structure_name": None, "klv_code": None, "zaino_id": None, "zaino_code": None,
                "client_id": data.client_id, "client_name": None,
                "destination_label": data.destination_label,
-               "items": data.items, "date_needed": data.date_needed, "time_window": data.time_window,
+               "items": items, "kits_used": kits_used,
+               "date_needed": data.date_needed, "time_window": data.time_window,
                "priority": data.priority if data.priority in ("low", "normal", "high", "urgent") else "normal",
-               "status": "aperta", "note": data.note or "", "source": {"type": "manuale"}, "source_id": None,
+               "status": "aperta", "stage": "confermata",
+               "note": data.note or "", "source": {"type": "manuale"}, "source_id": None,
                "fermata_id": None, "created_by": current_user["id"], "created_by_name": current_user.get("name", ""),
                "created_at": now, "updated_at": now}
         if data.structure_id:
@@ -211,15 +280,216 @@ def create_consegne_router(get_current_user, is_ops_user):
                                        {"$set": {"status": "annullata", "fermata_id": None, "updated_at": now}})
         return {"ok": True}
 
+    @router.put("/richieste/{richiesta_id}")
+    async def update_richiesta(richiesta_id: str, data: RichiestaUpdate, current_user: dict = Depends(get_current_user)):
+        require_ops(current_user)
+        f = await db.fabbisogni.find_one({"id": richiesta_id}, {"_id": 0})
+        if not f or f.get("status") != "aperta":
+            raise HTTPException(status_code=400, detail="Richiesta non modificabile")
+        upd = {k: v for k, v in data.model_dump(exclude_unset=True).items()}
+        if "items" in upd and not upd["items"]:
+            raise HTTPException(status_code=400, detail="La richiesta deve avere almeno un articolo")
+        upd["updated_at"] = now_iso()
+        await db.fabbisogni.update_one({"id": richiesta_id}, {"$set": upd})
+        return await _enrich_richiesta(await db.fabbisogni.find_one({"id": richiesta_id}, {"_id": 0}))
+
+    @router.put("/richieste/{richiesta_id}/conferma")
+    async def conferma_richiesta(richiesta_id: str, current_user: dict = Depends(get_current_user)):
+        require_ops(current_user)
+        f = await db.fabbisogni.find_one({"id": richiesta_id}, {"_id": 0})
+        if not f or f.get("status") != "aperta":
+            raise HTTPException(status_code=400, detail="Richiesta non confermabile")
+        await db.fabbisogni.update_one({"id": richiesta_id}, {"$set": {
+            "stage": "confermata", "confirmed_by": current_user.get("name", ""), "updated_at": now_iso()}})
+        return await _enrich_richiesta(await db.fabbisogni.find_one({"id": richiesta_id}, {"_id": 0}))
+
+    @router.put("/richieste/{richiesta_id}/rinvia")
+    async def rinvia_richiesta(richiesta_id: str, current_user: dict = Depends(get_current_user)):
+        """'Non consegnare ora': la richiesta resta aperta e rivalutabile, esce dalla giornata."""
+        require_ops(current_user)
+        f = await db.fabbisogni.find_one({"id": richiesta_id}, {"_id": 0})
+        if not f or f.get("status") != "aperta":
+            raise HTTPException(status_code=400, detail="Richiesta non rinviabile")
+        await db.fabbisogni.update_one({"id": richiesta_id}, {"$set": {
+            "snoozed": True, "snoozed_at": now_iso(), "snoozed_by": current_user.get("name", ""), "updated_at": now_iso()}})
+        return {"ok": True}
+
+    @router.put("/richieste/{richiesta_id}/riproponi")
+    async def riproponi_richiesta(richiesta_id: str, current_user: dict = Depends(get_current_user)):
+        require_ops(current_user)
+        f = await db.fabbisogni.find_one({"id": richiesta_id}, {"_id": 0})
+        if not f or f.get("status") != "aperta" or not f.get("snoozed"):
+            raise HTTPException(status_code=400, detail="Richiesta non riproponibile")
+        await db.fabbisogni.update_one({"id": richiesta_id}, {"$set": {"snoozed": False, "updated_at": now_iso()}})
+        return await _enrich_richiesta(await db.fabbisogni.find_one({"id": richiesta_id}, {"_id": 0}))
+
+    @router.post("/richieste/{richiesta_id}/kit")
+    async def aggiungi_kit(richiesta_id: str, data: KitAddPayload, current_user: dict = Depends(get_current_user)):
+        require_ops(current_user)
+        f = await db.fabbisogni.find_one({"id": richiesta_id}, {"_id": 0})
+        if not f or f.get("status") != "aperta":
+            raise HTTPException(status_code=400, detail="Richiesta non modificabile")
+        snap, kit_items = await expand_kit(data.kit_id, max(1, int(data.qty)))
+        await db.fabbisogni.update_one({"id": richiesta_id}, {"$set": {
+            "items": merge_items(f.get("items"), kit_items),
+            "kits_used": (f.get("kits_used") or []) + [snap], "updated_at": now_iso()}})
+        return await _enrich_richiesta(await db.fabbisogni.find_one({"id": richiesta_id}, {"_id": 0}))
+
+    @router.get("/giornata")
+    async def giornata(date: str, current_user: dict = Depends(get_current_user)):
+        """Organizzazione e definizione: tutte le richieste rilevanti per la giornata + fermate del giorno."""
+        require_ops(current_user)
+        rows = await db.fabbisogni.find({"status": "aperta", "snoozed": {"$ne": True}, "$or": [
+            {"date_needed": date}, {"date_needed": None}, {"date_needed": ""}, {"date_needed": {"$lt": date}},
+        ]}, {"_id": 0}).sort([("date_needed", 1), ("created_at", 1)]).to_list(500)
+        richieste = [await _enrich_richiesta(f) for f in rows]
+        rinviate = [await _enrich_richiesta(f) for f in await db.fabbisogni.find(
+            {"status": "aperta", "snoozed": True}, {"_id": 0}).sort("snoozed_at", -1).to_list(100)]
+        fermate = [await _enrich_fermata(t) for t in await db.logistics_tasks.find(
+            {"date": date, "status": {"$ne": "cancelled"}}, {"_id": 0}).sort("route_order", 1).to_list(300)]
+        counts = {"da_verificare": 0, "da_confermare": 0, "confermata": 0}
+        for r in richieste:
+            counts[r["stage"]] = counts.get(r["stage"], 0) + 1
+        return {"date": date, "richieste": richieste, "rinviate": rinviate, "fermate": fermate, "counts": counts}
+
+    @router.post("/genera-fabbisogni")
+    async def genera_fabbisogni(data: GenerateFabbisogniPayload, current_user: dict = Depends(get_current_user)):
+        """FABBISOGNO PULIZIA - STOCK STRUTTURA = MATERIALE DA CONSEGNARE. Niente consegne inutili."""
+        require_ops(current_user)
+        from services.planning import get_operative_settings
+        default_stagione = (await get_operative_settings())["stagione"]
+        date = data.date
+        tasks = await db.cleaning_tasks.find({"date": date, "status": {"$nin": ["cancelled", "completed"]}}, {"_id": 0}).to_list(300)
+        kits = await db.kits.find({"domain": "noleggio", "active": {"$ne": False}}, {"_id": 0}).to_list(50)
+
+        def find_kit(bed_type, stagione):
+            for k in kits:
+                n = (k.get("name") or "").lower()
+                if bed_type in n and stagione in n:
+                    linea_ok = (k.get("linea") or ("living" if "living" in n else "dream" if "dream" in n else "")).lower()
+                    yield k, linea_ok
+
+        # Config Kit a livello CLIENTE (linea + stagione, indipendente dal calendario); la struttura può fare override della linea
+        _cfg_cache = {}
+
+        async def client_cfg(cid):
+            if cid not in _cfg_cache:
+                c = await db.clients.find_one({"id": cid}, {"_id": 0, "noleggio_config": 1}) if cid else None
+                _cfg_cache[cid] = (c or {}).get("noleggio_config") or {}
+            return _cfg_cache[cid]
+
+        created, updated, senza, skipped = 0, 0, 0, 0
+        now = now_iso()
+        for t in tasks:
+            sid = t.get("structure_id")
+            if not sid:
+                continue
+            s = await db.structures.find_one({"id": sid}, {"_id": 0, "name": 1, "klv_code": 1, "client_id": 1, "linea": 1})
+            if not s:
+                continue
+            cfg = await client_cfg(s.get("client_id"))
+            linea = (s.get("linea") or cfg.get("linea") or "living").lower()
+            stagione = (cfg.get("stagione") or default_stagione).lower()
+            need_kits = []
+            matr = (t.get("beds_double") or 0) + (t.get("beds_sofa") or 0)
+            sing = t.get("beds_single") or 0
+            for bed_type, count in (("matrimoniale", matr), ("singolo", sing)):
+                if count <= 0:
+                    continue
+                kit = next((k for k, kl in find_kit(bed_type, stagione) if kl == linea), None)
+                if kit:
+                    need_kits.append((kit, count))
+            if not need_kits:
+                senza += 1
+                continue
+            items, kits_used = [], []
+            for kit, count in need_kits:
+                snap, kit_items = await expand_kit(kit["id"], count)
+                kits_used.append(snap)
+                items = merge_items(items, kit_items)
+            stock = await stock_map("noleggio", "structure", sid)
+            delta = []
+            for it in items:
+                have = (stock.get(it["product_id"]) or {}).get("qty", 0)
+                missing = max(0, (it.get("qty") or 0) - have)
+                if missing > 0:
+                    delta.append({**it, "qty": missing, "need": it["qty"], "in_struttura": have})
+            existing = await db.fabbisogni.find_one({"source.type": "fabbisogno_pulizia", "source_id": t["id"], "status": "aperta"}, {"_id": 0})
+            if not delta:
+                senza += 1
+                if existing and (existing.get("stage") or "confermata") == "da_verificare":
+                    await db.fabbisogni.update_one({"id": existing["id"]}, {"$set": {"status": "annullata", "updated_at": now}})
+                continue
+            note = f"Fabbisogno automatico per pulizia del {date}" + (f" — check-in {t.get('checkin_time')}" if t.get("checkin_today") and t.get("checkin_time") else "")
+            if existing:
+                if (existing.get("stage") or "confermata") != "da_verificare":
+                    skipped += 1
+                    continue
+                await db.fabbisogni.update_one({"id": existing["id"]}, {"$set": {
+                    "items": delta, "kits_used": kits_used, "date_needed": date,
+                    "time_window": (f"entro {t.get('checkin_time')}" if t.get("checkin_today") and t.get("checkin_time") else None),
+                    "note": note, "updated_at": now}})
+                updated += 1
+            else:
+                await db.fabbisogni.insert_one({
+                    "id": str(uuid.uuid4()), "kind": "noleggio", "structure_id": sid,
+                    "structure_name": s.get("name"), "klv_code": s.get("klv_code"),
+                    "zaino_id": None, "zaino_code": None, "client_id": s.get("client_id"), "client_name": None,
+                    "destination_label": None, "items": delta, "kits_used": kits_used,
+                    "date_needed": date,
+                    "time_window": (f"entro {t.get('checkin_time')}" if t.get("checkin_today") and t.get("checkin_time") else None),
+                    "priority": "high" if t.get("early_checkin") else "normal",
+                    "status": "aperta", "stage": "da_verificare", "note": note,
+                    "source": {"type": "fabbisogno_pulizia"}, "source_id": t["id"], "fermata_id": None,
+                    "created_by": current_user["id"], "created_by_name": "Kilolava (automatico)",
+                    "created_at": now, "updated_at": now})
+                created += 1
+        return {"created": created, "updated": updated, "senza_fabbisogno": senza, "skipped_confermate": skipped,
+                "stagione": default_stagione, "pulizie_analizzate": len(tasks)}
+
+    # ---------- Organizzazione giro ----------
+
+    @router.post("/giri/proponi")
+    async def giri_proponi(data: GiriProponiPayload, current_user: dict = Depends(get_current_user)):
+        require_ops(current_user)
+        from services.planning import delivery_propose
+        return await delivery_propose(data.date)
+
+    @router.post("/giri/conferma")
+    async def giri_conferma(data: GiriConfermaPayload, current_user: dict = Depends(get_current_user)):
+        require_ops(current_user)
+        now = now_iso()
+        riders_notified = set()
+        applied = 0
+        for a in data.assignments:
+            if not a.get("fermata_id") or not a.get("rider_id"):
+                continue
+            t = await db.logistics_tasks.find_one({"id": a["fermata_id"]}, {"_id": 0, "status": 1})
+            if not t or t["status"] not in ("unassigned", "assigned"):
+                continue
+            await db.logistics_tasks.update_one({"id": a["fermata_id"]}, {"$set": {
+                "rider_id": a["rider_id"], "status": "assigned",
+                "route_order": a.get("route_order", 0), "planned_eta": a.get("eta"), "updated_at": now}})
+            applied += 1
+            if a["rider_id"] not in riders_notified:
+                riders_notified.add(a["rider_id"])
+                await _deps["create_notification"](a["rider_id"], "Giro assegnato",
+                                                   f"Il tuo giro del {data.date} è stato organizzato",
+                                                   "logistics_assigned", "normal", "logistics_task", a["fermata_id"])
+        return {"applied": applied, "riders": len(riders_notified)}
+
     # ---------- Fermate ----------
 
     async def _enrich_fermata(t: dict) -> dict:
         out = dict(t)
         out.pop("items", None)
-        if t.get("structure_id") and not out.get("structure_name"):
-            s = await db.structures.find_one({"id": t["structure_id"]}, {"_id": 0, "name": 1, "klv_code": 1})
-            out["structure_name"] = (s or {}).get("name")
-            out["klv_code"] = (s or {}).get("klv_code")
+        if t.get("structure_id"):
+            s = await db.structures.find_one({"id": t["structure_id"]}, {"_id": 0, "name": 1, "klv_code": 1, "latitude": 1, "longitude": 1})
+            if s:
+                out["structure_name"] = out.get("structure_name") or s.get("name")
+                out["klv_code"] = out.get("klv_code") or s.get("klv_code")
+                if out.get("latitude") is None:
+                    out["latitude"], out["longitude"] = s.get("latitude"), s.get("longitude")
         if t.get("client_id") and not out.get("client_name"):
             c = await db.clients.find_one({"id": t["client_id"]}, {"_id": 0})
             out["client_name"] = _deps["get_client_display_name"](c) if c else None
@@ -297,6 +567,9 @@ def create_consegne_router(get_current_user, is_ops_user):
         richieste = await db.fabbisogni.find({"id": {"$in": data.richiesta_ids}, "status": "aperta"}, {"_id": 0}).to_list(50)
         if data.richiesta_ids and len(richieste) != len(set(data.richiesta_ids)):
             raise HTTPException(status_code=400, detail="Una o più richieste non sono disponibili")
+        for f in richieste:
+            if (f.get("stage") or "confermata") != "confermata":
+                raise HTTPException(status_code=400, detail=f"Richiesta '{f.get('structure_name') or f.get('destination_label') or ''}' non ancora confermata: verifica prima in Organizzazione e definizione")
         struct_ids = set(f.get("structure_id") for f in richieste if f.get("structure_id"))
         if len(struct_ids) > 1:
             raise HTTPException(status_code=400, detail="Le richieste devono avere la stessa destinazione")
@@ -355,6 +628,8 @@ def create_consegne_router(get_current_user, is_ops_user):
         f = await db.fabbisogni.find_one({"id": data.richiesta_id, "status": "aperta"}, {"_id": 0})
         if not f:
             raise HTTPException(status_code=404, detail="Richiesta non disponibile")
+        if (f.get("stage") or "confermata") != "confermata":
+            raise HTTPException(status_code=400, detail="Richiesta non ancora confermata")
         if t.get("structure_id") and f.get("structure_id") and f["structure_id"] != t["structure_id"]:
             raise HTTPException(status_code=400, detail="La richiesta ha una destinazione diversa dalla fermata")
         await _laundry_gate(f)
@@ -580,12 +855,16 @@ def create_consegne_router(get_current_user, is_ops_user):
                                   "text": f"{(u or {}).get('name', 'Rider')} → {r['total'] - r['done']} fermate ancora da completare"})
         return {
             "kpi": {
-                "da_organizzare": len(aperte),
-                "programmate_oggi": len([t for t in fermate_oggi if t.get("status") in ACTIVE]),
+                "consegne_oggi": len(fermate_oggi),
+                "da_verificare": len([f for f in aperte if (f.get("stage") or "confermata") == "da_verificare"]),
+                "da_confermare": len([f for f in aperte if (f.get("stage") or "confermata") == "da_confermare"]),
+                "da_organizzare": len([f for f in aperte if (f.get("stage") or "confermata") == "confermata"]),
+                "pronte_giro": await db.logistics_tasks.count_documents({"status": "unassigned", "date": {"$gte": today}}),
                 "in_corso": in_corso,
                 "urgenti": urgenti,
                 "completate_oggi": len([t for t in fermate_oggi if t.get("status") == "completed"]),
                 "in_ritardo": in_ritardo,
+                "ordini_cliente": len([f for f in aperte if (f.get("source") or {}).get("type") == "ordine_cliente"]),
             },
             "attention": attention[:12],
         }

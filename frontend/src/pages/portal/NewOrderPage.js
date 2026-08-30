@@ -1,346 +1,164 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useAuth } from '../../contexts/AuthContext';
-import { portalApi } from '../../lib/api';
-import { Card, CardContent } from '../../components/ui/card';
+import api from '../../lib/api';
 import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
 import { Label } from '../../components/ui/label';
 import { Textarea } from '../../components/ui/textarea';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../components/ui/select';
 import { toast } from 'sonner';
-import { ShoppingCart, Plus, Minus, ArrowRight, ArrowLeft, Check, Package, CalendarDays, Clock, Trash2 } from 'lucide-react';
-import { cn } from '../../lib/utils';
+import { ArrowLeft, Minus, Plus, Package } from 'lucide-react';
 
-const NewOrderPage = () => {
-  const { user } = useAuth();
+const CAT_LABELS = { noleggio: 'Biancheria a Noleggio', forniture: 'Forniture / Consumabili', pulizie: 'Prodotti Pulizie' };
+
+function Stepper({ value, onChange, testId }) {
+  return (
+    <div className="flex items-center gap-1 shrink-0">
+      <Button variant="outline" size="icon" className="h-7 w-7" onClick={() => onChange(Math.max(0, value - 1))} data-testid={`${testId}-minus`}><Minus className="h-3 w-3" /></Button>
+      <span className="w-7 text-center text-sm font-bold tabular-nums" data-testid={`${testId}-qty`}>{value}</span>
+      <Button variant="outline" size="icon" className="h-7 w-7" onClick={() => onChange(value + 1)} data-testid={`${testId}-plus`}><Plus className="h-3 w-3" /></Button>
+    </div>
+  );
+}
+
+export default function NewOrderPage() {
   const navigate = useNavigate();
-  const [step, setStep] = useState(1);
-  const [catalog, setCatalog] = useState([]);
-  const [slots, setSlots] = useState([]);
-  const [structures, setStructures] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [submitting, setSubmitting] = useState(false);
-
-  // Order state
-  const [cart, setCart] = useState({});
-  const [deliveryDate, setDeliveryDate] = useState('');
-  const [deliverySlot, setDeliverySlot] = useState('');
+  const [catalog, setCatalog] = useState(null);
+  const [denied, setDenied] = useState(false);
   const [structureId, setStructureId] = useState('');
-  const [notes, setNotes] = useState('');
+  const [datePreferred, setDatePreferred] = useState('');
+  const [timeWindow, setTimeWindow] = useState('');
+  const [note, setNote] = useState('');
+  const [kitQty, setKitQty] = useState({});
+  const [itemQty, setItemQty] = useState({});
+  const [search, setSearch] = useState('');
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    const load = async () => {
-      try {
-        const [catRes, slotRes, strRes] = await Promise.all([
-          portalApi.getCatalog(),
-          portalApi.getDeliverySlots(),
-          portalApi.getStructures(),
-        ]);
-        setCatalog(catRes.data);
-        setSlots(slotRes.data);
-        setStructures(strRes.data);
-      } catch (e) {
-        toast.error('Errore caricamento catalogo');
-        console.error(e);
-      }
-      finally { setLoading(false); }
-    };
-    load();
+    api.get('/portal/ordini/catalogo')
+      .then(r => {
+        setCatalog(r.data);
+        if (r.data.structures?.length === 1) setStructureId(r.data.structures[0].id);
+      })
+      .catch(() => setDenied(true));
   }, []);
 
-  const cartItems = Object.entries(cart).filter(([_, qty]) => qty > 0);
-  const cartTotal = cartItems.reduce((sum, [artId, qty]) => {
-    const art = catalog.find(a => a.article_id === artId);
-    return sum + (art?.price || 0) * qty;
-  }, 0);
+  const totalPieces = useMemo(() =>
+    Object.values(kitQty).reduce((s, q) => s + q, 0) + Object.values(itemQty).reduce((s, q) => s + q, 0),
+  [kitQty, itemQty]);
 
-  const updateQty = (artId, delta) => {
-    setCart(prev => {
-      const newQty = Math.max(0, (prev[artId] || 0) + delta);
-      if (newQty === 0) {
-        const { [artId]: _, ...rest } = prev;
-        return rest;
-      }
-      return { ...prev, [artId]: newQty };
+  const submit = async () => {
+    if (!structureId) { toast.error('Seleziona la struttura'); return; }
+    const kits = Object.entries(kitQty).filter(([, q]) => q > 0).map(([kit_id, qty]) => ({ kit_id, qty }));
+    const items = Object.entries(itemQty).filter(([, q]) => q > 0).map(([key, qty]) => {
+      const [domain, product_id] = key.split('|');
+      return { domain, product_id, qty };
     });
-  };
-
-  const setQty = (artId, qty) => {
-    const val = Math.max(0, parseInt(qty) || 0);
-    setCart(prev => {
-      if (val === 0) {
-        const { [artId]: _, ...rest } = prev;
-        return rest;
-      }
-      return { ...prev, [artId]: val };
-    });
-  };
-
-  const selectedDateSlots = slots.find(s => s.date === deliveryDate)?.slots || [];
-
-  const handleSubmit = async () => {
-    if (cartItems.length === 0) { toast.error('Seleziona almeno un articolo'); return; }
-    if (!deliveryDate || !deliverySlot) { toast.error('Seleziona data e orario'); return; }
-
-    setSubmitting(true);
+    if (kits.length === 0 && items.length === 0) { toast.error("L'ordine è vuoto"); return; }
+    setSaving(true);
     try {
-      const items = cartItems.map(([artId, qty]) => {
-        const art = catalog.find(a => a.article_id === artId);
-        return { article_id: artId, article_name: art?.name, quantity: qty, unit_price: art?.price };
+      const r = await api.post('/portal/ordini', {
+        structure_id: structureId, date_preferred: datePreferred || null,
+        time_window: timeWindow || null, items, kits, note: note || null,
       });
-      await portalApi.createOrder({
-        client_id: user.client_id,
-        structure_id: structureId || null,
-        items,
-        delivery_date: deliveryDate,
-        delivery_slot: deliverySlot,
-        notes: notes || null,
-      });
-      toast.success('Ordine inviato!');
-      navigate('/portal/history');
-    } catch (e) {
-      toast.error(e.response?.data?.detail || 'Errore invio ordine');
-    } finally { setSubmitting(false); }
+      toast.success(`Ordine ${r.data.order_number} inviato: sarà verificato dall'ufficio operativo`);
+      navigate('/portal/orders');
+    } catch (e) { toast.error(e.response?.data?.detail || 'Errore invio ordine'); }
+    finally { setSaving(false); }
   };
 
-  if (loading) return <div className="text-center py-16 text-muted-foreground">Caricamento catalogo...</div>;
+  if (denied) {
+    return (
+      <div className="text-center py-16">
+        <p className="text-muted-foreground">Gli ordini non sono abilitati per il tuo account.</p>
+        <Button variant="ghost" className="mt-3" onClick={() => navigate('/portal/orders')}>Torna agli ordini</Button>
+      </div>
+    );
+  }
+  if (!catalog) return <div className="text-center py-16 text-muted-foreground">Caricamento catalogo...</div>;
 
-  // Group catalog by category
-  const grouped = {};
-  catalog.forEach(a => {
-    const cat = a.category || 'altro';
-    if (!grouped[cat]) grouped[cat] = [];
-    grouped[cat].push(a);
-  });
-  const CAT_LABELS = {
-    rental_linen: 'Biancheria a noleggio', consumable: 'Consumabili',
-    kit_component: 'Kit', cleaning: 'Pulizia', other: 'Altro', altro: 'Altro',
-  };
+  const filterFn = (p) => !search || p.name.toLowerCase().includes(search.toLowerCase()) || (p.code || '').toLowerCase().includes(search.toLowerCase());
 
   return (
-    <div className="max-w-2xl mx-auto space-y-6" data-testid="new-order-page">
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-heading font-semibold">Nuovo Ordine</h1>
-        <Button variant="ghost" size="sm" onClick={() => navigate('/portal/orders')} className="text-muted-foreground">Annulla</Button>
-      </div>
-
-      {/* Steps indicator */}
+    <div className="space-y-5 pb-24" data-testid="new-order-page">
       <div className="flex items-center gap-2">
-        {[1, 2, 3].map(s => (
-          <React.Fragment key={s}>
-            <div className={cn(
-              "w-8 h-8 rounded-full flex items-center justify-center text-sm font-semibold transition-colors",
-              step === s ? "bg-[#F24E75] text-white" : step > s ? "bg-green-500 text-white" : "bg-muted text-muted-foreground"
-            )}>
-              {step > s ? <Check className="h-4 w-4" /> : s}
-            </div>
-            {s < 3 && <div className={cn("h-0.5 flex-1 rounded", step > s ? "bg-green-500" : "bg-muted")} />}
-          </React.Fragment>
-        ))}
-      </div>
-      <div className="flex justify-between text-xs text-muted-foreground">
-        <span>Articoli</span><span>Data e ora</span><span>Conferma</span>
+        <Button variant="ghost" size="sm" onClick={() => navigate('/portal/orders')} data-testid="order-back-btn"><ArrowLeft className="h-4 w-4" /></Button>
+        <h1 className="text-xl font-heading font-semibold">Nuovo ordine</h1>
       </div>
 
-      {/* Step 1: Select articles */}
-      {step === 1 && (
-        <div className="space-y-4">
-          {Object.entries(grouped).map(([cat, articles]) => (
-            <div key={cat}>
-              <h3 className="text-xs font-medium text-muted-foreground uppercase mb-2">{CAT_LABELS[cat] || cat}</h3>
-              <div className="space-y-2">
-                {articles.map(art => (
-                  <Card key={art.article_id} className={cn("border transition-colors", cart[art.article_id] > 0 && "border-[#F24E75]/40 bg-[#F24E75]/5")}>
-                    <CardContent className="p-3 flex items-center justify-between gap-3">
-                      <div className="min-w-0">
-                        <p className="text-sm font-medium">{art.name}</p>
-                        <p className="text-xs text-muted-foreground">€{(art.price || 0).toFixed(2)} / {art.unit_type || 'pz'}</p>
-                      </div>
-                      <div className="flex items-center gap-2 flex-shrink-0">
-                        <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => updateQty(art.article_id, -1)} disabled={!cart[art.article_id]}>
-                          <Minus className="h-3 w-3" />
-                        </Button>
-                        <Input
-                          type="number" min="0"
-                          value={cart[art.article_id] || ''}
-                          onChange={e => setQty(art.article_id, e.target.value)}
-                          className="w-14 h-8 text-center"
-                          placeholder="0"
-                          data-testid={`qty-${art.article_id}`}
-                        />
-                        <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => updateQty(art.article_id, 1)}>
-                          <Plus className="h-3 w-3" />
-                        </Button>
-                      </div>
-                    </CardContent>
-                  </Card>
-                ))}
-              </div>
-            </div>
-          ))}
-
-          {cartItems.length > 0 && (
-            <div className="bg-muted/50 rounded-xl p-4 border border-border">
-              <div className="flex justify-between items-center">
-                <span className="text-sm font-medium">{cartItems.length} articoli selezionati</span>
-                <span className="text-lg font-bold">€{cartTotal.toFixed(2)}</span>
-              </div>
-            </div>
-          )}
+      <div className="grid sm:grid-cols-3 gap-3">
+        <div className="space-y-1">
+          <Label className="text-xs">Struttura *</Label>
+          <select value={structureId} onChange={e => setStructureId(e.target.value)}
+            className="w-full h-9 rounded-md border border-border bg-background px-2 text-sm" data-testid="order-structure-select">
+            <option value="">Seleziona...</option>
+            {(catalog.structures || []).map(s => <option key={s.id} value={s.id}>{s.klv_code ? `${s.klv_code} — ` : ''}{s.name}</option>)}
+          </select>
         </div>
-      )}
+        <div className="space-y-1">
+          <Label className="text-xs">Data preferita</Label>
+          <Input type="date" value={datePreferred} onChange={e => setDatePreferred(e.target.value)} className="h-9" data-testid="order-date-input" />
+        </div>
+        <div className="space-y-1">
+          <Label className="text-xs">Fascia oraria preferita</Label>
+          <Input value={timeWindow} onChange={e => setTimeWindow(e.target.value)} placeholder="es. mattina, 10–13" className="h-9" data-testid="order-window-input" />
+        </div>
+      </div>
 
-      {/* Step 2: Date, slot, notes */}
-      {step === 2 && (
-        <div className="space-y-4">
-          {structures.length > 0 && (
-            <div className="space-y-2">
-              <Label>Struttura di consegna</Label>
-              <Select value={structureId || 'none'} onValueChange={v => setStructureId(v === 'none' ? '' : v)}>
-                <SelectTrigger><SelectValue placeholder="Seleziona struttura" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">-</SelectItem>
-                  {structures.map(s => <SelectItem key={s.id} value={s.id}>{s.name} {s.address ? `- ${s.address}` : ''}</SelectItem>)}
-                </SelectContent>
-              </Select>
-            </div>
-          )}
-
-          <div className="space-y-2">
-            <Label className="flex items-center gap-2"><CalendarDays className="h-4 w-4" />Data di consegna *</Label>
-            {slots.length === 0 ? (
-              <p className="text-sm text-muted-foreground p-4 bg-muted rounded-lg">Nessuna data disponibile al momento. Contatta l'ufficio operativo.</p>
-            ) : (
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                {slots.map(s => (
-                  <Button
-                    key={s.date}
-                    variant={deliveryDate === s.date ? 'default' : 'outline'}
-                    className={cn("h-auto py-2 px-3 text-left justify-start flex-col items-start",
-                      deliveryDate === s.date && "bg-[#F24E75] hover:bg-[#E03B62] text-white"
-                    )}
-                    onClick={() => { setDeliveryDate(s.date); setDeliverySlot(''); }}
-                    data-testid={`date-${s.date}`}
-                  >
-                    <span className="text-sm font-medium">
-                      {new Date(s.date + 'T00:00:00').toLocaleDateString('it-IT', { weekday: 'short', day: 'numeric', month: 'short' })}
-                    </span>
-                    <span className="text-xs opacity-70">{s.slots.length} slot disponibili</span>
-                  </Button>
-                ))}
+      {(catalog.kits || []).length > 0 && (
+        <div className="space-y-2">
+          <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5"><Package className="h-3.5 w-3.5" />Kit</p>
+          <div className="space-y-1.5">
+            {catalog.kits.map(k => (
+              <div key={k.id} className="flex items-center gap-3 rounded-lg border border-border bg-card px-3 py-2" data-testid={`order-kit-${k.id}`}>
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-medium">{k.name}</p>
+                  <p className="text-xs text-muted-foreground">{(k.items || []).length} articoli inclusi</p>
+                </div>
+                <Stepper value={kitQty[k.id] || 0} onChange={v => setKitQty(p => ({ ...p, [k.id]: v }))} testId={`kit-${k.id}`} />
               </div>
-            )}
-          </div>
-
-          {deliveryDate && selectedDateSlots.length > 0 && (
-            <div className="space-y-2">
-              <Label className="flex items-center gap-2"><Clock className="h-4 w-4" />Fascia oraria *</Label>
-              <div className="grid grid-cols-2 gap-2">
-                {selectedDateSlots.map(s => (
-                  <Button
-                    key={s.slot}
-                    variant={deliverySlot === s.slot ? 'default' : 'outline'}
-                    className={cn("h-10",
-                      deliverySlot === s.slot && "bg-[#F24E75] hover:bg-[#E03B62] text-white"
-                    )}
-                    onClick={() => setDeliverySlot(s.slot)}
-                    data-testid={`slot-${s.slot}`}
-                  >
-                    {s.slot}
-                  </Button>
-                ))}
-              </div>
-            </div>
-          )}
-
-          <div className="space-y-2">
-            <Label>Note</Label>
-            <Textarea
-              value={notes}
-              onChange={e => setNotes(e.target.value)}
-              placeholder="Es: lasciare all'ingresso, non suonare il campanello..."
-              rows={3}
-              className="resize-none"
-              data-testid="order-notes"
-            />
+            ))}
           </div>
         </div>
       )}
 
-      {/* Step 3: Review & confirm */}
-      {step === 3 && (
-        <div className="space-y-4">
-          <Card className="border">
-            <CardContent className="p-4 space-y-3">
-              <h3 className="text-sm font-semibold text-muted-foreground uppercase">Riepilogo ordine</h3>
-              <div className="space-y-2">
-                {cartItems.map(([artId, qty]) => {
-                  const art = catalog.find(a => a.article_id === artId);
-                  return (
-                    <div key={artId} className="flex items-center justify-between text-sm py-1 border-b border-border last:border-0">
-                      <span>{art?.name || artId} x{qty}</span>
-                      <span className="font-medium">€{((art?.price || 0) * qty).toFixed(2)}</span>
+      <Input value={search} onChange={e => setSearch(e.target.value)} placeholder="Cerca articolo..." className="h-9 max-w-xs" data-testid="order-search-input" />
+
+      {Object.entries(catalog.products || {}).map(([cat, products]) => {
+        const list = products.filter(filterFn);
+        if (list.length === 0) return null;
+        return (
+          <div key={cat} className="space-y-2">
+            <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">{CAT_LABELS[cat] || cat}</p>
+            <div className="space-y-1.5">
+              {list.map(p => {
+                const key = `${cat}|${p.id}`;
+                return (
+                  <div key={p.id} className="flex items-center gap-3 rounded-lg border border-border bg-card px-3 py-2" data-testid={`order-product-${p.id}`}>
+                    {p.photo && <img src={p.photo} alt="" className="w-9 h-9 rounded object-cover shrink-0" />}
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium truncate">{p.name}</p>
+                      <p className="text-xs font-mono font-bold text-primary">{p.code}</p>
                     </div>
-                  );
-                })}
-              </div>
-              <div className="flex justify-between text-base font-bold pt-2 border-t border-border">
-                <span>Totale</span>
-                <span>€{cartTotal.toFixed(2)}</span>
-              </div>
-            </CardContent>
-          </Card>
+                    <Stepper value={itemQty[key] || 0} onChange={v => setItemQty(pr => ({ ...pr, [key]: v }))} testId={`item-${p.id}`} />
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })}
 
-          <Card className="border">
-            <CardContent className="p-4 space-y-2">
-              <h3 className="text-sm font-semibold text-muted-foreground uppercase">Consegna</h3>
-              <p className="text-sm flex items-center gap-2">
-                <CalendarDays className="h-4 w-4 text-muted-foreground" />
-                {new Date(deliveryDate + 'T00:00:00').toLocaleDateString('it-IT', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
-              </p>
-              <p className="text-sm flex items-center gap-2">
-                <Clock className="h-4 w-4 text-muted-foreground" />
-                {deliverySlot}
-              </p>
-              {structureId && structures.length > 0 && (
-                <p className="text-sm">{structures.find(s => s.id === structureId)?.name}</p>
-              )}
-              {notes && <p className="text-sm text-muted-foreground mt-1">Note: {notes}</p>}
-            </CardContent>
-          </Card>
-        </div>
-      )}
+      <div className="space-y-1">
+        <Label className="text-xs">Note per l'ufficio operativo</Label>
+        <Textarea rows={2} value={note} onChange={e => setNote(e.target.value)} className="resize-none" data-testid="order-note-input" />
+      </div>
 
-      {/* Navigation */}
-      <div className="flex gap-3 pt-2">
-        {step > 1 && (
-          <Button variant="outline" onClick={() => setStep(step - 1)} className="flex-1 gap-2">
-            <ArrowLeft className="h-4 w-4" />Indietro
-          </Button>
-        )}
-        {step < 3 ? (
-          <Button
-            onClick={() => setStep(step + 1)}
-            disabled={(step === 1 && cartItems.length === 0) || (step === 2 && (!deliveryDate || !deliverySlot))}
-            className="flex-1 bg-[#F24E75] hover:bg-[#E03B62] text-white gap-2"
-            data-testid="next-step-btn"
-          >
-            Avanti<ArrowRight className="h-4 w-4" />
-          </Button>
-        ) : (
-          <Button
-            onClick={handleSubmit}
-            disabled={submitting}
-            className="flex-1 bg-[#F24E75] hover:bg-[#E03B62] text-white gap-2"
-            data-testid="confirm-order-btn"
-          >
-            <Check className="h-4 w-4" />{submitting ? 'Invio...' : 'Conferma ordine'}
-          </Button>
-        )}
+      <div className="fixed bottom-0 left-0 right-0 bg-card border-t border-border p-3 flex items-center justify-between gap-3 sm:static sm:border-0 sm:p-0 sm:bg-transparent">
+        <p className="text-sm text-muted-foreground"><strong>{totalPieces}</strong> pezzi selezionati</p>
+        <Button onClick={submit} disabled={saving || totalPieces === 0} className="bg-[#F24E75] hover:bg-[#E03B62] text-white" data-testid="order-submit-btn">
+          {saving ? 'Invio...' : 'Invia ordine'}
+        </Button>
       </div>
     </div>
   );
-};
-
-export default NewOrderPage;
+}

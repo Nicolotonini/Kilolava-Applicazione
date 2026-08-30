@@ -12,9 +12,35 @@ import {
   LogOut, Moon, Sun, KeyRound,
 } from 'lucide-react';
 import { cn } from '../lib/utils';
+import { APIProvider, Map, AdvancedMarker } from '@vis.gl/react-google-maps';
+
+function RiderGiroMap({ fermate }) {
+  const apiKey = process.env.REACT_APP_GOOGLE_MAPS_API_KEY;
+  const located = fermate.filter(f => f.latitude != null && f.status !== 'cancelled');
+  if (!apiKey || located.length === 0) return null;
+  const center = { lat: located[0].latitude, lng: located[0].longitude };
+  return (
+    <div className="rounded-xl border border-border overflow-hidden h-56" data-testid="rider-giro-map">
+      <APIProvider apiKey={apiKey}>
+        <Map style={{ width: '100%', height: '100%' }} defaultCenter={center} defaultZoom={13}
+          mapId={process.env.REACT_APP_GOOGLE_MAP_ID || undefined} gestureHandling="greedy" disableDefaultUI zoomControl>
+          {located.map((f, i) => (
+            <AdvancedMarker key={f.id} position={{ lat: f.latitude, lng: f.longitude }}>
+              <div className={cn('w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold shadow-lg border-2 border-white text-white',
+                f.status === 'completed' ? 'bg-emerald-500' : f.status === 'in_progress' ? 'bg-amber-500' : 'bg-blue-600')}>
+                {f.route_order || i + 1}
+              </div>
+            </AdvancedMarker>
+          ))}
+        </Map>
+      </APIProvider>
+    </div>
+  );
+}
 import { useTheme } from '../contexts/ThemeContext';
 import { StatusBadge } from '../components/kilolava/badges';
 import { FERMATA_STATUS, KIND_TONES } from './consegne/shared';
+import { LocationBanner, useLocationState, LocationRequiredDialog } from '../components/LocationBanner';
 
 const STATUS_BORDER = {
   assigned: 'border-sky-400 bg-sky-50 dark:bg-sky-950/30',
@@ -35,6 +61,8 @@ const RiderViewPage = () => {
   const [noteText, setNoteText] = useState('');
   const [problemText, setProblemText] = useState('');
   const [showProblem, setShowProblem] = useState(null);
+  const locState = useLocationState();
+  const [locDialog, setLocDialog] = useState(false);
 
   const fetchFermate = useCallback(async () => {
     setLoading(true);
@@ -61,6 +89,7 @@ const RiderViewPage = () => {
   };
 
   const start = async (id) => {
+    if (!locState.active) { setLocDialog(true); return; }
     try { await api.put(`/consegne/fermate/${id}/start`); toast.success('Fermata avviata'); fetchFermate(); }
     catch (e) { toast.error(e.response?.data?.detail || 'Errore'); }
   };
@@ -140,6 +169,8 @@ const RiderViewPage = () => {
           </div>
         </div>
       </header>
+      <LocationBanner sessionType="giro" startLabel="Avvia giro" stopLabel="Termina giro" />
+      <LocationRequiredDialog open={locDialog} onClose={() => setLocDialog(false)} sessionType="giro" />
 
       <div className="px-4 py-3 space-y-4 pb-20">
         <div className="flex items-center justify-between">
@@ -154,6 +185,8 @@ const RiderViewPage = () => {
             <ChevronRight className="h-5 w-5" />
           </Button>
         </div>
+
+        <RiderGiroMap fermate={fermate} />
 
         {fermate.length > 0 && (
           <div className="space-y-1">

@@ -31,12 +31,32 @@ export function ProposalDialog({ proposal, onApply, onClose }) {
               {proposal.per_cleaner.map(pc => (
                 <div key={pc.cleaner_id} className="rounded-lg border border-border px-3 py-2" data-testid={`proposal-cleaner-${pc.cleaner_id}`}>
                   <div className="flex items-center justify-between">
-                    <p className="text-sm font-bold">{pc.name}</p>
+                    <p className="text-sm font-bold uppercase">{pc.name}</p>
                     <p className="text-xs text-muted-foreground tabular-nums">{pc.count} pulizie · {fmtMinutes(pc.total_minutes)} / {fmtMinutes(pc.capacity_minutes)}</p>
                   </div>
-                  <p className="text-xs text-muted-foreground flex items-center gap-1">
-                    {pc.zones.length > 0 && <><MapPin className="h-3 w-3" />{pc.zones.join(' → ')}</>}
-                    {pc.consecutive_days > 0 && <span className="ml-1">· {pc.consecutive_days}° giorno consecutivo</span>}
+                  {(pc.schedule || []).length > 0 && (
+                    <div className="mt-1 space-y-0.5">
+                      {pc.schedule.map(s => (
+                        <div key={s.task_id} className="flex items-center gap-2 text-xs" data-testid={`proposal-slot-${s.task_id}`}>
+                          <span className="font-mono font-semibold tabular-nums w-20 shrink-0">{s.start}–{s.end}</span>
+                          <span className="min-w-0 truncate">
+                            {s.klv_code && <span className="font-mono font-bold text-primary mr-1">{s.klv_code}</span>}
+                            {s.structure_name}
+                            {s.locked && <span className="text-muted-foreground"> (già assegnata)</span>}
+                          </span>
+                          {s.early_checkin && <span className="shrink-0 text-[11px] font-bold text-white bg-red-600 rounded px-1">CI ANT. {s.checkin_time}</span>}
+                          {!s.early_checkin && s.checkin_time && <span className="shrink-0 text-amber-600 font-semibold">CI {s.checkin_time}</span>}
+                          {s.travel_min > 0 && <span className="shrink-0 text-muted-foreground">🚗 {s.travel_min}′</span>}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  <p className="text-xs text-muted-foreground flex items-center gap-1 mt-1 flex-wrap">
+                    <span>Lavoro <strong>{fmtMinutes(pc.total_minutes)}</strong></span>
+                    {pc.travel_minutes != null && <span>· Spostamenti <strong>{fmtMinutes(pc.travel_minutes)}</strong></span>}
+                    {pc.end_time && <span>· Fine prevista <strong>{pc.end_time}</strong></span>}
+                    {pc.zones.length > 0 && <span className="flex items-center gap-0.5">· <MapPin className="h-3 w-3" />{pc.zones.join(' → ')}</span>}
+                    {pc.consecutive_days > 0 && <span>· {pc.consecutive_days}° giorno consecutivo</span>}
                   </p>
                 </div>
               ))}

@@ -41,16 +41,33 @@ export function CardTaskChip({ task, cardId, index, onRemove, onDragStartChip, o
       <div className="flex items-center gap-1.5">
         <GripVertical className="h-3.5 w-3.5 text-muted-foreground/40 shrink-0" />
         <div className="min-w-0 flex-1">
-          <p className="text-sm font-semibold truncate">{task.structure_name}</p>
-          <p className="text-xs text-muted-foreground truncate">
-            {task.zone_name || '—'}{task.guests_count ? ` · ${task.guests_count} pax` : ''} · ~{fmtMinutes(task.predicted_duration_minutes)}
+          <p className="text-sm font-semibold truncate">
+            {task.klv_code && <span className="font-mono text-xs font-bold text-primary mr-1">{task.klv_code}</span>}
+            {task.structure_name}
+            {['high', 'urgent'].includes(task.priority) && <span className="ml-1 text-xs font-bold text-red-600">⚑</span>}
           </p>
+          <p className="text-xs text-muted-foreground truncate">
+            {task.zone_name || '—'}{task.guests_count ? ` · ${task.guests_count} pax` : ''}
+            {(task.beds_double || task.beds_single || task.beds_sofa) ? ` · ${[task.beds_double && `${task.beds_double}M`, task.beds_single && `${task.beds_single}S`, task.beds_sofa && `${task.beds_sofa}D`].filter(Boolean).join(' ')}` : ''}
+            {' '}· ~{fmtMinutes(task.predicted_duration_minutes)}
+          </p>
+          {(task.checkout_time || task.scheduled_time) && (
+            <p className="text-xs text-muted-foreground/80 truncate">
+              {task.checkout_time && `out ${task.checkout_time}`}{task.scheduled_time && ` · ore ${task.scheduled_time}`}
+            </p>
+          )}
         </div>
         {task.checkin_today && task.checkin_time && (
-          <span className={cn('text-xs font-bold px-1.5 py-0.5 rounded shrink-0',
-            checkinRisk ? 'bg-red-100 text-red-700' : 'bg-emerald-100 text-emerald-700')}>
-            CI {task.checkin_time}
-          </span>
+          task.early_checkin ? (
+            <span className="text-xs font-bold px-1.5 py-0.5 rounded shrink-0 bg-red-600 text-white" data-testid={`early-checkin-${task.id}`}>
+              CI ANTICIPATO {task.checkin_time}
+            </span>
+          ) : (
+            <span className={cn('text-xs font-bold px-1.5 py-0.5 rounded shrink-0',
+              checkinRisk ? 'bg-red-100 text-red-700' : 'bg-emerald-100 text-emerald-700')}>
+              CI {task.checkin_time}
+            </span>
+          )
         )}
         <button onClick={e => { e.stopPropagation(); onRemove(task); }}
           className="text-muted-foreground hover:text-destructive shrink-0" title="Rimuovi da questa scheda"

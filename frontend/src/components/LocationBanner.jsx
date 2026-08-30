@@ -1,9 +1,52 @@
 import React, { useEffect, useState } from 'react';
 import { Button } from './ui/button';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from './ui/dialog';
 import { toast } from 'sonner';
 import { MapPin, Play, Square } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { startLocation, stopLocation, subscribeLocation, resumeLocationIfActive } from '../services/locationService';
+
+// Stato localizzazione condiviso (alimentato dal LocationService centralizzato)
+export function useLocationState() {
+  const [st, setSt] = useState({ active: false });
+  useEffect(() => subscribeLocation(setSt), []);
+  return st;
+}
+
+// Blocco operativo: le azioni di servizio richiedono localizzazione attiva
+export function LocationRequiredDialog({ open, onClose, sessionType }) {
+  const [busy, setBusy] = useState(false);
+  if (!open) return null;
+  const activate = async () => {
+    setBusy(true);
+    try {
+      await startLocation(sessionType);
+      toast.success('Localizzazione attivata: ora puoi continuare');
+      onClose();
+    } catch (e) {
+      toast.error(e.message || e.response?.data?.detail || 'Attivazione localizzazione fallita');
+    } finally { setBusy(false); }
+  };
+  return (
+    <Dialog open onOpenChange={v => !v && onClose()}>
+      <DialogContent className="max-w-sm" data-testid="location-required-dialog">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2"><MapPin className="h-5 w-5 text-primary" />Localizzazione richiesta</DialogTitle>
+          <DialogDescription>
+            Per utilizzare Kilolava durante il servizio è necessario attivare la localizzazione.
+            La posizione è condivisa solo durante il lavoro e si interrompe a fine servizio.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="flex justify-end gap-2">
+          <Button variant="ghost" onClick={onClose} data-testid="location-required-cancel">Annulla</Button>
+          <Button onClick={activate} disabled={busy} className="bg-emerald-600 hover:bg-emerald-700 text-white" data-testid="location-required-activate">
+            {busy ? 'Attivazione...' : 'Attiva localizzazione'}
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
 
 /**
  * Banner attivazione localizzazione lavoro (Operatrice/Rider/Manutentore).

@@ -13,6 +13,7 @@ import {
   Package, MoreHorizontal, Image, ChevronRight, MessageSquare, X
 } from 'lucide-react';
 import { cn } from '../lib/utils';
+import { LocationBanner, useLocationState, LocationRequiredDialog } from '../components/LocationBanner';
 
 const STATUS_BADGE = {
   open: { label: 'Aperto', cls: 'bg-red-100 text-red-700' },
@@ -48,6 +49,8 @@ const TaskDetail = ({ task, onBack, onRefresh }) => {
   const [showNoteForm, setShowNoteForm] = useState(false);
   const [noteText, setNoteText] = useState('');
   const [resolutionNotes, setResolutionNotes] = useState('');
+  const locState = useLocationState();
+  const [locDialog, setLocDialog] = useState(false);
 
   const sb = STATUS_BADGE[task.status] || STATUS_BADGE.assigned;
   const pb = PRIORITY_BADGE[task.priority] || PRIORITY_BADGE.medium;
@@ -55,6 +58,7 @@ const TaskDetail = ({ task, onBack, onRefresh }) => {
   const CatIcon = cc.icon;
 
   const updateStatus = async (newStatus) => {
+    if (newStatus === 'in_progress' && !locState.active) { setLocDialog(true); return; }
     try {
       const payload = { status: newStatus };
       if (newStatus === 'resolved' && resolutionNotes) {
@@ -98,6 +102,7 @@ const TaskDetail = ({ task, onBack, onRefresh }) => {
 
   return (
     <div className="min-h-screen bg-background pb-32" data-testid="maint-task-detail">
+      <LocationRequiredDialog open={locDialog} onClose={() => setLocDialog(false)} sessionType="intervento" />
       {/* Header */}
       <div className="sticky top-0 z-40 bg-card border-b border-border px-4 py-3">
         <div className="flex items-center gap-3">
@@ -326,6 +331,7 @@ const MaintenanceView = () => {
           </div>
         </div>
       </header>
+      <LocationBanner sessionType="intervento" startLabel="Inizia attività" stopLabel="Fine attività" />
 
       <div className="px-4 py-3 space-y-4 pb-8">
         {/* Summary */}

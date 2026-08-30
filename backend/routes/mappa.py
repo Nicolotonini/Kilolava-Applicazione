@@ -31,8 +31,8 @@ class PingPayload(BaseModel):
 
 
 TRACKED_ROLES = ("cleaner", "rider", "maintenance")
-ONLINE_SECONDS = 180
-STALE_SECONDS = 600
+LIVE_SECONDS = 120
+RECENT_SECONDS = 600
 
 
 def _seconds_ago(ts: Optional[str]) -> Optional[int]:
@@ -125,8 +125,8 @@ def create_mappa_router(get_current_user, is_ops_user):
         struct_ids = {t.get("structure_id") for t in cleaning_today + fermate_today + maint_open if t.get("structure_id")}
         structs = {}
         if struct_ids:
-            async for s in db.structures.find({"id": {"$in": list(struct_ids)}}, {"_id": 0, "id": 1, "name": 1}):
-                structs[s["id"]] = s["name"]
+            async for s in db.structures.find({"id": {"$in": list(struct_ids)}}, {"_id": 0, "id": 1, "name": 1, "klv_code": 1}):
+                structs[s["id"]] = f"{s['klv_code']} · {s['name']}" if s.get("klv_code") else s["name"]
 
         def sname(t):
             return structs.get(t.get("structure_id")) or t.get("destination_label") or ""
@@ -137,8 +137,15 @@ def create_mappa_router(get_current_user, is_ops_user):
             sec = _seconds_ago(loc.get("timestamp"))
             active = bool(loc.get("active"))
             freshness = "offline"
-            if active and sec is not None:
-                freshness = "live" if sec <= ONLINE_SECONDS else ("stale" if sec <= STALE_SECONDS else "offline")
+            if active:
+                if sec is None or loc.get("latitude") is None:
+                    freshness = "gps_off"
+                elif sec <= LIVE_SECONDS:
+                    freshness = "live"
+                elif sec <= RECENT_SECONDS:
+                    freshness = "recente"
+                else:
+                    freshness = "non_aggiornata"
             current_activity = None
             next_activity = None
             stats = None

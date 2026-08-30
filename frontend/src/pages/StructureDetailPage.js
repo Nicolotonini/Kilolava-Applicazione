@@ -77,6 +77,7 @@ const StructureDetailPage = () => {
     ical_url: '', ical_source: '',
     services: [], custom_services: [], cleaning_template_id: '',
     check_in_time: '15:00', check_out_time: '10:00',
+    linea: 'living',
     bed_config: { ...emptyBedConfig },
     operational_zone_id: '',
     expected_cleaning_minutes: '',
@@ -108,6 +109,7 @@ const StructureDetailPage = () => {
         services: s.services || [], custom_services: s.custom_services || [],
         cleaning_template_id: s.cleaning_template_id || '',
         check_in_time: s.check_in_time || '15:00', check_out_time: s.check_out_time || '10:00',
+        linea: s.linea || 'living',
         bed_config: { ...emptyBedConfig, ...(s.bed_config || {}) },
         operational_zone_id: s.operational_zone_id || '',
         expected_cleaning_minutes: s.expected_cleaning_minutes || '',
@@ -384,6 +386,13 @@ function GeneralSection({ form, set, clients, isNew, zones }) {
                 <Input type="time" value={form.check_out_time} onChange={e => set('check_out_time', e.target.value)} className="h-9" data-testid="checkout-time" />
               </FieldRow>
             </div>
+            <FieldRow label="Linea biancheria (per i Kit automatici)">
+              <select value={form.linea} onChange={e => set('linea', e.target.value)}
+                className="w-full h-9 rounded-md border border-border bg-background px-2 text-sm" data-testid="linea-select">
+                <option value="living">Living</option>
+                <option value="dream">Dream</option>
+              </select>
+            </FieldRow>
           </div>
           <FieldRow label="Note generali">
             <Textarea value={form.notes} onChange={e => set('notes', e.target.value)} rows={2} data-testid="notes-input" />

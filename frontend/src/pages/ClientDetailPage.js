@@ -626,12 +626,34 @@ const ClientDetailPage = () => {
     } catch (err) { toast.error('Errore'); }
   };
 
+  const ORDER_CATS = [['noleggio', 'Noleggio & Kit'], ['forniture', 'Forniture'], ['pulizie', 'Prodotti Pulizie']];
+  const currentCats = client?.orders_categories?.length ? client.orders_categories : ['noleggio', 'forniture', 'pulizie'];
+
   const handleToggleOrdering = async (enabled) => {
     try {
-      await clientsApi.update(clientId, { ordering_enabled: enabled });
+      await api.put(`/clients/${clientId}/ordini-settings`, { ordering_enabled: enabled, orders_categories: currentCats });
       toast.success(enabled ? 'Ordini abilitati' : 'Ordini disabilitati');
       fetchClient();
     } catch (e) { toast.error('Errore'); }
+  };
+
+  const toggleOrderCategory = async (cat) => {
+    const next = currentCats.includes(cat) ? currentCats.filter(c => c !== cat) : [...currentCats, cat];
+    if (next.length === 0) { toast.error('Almeno una categoria deve restare abilitata'); return; }
+    try {
+      await api.put(`/clients/${clientId}/ordini-settings`, { ordering_enabled: true, orders_categories: next });
+      fetchClient();
+    } catch (e) { toast.error('Errore'); }
+  };
+
+  const saveNoleggioConfig = async (patch) => {
+    const cur = client?.noleggio_config || {};
+    const cfg = { linea: cur.linea || null, stagione: cur.stagione || null, ...patch };
+    try {
+      await api.put(`/clients/${clientId}/noleggio-config`, cfg);
+      toast.success('Configurazione noleggio aggiornata');
+      fetchClient();
+    } catch (e) { toast.error(e.response?.data?.detail || 'Errore'); }
   };
 
   const openCatalogPanel = async () => {
@@ -915,10 +937,55 @@ const ClientDetailPage = () => {
                   <Switch checked={client?.ordering_enabled || false} onCheckedChange={handleToggleOrdering} data-testid="ordering-toggle" />
                 </div>
                 {client?.ordering_enabled && (
-                  <Button variant="outline" size="sm" className="h-8 gap-1" onClick={openCatalogPanel} data-testid="manage-catalog-btn">
-                    <BookOpen className="h-3.5 w-3.5" />Catalogo articoli
-                  </Button>
+                  <div className="flex items-center gap-3 flex-wrap" data-testid="order-categories">
+                    {ORDER_CATS.map(([k, l]) => (
+                      <label key={k} className="flex items-center gap-1.5 text-xs cursor-pointer">
+                        <Checkbox checked={currentCats.includes(k)} onCheckedChange={() => toggleOrderCategory(k)} data-testid={`order-cat-${k}`} />
+                        {l}
+                      </label>
+                    ))}
+                  </div>
                 )}
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Configurazione Lavanderia a Noleggio */}
+          <Card className="border">
+            <CardContent className="p-4">
+              <h3 className="text-sm font-semibold mb-1">Configurazione Lavanderia a Noleggio</h3>
+              <p className="text-xs text-muted-foreground mb-3">
+                Linea e stagione dei Kit usati automaticamente nei fabbisogni delle consegne.
+                La stagione <strong>non dipende dal calendario</strong>: vale finché non la cambi.
+                Un'eventuale linea impostata sulla singola Struttura ha precedenza.
+              </p>
+              <div className="flex flex-wrap gap-5">
+                <div className="space-y-1">
+                  <Label className="text-xs">Linea Kit</Label>
+                  <select
+                    value={client?.noleggio_config?.linea || ''}
+                    onChange={(e) => saveNoleggioConfig({ linea: e.target.value || null })}
+                    className="block h-9 rounded-md border border-border bg-background px-2 text-sm min-w-[180px]"
+                    data-testid="noleggio-linea-select"
+                  >
+                    <option value="">Default (Living)</option>
+                    <option value="living">Living</option>
+                    <option value="dream">Dream</option>
+                  </select>
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs">Stagione Kit</Label>
+                  <select
+                    value={client?.noleggio_config?.stagione || ''}
+                    onChange={(e) => saveNoleggioConfig({ stagione: e.target.value || null })}
+                    className="block h-9 rounded-md border border-border bg-background px-2 text-sm min-w-[180px]"
+                    data-testid="noleggio-stagione-select"
+                  >
+                    <option value="">Default (impostazione generale)</option>
+                    <option value="estivo">Estivo</option>
+                    <option value="invernale">Invernale</option>
+                  </select>
+                </div>
               </div>
             </CardContent>
           </Card>

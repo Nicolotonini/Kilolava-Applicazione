@@ -33,6 +33,8 @@ export const fmtDateTime = (d) =>
 
 export const itemsSummary = (items) => (items || []).map((i) => `${i.qty}× ${i.name}`).join(', ');
 
+export const STAGE_TONES = { da_verificare: 'progress', da_confermare: 'neutral', confermata: 'success' };
+
 export const shiftDay = (dateStr, days) => {
   const d = new Date(dateStr + 'T12:00:00');
   d.setDate(d.getDate() + days);

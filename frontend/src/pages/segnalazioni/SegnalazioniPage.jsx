@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import api from '../../lib/api';
 import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
@@ -47,6 +47,16 @@ export default function SegnalazioniPage() {
   const [configOpen, setConfigOpen] = useState(false);
   const [myTasksOpen, setMyTasksOpen] = useState(false);
   const [filterData, setFilterData] = useState(null);
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  useEffect(() => {
+    if (searchParams.get('new') === '1') {
+      setNewOpen(true);
+      searchParams.delete('new');
+      setSearchParams(searchParams, { replace: true });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const loadCounters = useCallback(() => {
     api.get('/segnalazioni/counters', { params: { type: typeFilter } }).then(r => setCounters(r.data)).catch(() => {});

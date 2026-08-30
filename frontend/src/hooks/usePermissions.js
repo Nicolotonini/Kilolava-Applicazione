@@ -19,9 +19,9 @@ const ROLE_PERMISSIONS = {
 const OPS_ROLES = new Set(['admin', 'operations_manager']);
 
 const NAV_KEYS = [
-  'dashboard', 'mappa', 'calendar', 'clients', 'structures', 'cleaning', 'cleaning-overview', 'cleaning-organize', 'segnalazioni',
+  'dashboard', 'mappa', 'assistant', 'calendar', 'clients', 'structures', 'cleaning', 'cleaning-overview', 'cleaning-organize', 'segnalazioni',
   'structure-inventory', 'keys', 'deliveries',
-  'consegne-overview', 'consegne-da-organizzare', 'consegne-organizzazione', 'consegne-oggi', 'consegne-storico',
+  'consegne-overview', 'consegne-definizione', 'consegne-giro', 'consegne-storico',
   'ms-overview', 'ms-noleggio', 'ms-forniture', 'ms-movimenti',
   'mg-overview', 'mg-noleggio', 'mg-forniture', 'mg-pulizie', 'mg-zaini', 'mg-movimenti', 'cataloghi-prodotti', 'kit',
   'pl-jobs', 'pl-history',

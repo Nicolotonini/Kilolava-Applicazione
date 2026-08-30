@@ -10,6 +10,7 @@ import { DaySelector } from './controls';
 import { OperatorCard } from './BoardCards';
 import { ProposalDialog } from './ProposalDialog';
 import { AvailabilityDialog, BoardSettingsDialog } from './AvailabilityDialog';
+import { DayStaffStrip } from '../../components/kilolava/DayStaffStrip';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '../../components/ui/dialog';
 
 const CARD_W = 290;
@@ -358,6 +359,9 @@ export function OrganizeBoard({ date, setDate, onDetail, onAssignDialog, refresh
         </div>
       </div>
 
+      {/* Operatrici del giorno: disponibilità giornaliera */}
+      <DayStaffStrip title="Operatrici del giorno" people={cleaners} onEdit={setAvailCleaner} testPrefix="org-staff" />
+
       {/* Controlli board: ricerca addetta + zoom (a destra, riferiti alla board) */}
       <div className="hidden lg:flex items-center gap-2 flex-wrap justify-end">
         <div className="relative">
@@ -498,7 +502,7 @@ export function OrganizeBoard({ date, setDate, onDetail, onAssignDialog, refresh
 
       {/* Dialogs */}
       {proposal && <ProposalDialog proposal={proposal} onApply={applyProposal} onClose={() => setProposal(null)} />}
-      {availCleaner && <AvailabilityDialog cleaner={availCleaner} onClose={() => setAvailCleaner(null)} onSaved={() => { setAvailCleaner(null); load(); }} />}
+      {availCleaner && <AvailabilityDialog cleaner={availCleaner} date={date} role="cleaner" onClose={() => setAvailCleaner(null)} onSaved={() => { setAvailCleaner(null); load(); }} />}
       {settingsOpen && <BoardSettingsDialog threshold={threshold} onClose={() => setSettingsOpen(false)} onSaved={() => { setSettingsOpen(false); load(); }} />}
       {expandCard && <ExpandCardDialog card={placedCards.find(c => c.id === expandCard.id) || expandCard} onClose={() => setExpandCard(null)} onDetail={onDetail} />}
       {addMemberGroup && (

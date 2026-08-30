@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { toast } from 'sonner';
+import { LocationBanner, useLocationState, LocationRequiredDialog } from '../components/LocationBanner';
 
 const STATUS_META = {
   unassigned: { label: 'Da fare', cls: 'bg-sky-100 text-sky-700' },
@@ -52,14 +53,21 @@ export default function CleanerView() {
   useEffect(() => { load(); }, [load]);
 
   if (activeTask) {
-    return <TaskWorkScreen taskId={activeTask} onBack={() => { setActiveTask(null); load(); }} />;
+    return (
+      <div data-testid="cleaner-view-work">
+        <LocationBanner sessionType="giornata" startLabel="Inizia giornata" stopLabel="Fine giornata" />
+        <TaskWorkScreen taskId={activeTask} onBack={() => { setActiveTask(null); load(); }} />
+      </div>
+    );
   }
 
   const today = (tasks || []).filter(t => t.date === todayStr() && t.status !== 'cancelled');
   const upcoming = (tasks || []).filter(t => t.date > todayStr() && t.status !== 'cancelled').slice(0, 10);
 
   return (
-    <div className="p-4 pb-24 space-y-5 max-w-lg mx-auto" data-testid="cleaner-view">
+    <div data-testid="cleaner-view">
+      <LocationBanner sessionType="giornata" startLabel="Inizia giornata" stopLabel="Fine giornata" />
+      <div className="p-4 pb-24 space-y-5 max-w-lg mx-auto">
       <div>
         <h1 className="text-xl font-heading font-semibold">Ciao {user?.name?.split(' ')[0] || ''}</h1>
         <p className="text-sm text-muted-foreground">Le mie pulizie di oggi</p>
@@ -82,6 +90,7 @@ export default function CleanerView() {
           {upcoming.map(t => <CleanerTaskCard key={t.id} task={t} onOpen={() => setActiveTask(t.id)} compact />)}
         </div>
       )}
+      </div>
     </div>
   );
 }
@@ -120,6 +129,8 @@ function TaskWorkScreen({ taskId, onBack }) {
   const [task, setTask] = useState(null);
   const [ops, setOps] = useState(null);
   const [issueOpen, setIssueOpen] = useState(false);
+  const locState = useLocationState();
+  const [locDialog, setLocDialog] = useState(false);
 
   const reload = useCallback(() => {
     api.get(`/cleaning-tasks/${taskId}`).then(r => setTask(r.data)).catch(() => {});
@@ -142,6 +153,7 @@ function TaskWorkScreen({ taskId, onBack }) {
 
   return (
     <div className="p-4 pb-28 space-y-4 max-w-lg mx-auto" data-testid="cleaner-work-screen">
+      <LocationRequiredDialog open={locDialog} onClose={() => setLocDialog(false)} sessionType="giornata" />
       <div className="flex items-center gap-2">
         <Button variant="ghost" size="icon" onClick={onBack} className="h-9 w-9" data-testid="cleaner-back-btn"><ChevronLeft className="h-5 w-5" /></Button>
         <div className="min-w-0">
@@ -228,6 +240,7 @@ function TaskWorkScreen({ taskId, onBack }) {
                 variant="primary"
                 onDone={reload}
                 testId="upload-initial-video"
+                beforeOpen={() => { if (!locState.active) { setLocDialog(true); return false; } return true; }}
               />
             </div>
           ) : (
@@ -347,7 +360,7 @@ function MediaGallery({ items, empty }) {
   );
 }
 
-function UploadButton({ taskId, mediaType, accept, label, variant, disabled, onDone, testId, noteId }) {
+function UploadButton({ taskId, mediaType, accept, label, variant, disabled, onDone, testId, noteId, beforeOpen }) {
   const inputRef = useRef(null);
   const [uploading, setUploading] = useState(false);
   const upload = async (file) => {
@@ -371,7 +384,7 @@ function UploadButton({ taskId, mediaType, accept, label, variant, disabled, onD
     <>
       <input ref={inputRef} type="file" accept={accept} className="hidden" onChange={e => upload(e.target.files?.[0])} data-testid={`${testId}-input`} />
       <Button
-        onClick={() => inputRef.current?.click()}
+        onClick={() => { if (beforeOpen && !beforeOpen()) return; inputRef.current?.click(); }}
         disabled={uploading || disabled}
         className={cn('w-full h-12 text-base font-semibold',
           variant === 'primary' && 'bg-primary text-primary-foreground',

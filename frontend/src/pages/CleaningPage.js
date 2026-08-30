@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import api from '../lib/api';
 import { Card, CardContent } from '../components/ui/card';
 import { Button } from '../components/ui/button';
@@ -40,6 +40,16 @@ export default function CleaningPage() {
   const [recurTask, setRecurTask] = useState(null);
   const [seriesTask, setSeriesTask] = useState(null);
   const [assignTask, setAssignTask] = useState(null);
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  useEffect(() => {
+    if (searchParams.get('new') === '1') {
+      setFormState({ date: todayStr() });
+      searchParams.delete('new');
+      setSearchParams(searchParams, { replace: true });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     Promise.all([api.get('/structures'), api.get('/cleaning-tasks/cleaners'), api.get('/zones')])

@@ -12,7 +12,15 @@ from core.utils import now_iso
 DOMAINS = ["noleggio", "forniture", "pulizie"]
 CATALOG_COLL = {"noleggio": "rental_catalog", "forniture": "supply_catalog", "pulizie": "cleaning_catalog"}
 MOVEMENT_TYPES = ["carico", "scarico", "trasferimento", "consegna", "ritiro", "consumo_pulizia",
-                  "reintegro_zaino", "rettifica_inventario", "danneggiato", "mancante", "reso", "annullamento", "altro"]
+                  "reintegro_zaino", "rettifica_inventario", "danneggiato", "mancante", "reso", "storno", "annullamento", "altro"]
+STORNO_MOTIVI = {
+    "errore_inserimento": "Movimento inserito per errore",
+    "quantita_errata": "Quantità errata",
+    "struttura_errata": "Struttura errata",
+    "articolo_errato": "Articolo errato",
+    "consegna_annullata": "Consegna annullata",
+    "altro": "Altro",
+}
 ZAINO_STATUSES = ["disponibile", "assegnato", "da_reintegrare", "in_manutenzione", "fuori_uso"]
 LOCATION_TYPES = ["central", "structure", "zaino", "external"]
 
@@ -166,6 +174,13 @@ async def seed_magazzino():
     await db.warehouse_movements.create_index([("at", -1)])
     await db.warehouse_movements.create_index([("structure_id", 1)])
     await db.warehouse_movements.create_index([("zaino_id", 1)])
+    await db.warehouse_movements.create_index([("code", 1)])
+    # MOV-XXXXX: assegna codici progressivi ai movimenti esistenti senza codice (idempotente, in ordine cronologico)
+    missing_code = await db.warehouse_movements.find({"code": {"$exists": False}}, {"_id": 1}).sort("at", 1).to_list(20000)
+    for m in missing_code:
+        c = await db.counters.find_one_and_update(
+            {"_id": "mov_code"}, {"$inc": {"seq": 1}}, upsert=True, return_document=ReturnDocument.AFTER)
+        await db.warehouse_movements.update_one({"_id": m["_id"]}, {"$set": {"code": f"MOV-{c['seq']:05d}"}})
     await db.stock_levels.create_index([("domain", 1), ("location_type", 1), ("location_id", 1), ("product_id", 1)], unique=True)
     await db.zaini.create_index([("code", 1)], unique=True)
 
@@ -195,17 +210,21 @@ def _loc_tracked(loc: dict) -> bool:
 async def apply_movement(*, domain: str, movement_type: str, product: dict, qty: int,
                          origin: dict, destination: dict, user: dict, note: str = "",
                          structure_id: str = None, zaino_id: str = None, reverses: str = None,
-                         delivery_id: str = None) -> dict:
+                         delivery_id: str = None, motivo: str = None, motivo_nota: str = None) -> dict:
     now = now_iso()
+    c = await db.counters.find_one_and_update(
+        {"_id": "mov_code"}, {"$inc": {"seq": 1}}, upsert=True, return_document=ReturnDocument.AFTER)
     mov = {
-        "id": str(uuid.uuid4()), "at": now, "domain": domain, "movement_type": movement_type,
+        "id": str(uuid.uuid4()), "code": f"MOV-{c['seq']:05d}", "at": now, "domain": domain, "movement_type": movement_type,
         "product_id": product["id"], "product_name": product["name"], "product_code": product.get("code"), "qty": qty,
         "origin": origin or {"type": "external", "label": "Esterno"},
         "destination": destination or {"type": "external", "label": "Esterno"},
         "structure_id": structure_id, "zaino_id": zaino_id,
         "delivery_id": delivery_id,
         "user_id": (user or {}).get("id"), "user_name": (user or {}).get("name", ""),
-        "note": note or "", "reversed_by": None, "reverses": reverses,
+        "note": note or "", "status": "valido",
+        "reversed_by": None, "reverses": reverses, "reversal_of": reverses,
+        "motivo": motivo, "motivo_nota": motivo_nota,
         "created_at": now,
     }
     if _loc_tracked(mov["origin"]):
@@ -336,6 +355,11 @@ class MovementCreate(BaseModel):
     origin: Optional[dict] = None
     destination: Optional[dict] = None
     note: Optional[str] = None
+
+
+class StornoPayload(BaseModel):
+    motivo: str
+    nota: Optional[str] = None
 
 
 class ZainoCreate(BaseModel):
@@ -1260,13 +1284,17 @@ def create_magazzino_router(get_current_user, is_ops_user):
         domain: Optional[str] = None, movement_type: Optional[str] = None,
         structure_id: Optional[str] = None, zaino_id: Optional[str] = None,
         product: Optional[str] = None, date_from: Optional[str] = None, date_to: Optional[str] = None,
-        scope: Optional[str] = None, user: Optional[str] = None,
+        scope: Optional[str] = None, user: Optional[str] = None, state: Optional[str] = None,
         client_id: Optional[str] = None, zone_id: Optional[str] = None,
         page: int = Query(1, ge=1), limit: int = Query(50, ge=1, le=200),
         current_user: dict = Depends(get_current_user),
     ):
         require_ops(current_user)
         q = {}
+        if state == "stornati":
+            q["reversed_by"] = {"$ne": None}
+        elif state == "validi":
+            q["reversed_by"] = None
         if scope == "strutture":
             q["$or"] = [{"origin.type": "structure"}, {"destination.type": "structure"}]
         elif scope == "generale":
@@ -1290,7 +1318,10 @@ def create_magazzino_router(get_current_user, is_ops_user):
         if zaino_id:
             q["zaino_id"] = zaino_id
         if product:
-            q["product_name"] = {"$regex": product, "$options": "i"}
+            q.setdefault("$and", []).append({"$or": [
+                {"product_name": {"$regex": product, "$options": "i"}},
+                {"product_code": {"$regex": product, "$options": "i"}},
+                {"code": {"$regex": product, "$options": "i"}}]})
         if date_from or date_to:
             rng = {}
             if date_from:
@@ -1300,6 +1331,13 @@ def create_magazzino_router(get_current_user, is_ops_user):
             q["at"] = rng
         total = await db.warehouse_movements.count_documents(q)
         items = await db.warehouse_movements.find(q, {"_id": 0}).sort("at", -1).skip((page - 1) * limit).limit(limit).to_list(limit)
+        rev_ids = [m["reverses"] for m in items if m.get("reverses")]
+        if rev_ids:
+            codes = {d["id"]: d.get("code") async for d in db.warehouse_movements.find(
+                {"id": {"$in": rev_ids}}, {"_id": 0, "id": 1, "code": 1})}
+            for m in items:
+                if m.get("reverses"):
+                    m["reverses_code"] = codes.get(m["reverses"])
         return {"items": items, "total": total}
 
     @router.post("/movimenti")
@@ -1309,6 +1347,8 @@ def create_magazzino_router(get_current_user, is_ops_user):
             raise HTTPException(status_code=400, detail="Dominio non valido")
         if data.movement_type not in MOVEMENT_TYPES:
             raise HTTPException(status_code=400, detail="Tipo movimento non valido")
+        if data.movement_type in ("storno", "annullamento"):
+            raise HTTPException(status_code=400, detail="Gli storni si creano solo dal movimento originale con 'Storna movimento'")
         if data.qty <= 0:
             raise HTTPException(status_code=400, detail="Quantità non valida")
         p = await get_product(data.domain, data.product_id)
@@ -1332,22 +1372,63 @@ def create_magazzino_router(get_current_user, is_ops_user):
             zaino_id=origin.get("id") if origin.get("type") == "zaino" else destination.get("id") if destination.get("type") == "zaino" else None)
         return mov
 
+    @router.get("/movimenti/{movement_id}")
+    async def get_movement(movement_id: str, current_user: dict = Depends(get_current_user)):
+        require_ops(current_user)
+        mov = await db.warehouse_movements.find_one({"$or": [{"id": movement_id}, {"code": movement_id}]}, {"_id": 0})
+        if not mov:
+            raise HTTPException(status_code=404, detail="Movimento non trovato")
+        link_proj = {"_id": 0, "id": 1, "code": 1, "at": 1, "movement_type": 1, "qty": 1, "user_name": 1}
+        if mov.get("reversed_by"):
+            mov["reversal_movement"] = await db.warehouse_movements.find_one({"id": mov["reversed_by"]}, link_proj)
+        if mov.get("reverses"):
+            mov["original_movement"] = await db.warehouse_movements.find_one({"id": mov["reverses"]}, link_proj)
+        return mov
+
     @router.post("/movimenti/{movement_id}/storno")
-    async def storno_movement(movement_id: str, current_user: dict = Depends(get_current_user)):
+    async def storno_movement(movement_id: str, data: StornoPayload, current_user: dict = Depends(get_current_user)):
         require_ops(current_user)
         mov = await db.warehouse_movements.find_one({"id": movement_id}, {"_id": 0})
         if not mov:
             raise HTTPException(status_code=404, detail="Movimento non trovato")
+        if mov.get("movement_type") in ("storno", "annullamento"):
+            raise HTTPException(status_code=400, detail="Non è possibile stornare uno storno: usa una Rettifica o un nuovo movimento corretto")
         if mov.get("reversed_by"):
-            raise HTTPException(status_code=400, detail="Movimento già stornato")
-        p = await get_product(mov["domain"], mov["product_id"]) or {"id": mov["product_id"], "name": mov["product_name"]}
+            existing = await db.warehouse_movements.find_one({"id": mov["reversed_by"]}, {"_id": 0, "id": 1, "code": 1})
+            raise HTTPException(status_code=400, detail={
+                "error": "gia_stornato", "message": "Movimento già stornato",
+                "reversal_movement_id": (existing or {}).get("id"), "reversal_code": (existing or {}).get("code")})
+        if data.motivo not in STORNO_MOTIVI:
+            raise HTTPException(status_code=400, detail="Motivo dello storno obbligatorio")
+        nota = (data.nota or "").strip()
+        if data.motivo == "altro" and not nota:
+            raise HTTPException(status_code=400, detail="Per il motivo 'Altro' è obbligatoria una nota")
+        # Controllo giacenza: la location che perde quantità con lo storno è la destinazione originale
+        dest = mov.get("destination") or {}
+        if _loc_tracked(dest):
+            available = ((await stock_map(mov["domain"], dest["type"], dest.get("id"))).get(mov["product_id"]) or {}).get("qty", 0)
+            if available < mov["qty"]:
+                raise HTTPException(status_code=409, detail={
+                    "error": "stock_insufficiente",
+                    "message": "Storno non eseguibile automaticamente: la quantità disponibile nella location è inferiore alla quantità da stornare",
+                    "location": dest.get("label") or dest.get("type"),
+                    "available": available, "required": mov["qty"]})
+        p = await get_product(mov["domain"], mov["product_id"]) or \
+            {"id": mov["product_id"], "name": mov["product_name"], "code": mov.get("product_code")}
+        now = now_iso()
         inverse = await apply_movement(
-            domain=mov["domain"], movement_type="annullamento", product=p, qty=mov["qty"],
+            domain=mov["domain"], movement_type="storno", product=p, qty=mov["qty"],
             origin=mov["destination"], destination=mov["origin"], user=current_user,
-            note=f"Storno movimento del {mov['at'][:16]}", structure_id=mov.get("structure_id"),
-            zaino_id=mov.get("zaino_id"), reverses=movement_id)
-        await db.warehouse_movements.update_one({"id": movement_id}, {"$set": {"reversed_by": inverse["id"]}})
-        return inverse
+            note=f"Storno di {mov.get('code') or mov['id'][:8]} — {STORNO_MOTIVI[data.motivo]}" + (f": {nota}" if nota else ""),
+            structure_id=mov.get("structure_id"), zaino_id=mov.get("zaino_id"),
+            reverses=movement_id, delivery_id=mov.get("delivery_id"),
+            motivo=data.motivo, motivo_nota=nota or None)
+        await db.warehouse_movements.update_one({"id": movement_id}, {"$set": {
+            "reversed_by": inverse["id"], "reversal_movement_id": inverse["id"],
+            "status": "stornato", "stornato_at": now,
+            "stornato_by": current_user.get("name", ""), "stornato_by_id": current_user.get("id"),
+            "storno_motivo": data.motivo}})
+        return {"ok": True, "storno": inverse, "original_code": mov.get("code"), "original_id": movement_id}
 
     # ---------- Inventario ----------
 
