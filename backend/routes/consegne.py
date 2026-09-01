@@ -146,6 +146,7 @@ class ProblemaPayload(BaseModel):
 class CompletaPayload(BaseModel):
     note: Optional[str] = None
     effective_items: Optional[List[dict]] = None
+    ritiri: Optional[List[dict]] = None
 
 
 def create_consegne_router(get_current_user, is_ops_user):
@@ -829,11 +830,31 @@ def create_consegne_router(get_current_user, is_ops_user):
                                            user=current_user, structure_id=t["structure_id"],
                                            note="Consegna completata", delivery_id=fermata_id)
                 movement_ids.append(mov["id"])
+        # Fase 6 — Riconsegne (ritiri) reali tracciate sul giro: struttura -> magazzino
+        ritiri_saved = []
+        if t.get("structure_id"):
+            for r in (data.ritiri or []):
+                pid = r.get("product_id")
+                q = int(r.get("qty") or 0)
+                rdomain = r.get("domain") or "noleggio"
+                if not pid or q <= 0 or rdomain not in ("noleggio", "forniture", "pulizie"):
+                    continue
+                product = await get_product(rdomain, pid)
+                if not product:
+                    continue
+                mov = await apply_movement(domain=rdomain, movement_type="ritiro", product=product, qty=q,
+                                           origin={"type": "structure", "id": t["structure_id"], "label": dest_label or "Struttura"},
+                                           destination={"type": "central", "label": "Magazzino Generale"},
+                                           user=current_user, structure_id=t["structure_id"],
+                                           note="Ritiro sul giro", delivery_id=fermata_id)
+                movement_ids.append(mov["id"])
+                ritiri_saved.append({"product_id": pid, "name": product.get("name"), "qty": q, "domain": rdomain, "movement_id": mov["id"]})
         await db.fabbisogni.update_many({"id": {"$in": t.get("richiesta_ids") or []}},
                                         {"$set": {"status": "evasa", "updated_at": now}})
         await db.logistics_tasks.update_one({"id": fermata_id}, {"$set": {
             "status": "completed", "completed_at": now, "completion_notes": data.note or t.get("completion_notes"),
             "effective_items": data.effective_items or None,
+            "ritiri": ritiri_saved or None,
             "movement_ids": (t.get("movement_ids") or []) + movement_ids, "updated_at": now}})
         return {"ok": True, "movements": len(movement_ids)}
 

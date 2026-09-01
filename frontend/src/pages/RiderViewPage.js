@@ -9,10 +9,11 @@ import { toast } from 'sonner';
 import {
   Truck, MapPin, Clock, Check, Play, AlertTriangle,
   Navigation, ChevronLeft, ChevronRight, Camera,
-  LogOut, Moon, Sun, KeyRound,
+  LogOut, Moon, Sun, KeyRound, Plus, Minus, Undo2,
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { QuickActions } from '../components/kilolava/QuickActions';
+import { OperationalDrawer } from '../components/kilolava/OperationalDrawer';
 import { APIProvider, Map, AdvancedMarker } from '@vis.gl/react-google-maps';
 import { RoutePolyline, FitPoints } from '../components/kilolava/RoutePolyline';
 
@@ -79,6 +80,23 @@ const STATUS_BORDER = {
   cancelled: 'border-border opacity-60',
 };
 
+const QtyStepper = ({ value, onChange, testId }) => (
+  <div className="flex items-center gap-1.5 flex-shrink-0">
+    <Button type="button" variant="outline" size="icon" className="h-8 w-8"
+      onClick={() => onChange(Math.max(0, (value || 0) - 1))} data-testid={`${testId}-minus`}>
+      <Minus className="h-3.5 w-3.5" />
+    </Button>
+    <input type="number" inputMode="numeric" min="0" value={value ?? 0}
+      onChange={(e) => onChange(Math.max(0, parseInt(e.target.value || '0', 10) || 0))}
+      className="w-14 h-8 text-center text-sm font-semibold rounded-md border border-border bg-background"
+      data-testid={testId} />
+    <Button type="button" variant="outline" size="icon" className="h-8 w-8"
+      onClick={() => onChange((value || 0) + 1)} data-testid={`${testId}-plus`}>
+      <Plus className="h-3.5 w-3.5" />
+    </Button>
+  </div>
+);
+
 const RiderViewPage = () => {
   const { user, logout } = useAuth();
   const { theme, toggleTheme } = useTheme();
@@ -94,6 +112,10 @@ const RiderViewPage = () => {
   const [giro, setGiro] = useState(null);
   const [navRoute, setNavRoute] = useState(null);
   const [navLoading, setNavLoading] = useState(false);
+  const [completing, setCompleting] = useState(null);
+  const [effQty, setEffQty] = useState({});
+  const [ritiriQty, setRitiriQty] = useState({});
+  const [completaLoading, setCompletaLoading] = useState(false);
 
   const fetchGiro = useCallback(async () => {
     try {
@@ -132,13 +154,41 @@ const RiderViewPage = () => {
     catch (e) { toast.error(e.response?.data?.detail || 'Errore'); }
   };
 
-  const completa = async (id) => {
+  const openCompleta = (f) => {
+    const eff = {};
+    (f.lines || []).forEach((l) => {
+      if (l.category === 'lavanderia_privata') return;
+      (l.items || []).forEach((it) => {
+        if (it.product_id) eff[`${l.richiesta_id}|${it.product_id}`] = it.qty || 0;
+      });
+    });
+    setEffQty(eff); setRitiriQty({}); setNoteText(''); setCompleting(f);
+  };
+
+  const confirmCompleta = async () => {
+    setCompletaLoading(true);
     try {
-      await api.post(`/consegne/fermate/${id}/completa`, { note: noteText || null });
+      const effective_items = [];
+      (completing.lines || []).forEach((l) => {
+        if (l.category === 'lavanderia_privata') return;
+        (l.items || []).forEach((it) => {
+          if (!it.product_id) return;
+          const q = effQty[`${l.richiesta_id}|${it.product_id}`];
+          if (q != null && q !== it.qty) effective_items.push({ richiesta_id: l.richiesta_id, product_id: it.product_id, qty: q });
+        });
+      });
+      const ritiri = Object.entries(ritiriQty).filter(([, q]) => q > 0)
+        .map(([product_id, qty]) => ({ product_id, qty, domain: 'noleggio' }));
+      await api.post(`/consegne/fermate/${completing.id}/completa`, {
+        note: noteText || null,
+        effective_items: effective_items.length ? effective_items : null,
+        ritiri: ritiri.length ? ritiri : null,
+      });
       toast.success('Fermata completata! Prossima consegna aggiornata');
-      setNoteText(''); setExpanded(null); setNavRoute(null);
+      setNoteText(''); setExpanded(null); setNavRoute(null); setCompleting(null);
       fetchFermate(); fetchGiro();
     } catch (e) { toast.error(e.response?.data?.detail || 'Errore'); }
+    finally { setCompletaLoading(false); }
   };
 
   const problema = async (id) => {
@@ -402,9 +452,6 @@ const RiderViewPage = () => {
                             </Button>
                           </div>
                         )}
-                        {f.status === 'in_progress' && (
-                          <Textarea value={noteText} onChange={(e) => setNoteText(e.target.value)} placeholder="Note consegna (facoltative)" rows={2} className="resize-none text-sm" data-testid={`completion-note-${f.id}`} />
-                        )}
                         <div className="flex gap-2">
                           {f.status === 'assigned' && (
                             <Button className="flex-1 h-11 gap-1.5 bg-amber-600 hover:bg-amber-700 text-white font-medium" onClick={() => start(f.id)} data-testid={`start-fermata-${f.id}`}>
@@ -412,7 +459,7 @@ const RiderViewPage = () => {
                             </Button>
                           )}
                           {f.status === 'in_progress' && (
-                            <Button className="flex-1 h-11 gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-medium" onClick={() => completa(f.id)} data-testid={`complete-fermata-${f.id}`}>
+                            <Button className="flex-1 h-11 gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-medium" onClick={() => openCompleta(f)} data-testid={`complete-fermata-${f.id}`}>
                               <Check className="h-4 w-4" />Completata
                             </Button>
                           )}
@@ -462,6 +509,66 @@ const RiderViewPage = () => {
           </div>
         )}
       </div>
+      {completing && (() => {
+        const ritiroProducts = completing.structure_id
+          ? Object.values((completing.lines || []).filter((l) => l.category === 'noleggio')
+              .flatMap((l) => l.items || []).filter((it) => it.product_id)
+              .reduce((acc, it) => ({ ...acc, [it.product_id]: it }), {}))
+          : [];
+        return (
+          <OperationalDrawer open onOpenChange={(v) => { if (!v) setCompleting(null); }}
+            title="Completa fermata" description={completing.destination}
+            confirmLabel="Conferma consegna" onConfirm={confirmCompleta} loading={completaLoading}
+            testId="completa-drawer">
+            <div className="space-y-4">
+              <p className="text-xs text-muted-foreground">Controlla le quantità realmente consegnate: puoi correggerle se diverse dal previsto.</p>
+              {(completing.lines || []).map((l, i) => (
+                <div key={i}>
+                  <p className="text-xs font-medium text-muted-foreground uppercase mb-1.5">{l.category_label || l.category}</p>
+                  {l.category === 'lavanderia_privata' ? (
+                    <p className="text-sm text-muted-foreground">Consegna della busta lavanderia al cliente.</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {(l.items || []).filter((it) => it.product_id).map((it) => {
+                        const k = `${l.richiesta_id}|${it.product_id}`;
+                        return (
+                          <div key={k} className="flex items-center justify-between gap-3">
+                            <div className="min-w-0">
+                              <p className="text-sm truncate">{it.name}</p>
+                              <p className="text-xs text-muted-foreground">Previsto: {it.qty}</p>
+                            </div>
+                            <QtyStepper value={effQty[k]} onChange={(v) => setEffQty((p) => ({ ...p, [k]: v }))} testId={`eff-qty-${it.product_id}`} />
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              ))}
+              {ritiroProducts.length > 0 && (
+                <div className="pt-3 border-t border-border">
+                  <p className="text-xs font-medium text-muted-foreground uppercase mb-1 flex items-center gap-1.5">
+                    <Undo2 className="h-3.5 w-3.5" />Ritiro sporco (noleggio)
+                  </p>
+                  <p className="text-xs text-muted-foreground mb-2">Quantità ritirate dalla struttura e riportate in magazzino.</p>
+                  <div className="space-y-2">
+                    {ritiroProducts.map((p) => (
+                      <div key={p.product_id} className="flex items-center justify-between gap-3">
+                        <p className="text-sm truncate">{p.name}</p>
+                        <QtyStepper value={ritiriQty[p.product_id]} onChange={(v) => setRitiriQty((prev) => ({ ...prev, [p.product_id]: v }))} testId={`ritiro-qty-${p.product_id}`} />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              <div>
+                <p className="text-xs font-medium text-muted-foreground uppercase mb-1">Note (facoltative)</p>
+                <Textarea value={noteText} onChange={(e) => setNoteText(e.target.value)} rows={2} className="resize-none text-sm" data-testid="completa-note" />
+              </div>
+            </div>
+          </OperationalDrawer>
+        );
+      })()}
       <QuickActions />
     </div>
   );
