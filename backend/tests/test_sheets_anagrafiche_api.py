@@ -1,3 +1,4 @@
+from testenv import TEST_ADMIN_USERNAME, TEST_ADMIN_PASSWORD, TEST_FIXTURE_PASSWORD  # noqa: E402
 """Integration tests: /api/sheets-anagrafiche/* endpoints (no OAuth completed)."""
 import os
 import pytest
@@ -11,8 +12,8 @@ if not BASE_URL:
             if line.startswith("REACT_APP_BACKEND_URL"):
                 BASE_URL = line.split("=", 1)[1].strip().rstrip("/")
 
-ADMIN = {"email": "test_user@kilolava.com", "password": "TestPass123!"}
-ADDETTA = {"email": "addetta_test@kilolava.com", "password": "AddettaTest123!"}
+ADMIN = {"email": TEST_ADMIN_USERNAME, "password": TEST_ADMIN_PASSWORD}
+ADDETTA = {"email": "addetta_test@kilolava.com", "password": TEST_FIXTURE_PASSWORD}
 
 
 def _login(creds):

@@ -1,3 +1,4 @@
+from testenv import TEST_ADMIN_USERNAME, TEST_ADMIN_PASSWORD, TEST_FIXTURE_PASSWORD  # noqa: E402
 """
 Test Users/Roles/Permissions API for Kilolava
 Tests: User CRUD, role-based access, toggle active, permissions endpoint
@@ -11,7 +12,7 @@ BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', '').rstrip('/')
 
 # Test credentials
 ADMIN_EMAIL = "test_user@kilolava.com"
-ADMIN_PASSWORD = "TestPass123!"
+ADMIN_PASSWORD = TEST_ADMIN_PASSWORD
 RIDER_EMAIL = "rider1@kilolava.com"
 RIDER_PASSWORD = "Rider123!"
 CLIENT_EMAIL = "mario.rossi@cliente.it"
@@ -174,7 +175,7 @@ class TestUsersRolesAPI:
             "first_name": "Test",
             "last_name": f"Cleaner{unique_id}",
             "email": f"test_cleaner_{unique_id}@kilolava.com",
-            "password": "TestPass123!",
+            "password": TEST_ADMIN_PASSWORD,
             "role": "cleaner",
             "phone": "+39123456789",
             "notes": "Test cleaner user"
@@ -200,7 +201,7 @@ class TestUsersRolesAPI:
             "first_name": "Test",
             "last_name": f"Rider{unique_id}",
             "email": f"test_rider_{unique_id}@kilolava.com",
-            "password": "TestPass123!",
+            "password": TEST_ADMIN_PASSWORD,
             "role": "rider",
             "phone": "+39123456789",
             "vehicle_type": "Furgone"
@@ -221,7 +222,7 @@ class TestUsersRolesAPI:
             "first_name": "Duplicate",
             "last_name": "User",
             "email": ADMIN_EMAIL,  # Already exists
-            "password": "TestPass123!",
+            "password": TEST_ADMIN_PASSWORD,
             "role": "cleaner"
         }
         response = requests.post(f"{BASE_URL}/api/users", json=payload, headers=admin_headers)
@@ -236,7 +237,7 @@ class TestUsersRolesAPI:
             "first_name": "Invalid",
             "last_name": "Role",
             "email": f"invalid_role_{unique_id}@kilolava.com",
-            "password": "TestPass123!",
+            "password": TEST_ADMIN_PASSWORD,
             "role": "superadmin"  # Invalid role
         }
         response = requests.post(f"{BASE_URL}/api/users", json=payload, headers=admin_headers)
@@ -249,7 +250,7 @@ class TestUsersRolesAPI:
             "first_name": "Test",
             "last_name": "User",
             "email": "test_forbidden@kilolava.com",
-            "password": "TestPass123!",
+            "password": TEST_ADMIN_PASSWORD,
             "role": "cleaner"
         }
         response = requests.post(f"{BASE_URL}/api/users", json=payload, headers=rider_headers)
@@ -266,7 +267,7 @@ class TestUsersRolesAPI:
             "first_name": "Update",
             "last_name": f"Test{unique_id}",
             "email": f"update_test_{unique_id}@kilolava.com",
-            "password": "TestPass123!",
+            "password": TEST_ADMIN_PASSWORD,
             "role": "cleaner"
         }
         create_response = requests.post(f"{BASE_URL}/api/users", json=create_payload, headers=admin_headers)
@@ -302,7 +303,7 @@ class TestUsersRolesAPI:
             "first_name": "Toggle",
             "last_name": f"Test{unique_id}",
             "email": f"toggle_test_{unique_id}@kilolava.com",
-            "password": "TestPass123!",
+            "password": TEST_ADMIN_PASSWORD,
             "role": "cleaner"
         }
         create_response = requests.post(f"{BASE_URL}/api/users", json=create_payload, headers=admin_headers)
@@ -337,7 +338,7 @@ class TestUsersRolesAPI:
             "first_name": "Delete",
             "last_name": f"Test{unique_id}",
             "email": f"delete_test_{unique_id}@kilolava.com",
-            "password": "TestPass123!",
+            "password": TEST_ADMIN_PASSWORD,
             "role": "cleaner"
         }
         create_response = requests.post(f"{BASE_URL}/api/users", json=create_payload, headers=admin_headers)

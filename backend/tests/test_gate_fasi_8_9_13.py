@@ -1,3 +1,4 @@
+from testenv import TEST_ADMIN_USERNAME, TEST_ADMIN_PASSWORD, TEST_FIXTURE_PASSWORD  # noqa: E402
 """GATE FASI 8+9+13 — Prenotazioni→Pulizie, Pulizie→Fabbisogno/Anomalia→Segnalazione, AI proposta→conferma. Fixture + cleanup."""
 import os
 import uuid
@@ -20,7 +21,7 @@ def check(name, ok, extra=""):
 
 
 admin_tok = requests.post(f"{API}/auth/login", json={
-    "username": "admin@kilolava.it", "password": "TestPass123!"}).json()["access_token"]
+    "username": TEST_ADMIN_USERNAME, "password": TEST_ADMIN_PASSWORD}).json()["access_token"]
 A = {"Authorization": f"Bearer {admin_tok}"}
 C = {"clients": [], "structures": [], "products": [], "kits": [], "events": [], "tasks": [], "fabb": [], "actions": [], "segn": [], "issues": []}
 
@@ -106,7 +107,7 @@ try:
     # ---- FASE 13: AI proposta → conferma → stessa API layer ----
     action_id = str(uuid.uuid4())
     tomorrow = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
-    admin_user = mdb.users.find_one({"login_username": "admin@kilolava.it"}, {"id": 1})
+    admin_user = mdb.users.find_one({"login_username": TEST_ADMIN_USERNAME}, {"id": 1})
     mdb.assistant_actions.insert_one({
         "id": action_id, "session_id": "TESTGATE8", "user_id": admin_user["id"],
         "type": "crea_pulizia", "payload": {"structure_id": s["id"], "date": tomorrow},
@@ -132,8 +133,8 @@ try:
           requests.post(f"{API}/assistant/actions/{a2}/execute", headers=A).status_code in (400, 404))
     # scoping: cleaner non accede all'assistente
     cl = requests.post(f"{API}/users", headers=A, json={
-        "first_name": "TEST_GATE8_cl", "last_name": "A", "role": "cleaner", "password": "GateTest123!"}).json()
-    CLtok = requests.post(f"{API}/auth/login", json={"username": cl["login_username"], "password": "GateTest123!"}).json()["access_token"]
+        "first_name": "TEST_GATE8_cl", "last_name": "A", "role": "cleaner", "password": TEST_FIXTURE_PASSWORD}).json()
+    CLtok = requests.post(f"{API}/auth/login", json={"username": cl["login_username"], "password": TEST_FIXTURE_PASSWORD}).json()["access_token"]
     check("Cleaner GET /assistant/sessions = 403",
           requests.get(f"{API}/assistant/sessions", headers={"Authorization": f"Bearer {CLtok}"}).status_code == 403)
     requests.delete(f"{API}/users/{cl['id']}", headers=A)

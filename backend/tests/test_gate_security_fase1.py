@@ -1,3 +1,4 @@
+from testenv import TEST_ADMIN_USERNAME, TEST_ADMIN_PASSWORD, TEST_FIXTURE_PASSWORD  # noqa: E402
 """GATE SECURITY Fase 1 — fixture temporanee, verifica scoping, cleanup totale."""
 import os
 import requests
@@ -15,7 +16,7 @@ def check(name, ok, extra=""):
 
 
 admin_tok = requests.post(f"{API}/auth/login", json={
-    "username": "admin@kilolava.it", "password": "TestPass123!"}).json()["access_token"]
+    "username": TEST_ADMIN_USERNAME, "password": TEST_ADMIN_PASSWORD}).json()["access_token"]
 A = {"Authorization": f"Bearer {admin_tok}"}
 
 created_users, created_clients = [], []
@@ -24,12 +25,12 @@ created_users, created_clients = [], []
 def mk_user(role, extra=None, client_id=None):
     r = requests.post(f"{API}/users", headers=A, json={
         "first_name": f"TEST_GATE_{role}", "last_name": "Sec", "role": role,
-        "password": "GateTest123!", "extra_roles": extra or [], "client_id": client_id})
+        "password": TEST_FIXTURE_PASSWORD, "extra_roles": extra or [], "client_id": client_id})
     assert r.status_code == 200, r.text
     u = r.json()
     created_users.append(u["id"])
     tok = requests.post(f"{API}/auth/login", json={
-        "username": u["login_username"] or u["email"], "password": "GateTest123!"}).json()["access_token"]
+        "username": u["login_username"] or u["email"], "password": TEST_FIXTURE_PASSWORD}).json()["access_token"]
     return u, {"Authorization": f"Bearer {tok}"}
 
 
@@ -47,13 +48,13 @@ def mk_portal_user(client_id, name):
     import uuid
     r = requests.post(f"{API}/users", headers=A, json={
         "first_name": f"TEST_GATE_{name}", "last_name": "Portal", "role": "client",
-        "password": "GateTest123!", "client_id": client_id,
+        "password": TEST_FIXTURE_PASSWORD, "client_id": client_id,
         "login_username": f"test.gate.{name.lower()}.{uuid.uuid4().hex[:6]}@kilolava.it"})
     assert r.status_code == 200, r.text
     u = r.json()
     created_users.append(u["id"])
     tok = requests.post(f"{API}/auth/login", json={
-        "username": u["login_username"], "password": "GateTest123!"}).json()["access_token"]
+        "username": u["login_username"], "password": TEST_FIXTURE_PASSWORD}).json()["access_token"]
     return u, {"Authorization": f"Bearer {tok}"}
 
 
@@ -116,9 +117,9 @@ try:
     check("Admin GET /dashboard/stats = 200", requests.get(f"{API}/dashboard/stats", headers=A).status_code == 200)
 
     # GATE 6: auth regressione veloce (PIN/login intatti)
-    bad = requests.post(f"{API}/auth/login", json={"username": "admin@kilolava.it", "password": "wrong"})
+    bad = requests.post(f"{API}/auth/login", json={"username": TEST_ADMIN_USERNAME, "password": "wrong"})
     check("Login errato = 401", bad.status_code == 401)
-    requests.post(f"{API}/auth/login", json={"username": "admin@kilolava.it", "password": "TestPass123!"})
+    requests.post(f"{API}/auth/login", json={"username": TEST_ADMIN_USERNAME, "password": TEST_ADMIN_PASSWORD})
 finally:
     # CLEANUP TOTALE fixture
     for sid in [x.get("id") for x in [locals().get("sa"), locals().get("sb")] if x]:

@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import api, { fileUrl } from '../lib/api';
+import api from '../lib/api';
+import { AuthImg, openAuthFile } from '../components/kilolava/AuthMedia';
 import { useAuth } from '../contexts/AuthContext';
 import { Card, CardContent } from '../components/ui/card';
 import { Button } from '../components/ui/button';
@@ -342,15 +343,15 @@ function MediaGallery({ items, empty }) {
     <div className="space-y-2">
       <div className="grid grid-cols-3 gap-2">
         {items.map(m => (
-          <a key={m.id} href={fileUrl(m.file_path)} target="_blank" rel="noreferrer" className="block">
+          <button type="button" key={m.id} onClick={() => openAuthFile(m.file_path)} className="block w-full text-left">
             {m.media_type === 'video' || m.kind === 'video' || (m.content_type || '').startsWith('video') ? (
               <span className="flex flex-col items-center justify-center h-20 rounded-lg bg-muted text-muted-foreground text-xs gap-1"><Video className="h-5 w-5" />Video</span>
             ) : m.file_path ? (
-              <img src={fileUrl(m.file_path)} alt={m.title || ''} className="w-full h-20 object-cover rounded-lg border border-border" />
+              <AuthImg path={m.file_path} alt={m.title || ''} className="w-full h-20 object-cover rounded-lg border border-border" />
             ) : (
               <span className="flex items-center justify-center h-20 rounded-lg bg-muted text-xs text-muted-foreground p-1 text-center">{m.title || 'Nota'}</span>
             )}
-          </a>
+          </button>
         ))}
       </div>
       {items.filter(m => m.description || (m.media_type === 'note' && m.title)).map(m => (
@@ -487,11 +488,11 @@ function NotesSection({ task, onSaved }) {
           {(n.media || []).length > 0 && (
             <div className="flex gap-1.5 mt-1.5 flex-wrap">
               {n.media.map(m => m.kind === 'video' ? (
-                <a key={m.id} href={fileUrl(m.file_path)} target="_blank" rel="noreferrer" className="flex items-center gap-1 text-xs px-2 py-1 rounded bg-background"><Video className="h-3 w-3" />Video</a>
+                <button type="button" key={m.id} onClick={() => openAuthFile(m.file_path)} className="flex items-center gap-1 text-xs px-2 py-1 rounded bg-background"><Video className="h-3 w-3" />Video</button>
               ) : (
-                <a key={m.id} href={fileUrl(m.file_path)} target="_blank" rel="noreferrer">
-                  <img src={fileUrl(m.file_path)} alt="" className="w-12 h-12 object-cover rounded border border-border" />
-                </a>
+                <button type="button" key={m.id} onClick={() => openAuthFile(m.file_path)}>
+                  <AuthImg path={m.file_path} alt="" className="w-12 h-12 object-cover rounded border border-border" />
+                </button>
               ))}
             </div>
           )}

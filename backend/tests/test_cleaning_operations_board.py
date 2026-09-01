@@ -1,3 +1,4 @@
+from testenv import TEST_ADMIN_USERNAME, TEST_ADMIN_PASSWORD, TEST_FIXTURE_PASSWORD  # noqa: E402
 """
 Iteration 11 — Backend tests for KILOLAVA OPERATIONS BOARD (Pulizie → Organizzazione).
 Coverage:
@@ -37,10 +38,10 @@ def _load_backend_url():
 BASE_URL = _load_backend_url()
 API = f"{BASE_URL}/api"
 
-ADMIN_EMAIL = "test_user@kilolava.com"
-ADMIN_PWD = "TestPass123!"
+ADMIN_EMAIL = TEST_ADMIN_USERNAME
+ADMIN_PWD = TEST_ADMIN_PASSWORD
 CLEANER_EMAIL = "addetta_test@kilolava.com"
-CLEANER_PWD = "AddettaTest123!"
+CLEANER_PWD = TEST_FIXTURE_PASSWORD
 
 STRUCT_ID = "3d70c213-d948-47ec-9839-b5a37acc2d23"   # Appartamento Centro
 DATA_DATE = "2026-09-02"                             # giornata con task esistenti

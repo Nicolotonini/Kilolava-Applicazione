@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import api, { fileUrl } from '../../lib/api';
+import api from '../../lib/api';
+import { AuthImg } from '../../components/kilolava/AuthMedia';
 import { DetailHeader, DetailSection } from '../../components/kilolava/PageHeader';
 import { DetailSkeleton, EmptyState } from '../../components/kilolava/EmptyState';
 import { StatusBadge, PriorityBadge } from '../../components/kilolava/badges';
@@ -258,7 +259,7 @@ export default function FermataDetailPage() {
           )}
           {f.confirmation_photo && (
             <DetailSection title="Foto di conferma">
-              <img src={fileUrl(f.confirmation_photo)} alt="Conferma consegna" className="h-40 rounded-lg border border-border object-cover" data-testid="fermata-confirmation-photo" />
+              <AuthImg path={f.confirmation_photo} alt="Conferma consegna" className="h-40 rounded-lg border border-border object-cover" data-testid="fermata-confirmation-photo" />
             </DetailSection>
           )}
         </div>

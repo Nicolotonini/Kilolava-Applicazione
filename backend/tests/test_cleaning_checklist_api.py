@@ -1,3 +1,4 @@
+from testenv import TEST_ADMIN_USERNAME, TEST_ADMIN_PASSWORD, TEST_FIXTURE_PASSWORD  # noqa: E402
 """
 Test suite for Cleaning Tasks + Checklist Module
 Tests: checklist templates CRUD, cleaning tasks CRUD, status updates, checklist responses, issue reporting
@@ -11,7 +12,7 @@ BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', '').rstrip('/')
 
 # Test credentials
 ADMIN_EMAIL = "test_user@kilolava.com"
-ADMIN_PASSWORD = "TestPass123!"
+ADMIN_PASSWORD = TEST_ADMIN_PASSWORD
 CLEANER_EMAIL = "maria.bianchi@kilolava.com"
 CLEANER_PASSWORD = "CleanPass123!"
 

@@ -1,3 +1,4 @@
+from testenv import TEST_ADMIN_USERNAME, TEST_ADMIN_PASSWORD, TEST_FIXTURE_PASSWORD  # noqa: E402
 """
 Test iCal Sync API endpoints for Kilolava
 Tests: POST /api/ical/sync/{structure_id}, POST /api/ical/sync-all, GET /api/ical/status
@@ -10,7 +11,7 @@ BASE_URL = os.environ.get('REACT_APP_BACKEND_URL').rstrip('/')
 
 # Test credentials
 ADMIN_EMAIL = "test_user@kilolava.com"
-ADMIN_PASSWORD = "TestPass123!"
+ADMIN_PASSWORD = TEST_ADMIN_PASSWORD
 
 # Structure IDs from the test data
 STRUCTURE_WITH_ICAL = "3d70c213-d948-47ec-9839-b5a37acc2d23"  # Appartamento Centro

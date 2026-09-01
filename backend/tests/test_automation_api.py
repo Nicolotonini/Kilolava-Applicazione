@@ -1,3 +1,4 @@
+from testenv import TEST_ADMIN_USERNAME, TEST_ADMIN_PASSWORD, TEST_FIXTURE_PASSWORD  # noqa: E402
 """
 Test suite for Kilolava Automation Engine API
 Tests: generate tasks (dry_run/actual), idempotency, automation status, clear auto tasks
@@ -12,7 +13,7 @@ BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', '').rstrip('/')
 
 # Test credentials
 TEST_EMAIL = "test_user@kilolava.com"
-TEST_PASSWORD = "TestPass123!"
+TEST_PASSWORD = TEST_ADMIN_PASSWORD
 
 # Test date range (week of 2026-03-23 to 2026-03-29)
 DATE_FROM = "2026-03-23"

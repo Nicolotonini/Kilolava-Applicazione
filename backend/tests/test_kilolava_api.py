@@ -1,3 +1,4 @@
+from testenv import TEST_ADMIN_USERNAME, TEST_ADMIN_PASSWORD, TEST_FIXTURE_PASSWORD  # noqa: E402
 """
 Kilolava API Tests - v2.0.0 Data Model
 Tests for Clients, Structures, and Units with new schema:
@@ -15,7 +16,7 @@ API_URL = f"{BASE_URL}/api"
 
 # Test credentials
 TEST_EMAIL = "test_user@kilolava.com"
-TEST_PASSWORD = "TestPass123!"
+TEST_PASSWORD = TEST_ADMIN_PASSWORD
 
 
 @pytest.fixture(scope="module")

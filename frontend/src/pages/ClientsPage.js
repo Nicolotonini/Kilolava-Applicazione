@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useLanguage } from '../contexts/LanguageContext';
-import { clientsApi, fileUrl } from '../lib/api';
+import { clientsApi } from '../lib/api';
+import { AuthImg } from '../components/kilolava/AuthMedia';
 import api from '../lib/api';
 import { Card, CardContent } from '../components/ui/card';
 import { Button } from '../components/ui/button';
@@ -258,8 +259,8 @@ const ClientsPage = () => {
                 {/* Identity */}
                 <div className="flex items-center gap-4 min-w-[230px] flex-1">
                   {client.logo_path ? (
-                    <img
-                      src={fileUrl(client.logo_path)}
+                    <AuthImg
+                      path={client.logo_path}
                       alt=""
                       className="w-12 h-12 rounded-full object-cover border border-border flex-shrink-0"
                       data-testid={`client-logo-${client.id}`}

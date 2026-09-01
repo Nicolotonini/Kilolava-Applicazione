@@ -386,13 +386,20 @@ def create_consegne_router(get_current_user, is_ops_user):
             return _cfg_cache[cid]
 
         created, updated, senza, skipped = 0, 0, 0, 0
+        no_service, config_incompleta = 0, 0
+        warned_structures = set()
         now = now_iso()
         for t in tasks:
             sid = t.get("structure_id")
             if not sid:
                 continue
-            s = await db.structures.find_one({"id": sid}, {"_id": 0, "name": 1, "klv_code": 1, "client_id": 1, "linea": 1})
+            s = await db.structures.find_one({"id": sid}, {"_id": 0, "name": 1, "klv_code": 1, "client_id": 1,
+                                                           "linea": 1, "services": 1})
             if not s:
+                continue
+            # Fase 5 hardening: fabbisogni noleggio SOLO se il servizio Lavanderia a Noleggio è attivo
+            if "rental_laundry" not in (s.get("services") or []):
+                no_service += 1
                 continue
             cfg = await client_cfg(s.get("client_id"))
             linea = (s.get("linea") or cfg.get("linea") or "living").lower()
@@ -406,6 +413,17 @@ def create_consegne_router(get_current_user, is_ops_user):
                 kit = next((k for k, kl in find_kit(bed_type, stagione) if kl == linea), None)
                 if kit:
                     need_kits.append((kit, count))
+                else:
+                    # Fase 5 hardening: MAI kit inventati — warning "Configurazione Noleggio incompleta"
+                    if sid not in warned_structures:
+                        warned_structures.add(sid)
+                        config_incompleta += 1
+                        await _deps["notify_ops_users"](
+                            "Configurazione Noleggio incompleta",
+                            f"Struttura {s.get('name', '')}: nessun Kit Noleggio corrisponde a "
+                            f"letto '{bed_type}', linea '{linea}', stagione '{stagione}'. "
+                            "Configura i Kit prima di generare i fabbisogni.",
+                            "warning", priority="high", entity_type="structure", entity_id=sid)
             if not need_kits:
                 senza += 1
                 continue
@@ -452,6 +470,7 @@ def create_consegne_router(get_current_user, is_ops_user):
                     "created_at": now, "updated_at": now})
                 created += 1
         return {"created": created, "updated": updated, "senza_fabbisogno": senza, "skipped_confermate": skipped,
+                "senza_servizio_noleggio": no_service, "configurazione_incompleta": config_incompleta,
                 "stagione": default_stagione, "pulizie_analizzate": len(tasks)}
 
     # ---------- Organizzazione giro ----------
@@ -785,6 +804,17 @@ def create_consegne_router(get_current_user, is_ops_user):
             q = overrides.get((line.get("richiesta_id"), it.get("product_id")))
             return q if q is not None else it.get("qty", 1)
 
+        # Fase 11 hardening: traccia pianificato vs consegnato per ogni richiesta (per gestire parziali)
+        per_richiesta = {}
+
+        def track(line, it, delivered):
+            rid = line.get("richiesta_id")
+            if not rid or not it.get("product_id"):
+                return
+            per_richiesta.setdefault(rid, []).append({
+                "product_id": it["product_id"], "code": it.get("code"), "name": it.get("name"),
+                "planned": it.get("qty", 1), "delivered": max(0, delivered)})
+
         dest_label = t.get("structure_id") and (await db.structures.find_one({"id": t["structure_id"]}, {"_id": 0, "name": 1}) or {}).get("name")
         for line in t.get("lines") or []:
             cat = line.get("category")
@@ -802,6 +832,7 @@ def create_consegne_router(get_current_user, is_ops_user):
                     if not it.get("product_id"):
                         continue
                     q = eff_qty(line, it)
+                    track(line, it, q)
                     if q <= 0:
                         continue
                     product = await get_product(domain, it["product_id"]) or {"id": it["product_id"], "name": it.get("name", "")}
@@ -821,6 +852,7 @@ def create_consegne_router(get_current_user, is_ops_user):
                 if not it.get("product_id"):
                     continue
                 q = eff_qty(line, it)
+                track(line, it, q)
                 if q <= 0:
                     continue
                 product = await get_product(domain, it["product_id"]) or {"id": it["product_id"], "name": it.get("name", "")}
@@ -849,14 +881,49 @@ def create_consegne_router(get_current_user, is_ops_user):
                                            note="Ritiro sul giro", delivery_id=fermata_id)
                 movement_ids.append(mov["id"])
                 ritiri_saved.append({"product_id": pid, "name": product.get("name"), "qty": q, "domain": rdomain, "movement_id": mov["id"]})
-        await db.fabbisogni.update_many({"id": {"$in": t.get("richiesta_ids") or []}},
-                                        {"$set": {"status": "evasa", "updated_at": now}})
+        # Fase 11 hardening: consegna parziale — richiesta originaria 'parzialmente_evasa' + richiesta residuale
+        residual_ids = []
+        for rid in (t.get("richiesta_ids") or []):
+            rows = per_richiesta.get(rid) or []
+            residui = [{"product_id": x["product_id"], "code": x.get("code"), "name": x.get("name"),
+                        "qty": x["planned"] - x["delivered"]}
+                       for x in rows if (x["planned"] - x["delivered"]) > 0]
+            if not residui:
+                await db.fabbisogni.update_one({"id": rid}, {"$set": {"status": "evasa", "updated_at": now}})
+                continue
+            r_doc = await db.fabbisogni.find_one({"id": rid}, {"_id": 0})
+            await db.fabbisogni.update_one({"id": rid}, {"$set": {
+                "status": "parzialmente_evasa", "updated_at": now,
+                "planned_items": [{"product_id": x["product_id"], "code": x.get("code"), "name": x.get("name"),
+                                   "qty": x["planned"]} for x in rows],
+                "delivered_items": [{"product_id": x["product_id"], "code": x.get("code"), "name": x.get("name"),
+                                     "qty": x["delivered"]} for x in rows],
+                "residual_items": residui}})
+            if r_doc:
+                new_rid = str(uuid.uuid4())
+                residual_ids.append(new_rid)
+                await db.fabbisogni.insert_one({
+                    **{k: r_doc.get(k) for k in ("kind", "structure_id", "structure_name", "klv_code", "zaino_id",
+                                                 "zaino_code", "client_id", "client_name", "destination_label",
+                                                 "kits_used", "time_window", "priority", "source", "source_id")},
+                    "id": new_rid, "items": residui, "date_needed": None, "fermata_id": None,
+                    "status": "aperta", "stage": "da_confermare",
+                    "note": f"Residuo da consegna parziale (richiesta {rid[:8]})",
+                    "parent_richiesta_id": rid,
+                    "created_by": current_user["id"], "created_by_name": "Kilolava (residuo parziale)",
+                    "created_at": now, "updated_at": now})
+        if residual_ids:
+            await _deps["notify_ops_users"](
+                "Consegna parziale",
+                f"Fermata {dest_label or t.get('id', '')[:8]}: {len(residual_ids)} richiesta/e evase parzialmente — "
+                "creata richiesta residuale da confermare in Consegne.",
+                "warning", priority="high", entity_type="logistics_task", entity_id=fermata_id)
         await db.logistics_tasks.update_one({"id": fermata_id}, {"$set": {
             "status": "completed", "completed_at": now, "completion_notes": data.note or t.get("completion_notes"),
             "effective_items": data.effective_items or None,
             "ritiri": ritiri_saved or None,
             "movement_ids": (t.get("movement_ids") or []) + movement_ids, "updated_at": now}})
-        return {"ok": True, "movements": len(movement_ids)}
+        return {"ok": True, "movements": len(movement_ids), "richieste_residuali": len(residual_ids)}
 
     # ---------- Rider ----------
 

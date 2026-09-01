@@ -1,3 +1,4 @@
+from testenv import TEST_ADMIN_USERNAME, TEST_ADMIN_PASSWORD, TEST_FIXTURE_PASSWORD  # noqa: E402
 """
 Phase 2 Calendar / Auto-Generated Service Tasks Tests
 
@@ -21,7 +22,7 @@ BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "https://operations-hub-38.pr
 API_URL = f"{BASE_URL}/api"
 
 TEST_EMAIL = "test_user@kilolava.com"
-TEST_PASSWORD = "TestPass123!"
+TEST_PASSWORD = TEST_ADMIN_PASSWORD
 
 
 # ---------------- Fixtures ----------------

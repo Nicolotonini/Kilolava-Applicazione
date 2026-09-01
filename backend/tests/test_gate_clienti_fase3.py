@@ -1,3 +1,4 @@
+from testenv import TEST_ADMIN_USERNAME, TEST_ADMIN_PASSWORD, TEST_FIXTURE_PASSWORD  # noqa: E402
 """GATE FASE 3 — Clienti: codici CLI permanenti, referenti, scoping. Fixture temporanee + cleanup."""
 import os
 import re
@@ -16,7 +17,7 @@ def check(name, ok, extra=""):
 
 
 admin_tok = requests.post(f"{API}/auth/login", json={
-    "username": "admin@kilolava.it", "password": "TestPass123!"}).json()["access_token"]
+    "username": TEST_ADMIN_USERNAME, "password": TEST_ADMIN_PASSWORD}).json()["access_token"]
 A = {"Authorization": f"Bearer {admin_tok}"}
 
 created_clients, created_users = [], []
@@ -69,10 +70,10 @@ try:
 
     # GATE 5: OM può creare/modificare clienti (matrice clients.write), operativi no
     ru_om = requests.post(f"{API}/users", headers=A, json={
-        "first_name": "TEST_GATE3_om", "last_name": "Cli", "role": "operations_manager", "password": "GateTest123!"})
+        "first_name": "TEST_GATE3_om", "last_name": "Cli", "role": "operations_manager", "password": TEST_FIXTURE_PASSWORD})
     om = ru_om.json()
     created_users.append(om["id"])
-    om_tok = requests.post(f"{API}/auth/login", json={"username": om["login_username"], "password": "GateTest123!"}).json()["access_token"]
+    om_tok = requests.post(f"{API}/auth/login", json={"username": om["login_username"], "password": TEST_FIXTURE_PASSWORD}).json()["access_token"]
     OM = {"Authorization": f"Bearer {om_tok}"}
     r3 = requests.post(f"{API}/clients", headers=OM, json={
         "client_type": "private", "private_info": {"name": "TESTGATE3", "surname": "OM"}})
@@ -83,10 +84,10 @@ try:
     check("OM DELETE /clients = 403 (solo admin)", requests.delete(f"{API}/clients/{c1['id']}", headers=OM).status_code == 403)
 
     rc = requests.post(f"{API}/users", headers=A, json={
-        "first_name": "TEST_GATE3_cl", "last_name": "Cli", "role": "cleaner", "password": "GateTest123!"})
+        "first_name": "TEST_GATE3_cl", "last_name": "Cli", "role": "cleaner", "password": TEST_FIXTURE_PASSWORD})
     cl = rc.json()
     created_users.append(cl["id"])
-    cl_tok = requests.post(f"{API}/auth/login", json={"username": cl["login_username"], "password": "GateTest123!"}).json()["access_token"]
+    cl_tok = requests.post(f"{API}/auth/login", json={"username": cl["login_username"], "password": TEST_FIXTURE_PASSWORD}).json()["access_token"]
     CL = {"Authorization": f"Bearer {cl_tok}"}
     check("Cleaner POST /clients = 403", requests.post(f"{API}/clients", headers=CL, json={"client_type": "private"}).status_code == 403)
     check("Cleaner PUT /clients = 403", requests.put(f"{API}/clients/{c1['id']}", headers=CL, json={"notes": "x"}).status_code == 403)

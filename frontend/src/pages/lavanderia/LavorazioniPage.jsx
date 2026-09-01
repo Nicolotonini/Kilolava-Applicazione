@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import api, { fileUrl } from '../../lib/api';
+import api from '../../lib/api';
+import { AuthImg } from '../../components/kilolava/AuthMedia';
 import { PageHeader } from '../../components/kilolava/PageHeader';
 import { EmptyState, ListSkeleton } from '../../components/kilolava/EmptyState';
 import { StatusBadge } from '../../components/kilolava/badges';
@@ -181,7 +182,7 @@ function PesaDialog({ open, onClose, job, onDone }) {
           <div className="space-y-1.5">
             <Label className="text-xs">Foto bilancia {needsPhoto ? '*' : '(già caricata — sostituisci se serve)'}</Label>
             {job.scale_photo && !photo && (
-              <img src={fileUrl(job.scale_photo.file_path)} alt="Bilancia" className="h-24 rounded-lg border border-border object-cover" data-testid="scale-photo-preview" />
+              <AuthImg path={job.scale_photo.file_path} alt="Bilancia" className="h-24 rounded-lg border border-border object-cover" data-testid="scale-photo-preview" />
             )}
             <Input type="file" accept="image/*" capture="environment" onChange={(e) => setPhoto(e.target.files?.[0] || null)} data-testid="foto-bilancia-input" />
           </div>

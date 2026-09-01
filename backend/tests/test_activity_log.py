@@ -1,3 +1,4 @@
+from testenv import TEST_ADMIN_USERNAME, TEST_ADMIN_PASSWORD, TEST_FIXTURE_PASSWORD  # noqa: E402
 """Backend tests for activity log middleware and endpoints."""
 import os
 import time
@@ -15,7 +16,7 @@ if not BASE_URL:
 API = f"{BASE_URL}/api"
 
 ADMIN_EMAIL = "test_user@kilolava.com"
-ADMIN_PASSWORD = "TestPass123!"
+ADMIN_PASSWORD = TEST_ADMIN_PASSWORD
 
 
 @pytest.fixture(scope="module")

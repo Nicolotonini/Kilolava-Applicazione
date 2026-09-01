@@ -1,3 +1,4 @@
+from testenv import TEST_ADMIN_USERNAME, TEST_ADMIN_PASSWORD, TEST_FIXTURE_PASSWORD  # noqa: E402
 """
 Iteration 12 backend tests:
 - Anagrafica (users PUT/GET persists user.anagrafica)
@@ -26,7 +27,7 @@ def _load_env():
 _load_env()
 BASE = os.environ.get("REACT_APP_BACKEND_URL").rstrip("/") + "/api"
 
-ADMIN = {"email": "test_user@kilolava.com", "password": "TestPass123!"}
+ADMIN = {"email": "test_user@kilolava.com", "password": TEST_ADMIN_PASSWORD}
 STRUCTURE_ID = "3d70c213-d948-47ec-9839-b5a37acc2d23"
 
 

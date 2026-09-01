@@ -1,3 +1,4 @@
+from testenv import TEST_ADMIN_USERNAME, TEST_ADMIN_PASSWORD, TEST_FIXTURE_PASSWORD  # noqa: E402
 """
 Maintenance Management Module API Tests
 Tests for: maintenance issues CRUD, status updates, notes, role-based access, history tracking
@@ -11,7 +12,7 @@ BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', '').rstrip('/')
 
 # Test credentials
 ADMIN_EMAIL = "test_user@kilolava.com"
-ADMIN_PASSWORD = "TestPass123!"
+ADMIN_PASSWORD = TEST_ADMIN_PASSWORD
 MAINTENANCE_EMAIL = "luigi.verdi@kilolava.com"
 MAINTENANCE_PASSWORD = "MaintPass123!"
 CLEANER_EMAIL = "maria.bianchi@kilolava.com"

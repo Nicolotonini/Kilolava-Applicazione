@@ -1,3 +1,4 @@
+from testenv import TEST_ADMIN_USERNAME, TEST_ADMIN_PASSWORD, TEST_FIXTURE_PASSWORD  # noqa: E402
 """Backend tests for Consegne (logistics hub), Lavanderia Privata, Manutenzioni (iteration 18).
 
 Cover: fabbisogno→richiesta linkage, fermata aggregation, rider assignment/route-order,
@@ -15,8 +16,8 @@ import requests
 
 BASE = os.environ["REACT_APP_BACKEND_URL"].rstrip("/")
 API = f"{BASE}/api"
-ADMIN = {"email": "test_user@kilolava.com", "password": "TestPass123!"}
-RIDER = {"email": "rider_test@kilolava.com", "password": "RiderTest123!"}
+ADMIN = {"email": TEST_ADMIN_USERNAME, "password": TEST_ADMIN_PASSWORD}
+RIDER = {"email": "rider_test@kilolava.com", "password": TEST_FIXTURE_PASSWORD}
 
 STATE = {}
 

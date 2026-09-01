@@ -1,3 +1,4 @@
+from testenv import TEST_ADMIN_USERNAME, TEST_ADMIN_PASSWORD, TEST_FIXTURE_PASSWORD  # noqa: E402
 """
 Test suite for Documents Module API
 Tests: DDT generation, CRUD operations, progressive numbering, status workflow, permissions
@@ -10,7 +11,7 @@ BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', '').rstrip('/')
 
 # Test credentials
 ADMIN_EMAIL = "test_user@kilolava.com"
-ADMIN_PASSWORD = "TestPass123!"
+ADMIN_PASSWORD = TEST_ADMIN_PASSWORD
 EXISTING_CLIENT_ID = "eab85d0f-45c0-458f-ab88-08c442810aff"
 EXISTING_ORDER_ID = "fae17ce1-5152-4ec6-96a4-6bdb51f61b33"
 

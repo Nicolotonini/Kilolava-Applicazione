@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import api, { API_BASE } from '../lib/api';
+import { AuthImg } from '../components/kilolava/AuthMedia';
 import { Card, CardContent } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
@@ -393,7 +394,7 @@ export const IssueDetail = ({ issue, onBack, onRefresh, staffList }) => {
             <div className="flex gap-2 overflow-x-auto">
               {issue.photos.filter((p) => p.path).map((p, i) => (
                 <div key={i} className="w-20 h-20 rounded-lg bg-muted border overflow-hidden flex-shrink-0">
-                  <img src={`${API_BASE}/files/${p.path}?auth=${localStorage.getItem('kilolava_token')}`} alt="" className="w-full h-full object-cover" />
+                  <AuthImg path={p.path} alt="" className="w-full h-full object-cover" />
                 </div>
               ))}
             </div>

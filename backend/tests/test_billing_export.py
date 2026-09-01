@@ -1,3 +1,4 @@
+from testenv import TEST_ADMIN_USERNAME, TEST_ADMIN_PASSWORD, TEST_FIXTURE_PASSWORD  # noqa: E402
 """Tests for billing PDF and events Excel export endpoints."""
 import os
 import pytest
@@ -11,7 +12,7 @@ CLIENT_ID = "eab85d0f-45c0-458f-ab88-08c442810aff"  # Mario Rossi
 def token():
     r = requests.post(f"{BASE_URL}/api/auth/login", json={
         "email": "test_user@kilolava.com",
-        "password": "TestPass123!"
+        "password": TEST_ADMIN_PASSWORD
     })
     assert r.status_code == 200, f"login failed: {r.status_code} {r.text}"
     return r.json()["access_token"]

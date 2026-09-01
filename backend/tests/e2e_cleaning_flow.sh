@@ -2,8 +2,11 @@
 # E2E test flusso pulizie v2
 set -e
 API_URL=$(grep REACT_APP_BACKEND_URL /app/frontend/.env | cut -d '=' -f2)
-TOK=$(curl -s -X POST "$API_URL/api/auth/login" -H "Content-Type: application/json" -d '{"email":"test_user@kilolava.com","password":"TestPass123!"}' | python3 -c "import sys,json;print(json.load(sys.stdin)['access_token'])")
-CTOK=$(curl -s -X POST "$API_URL/api/auth/login" -H "Content-Type: application/json" -d '{"email":"addetta_test@kilolava.com","password":"AddettaTest123!"}' | python3 -c "import sys,json;print(json.load(sys.stdin)['access_token'])")
+TEST_ADMIN_USERNAME=$(grep '^TEST_ADMIN_USERNAME=' /app/backend/.env | cut -d '=' -f2-)
+TEST_ADMIN_PASSWORD=$(grep '^TEST_ADMIN_PASSWORD=' /app/backend/.env | cut -d '=' -f2-)
+TEST_FIXTURE_PASSWORD=$(grep '^TEST_FIXTURE_PASSWORD=' /app/backend/.env | cut -d '=' -f2-)
+TOK=$(curl -s -X POST "$API_URL/api/auth/login" -H "Content-Type: application/json" -d "{\"email\":\"$TEST_ADMIN_USERNAME\",\"password\":\"$TEST_ADMIN_PASSWORD\"}" | python3 -c "import sys,json;print(json.load(sys.stdin)['access_token'])")
+CTOK=$(curl -s -X POST "$API_URL/api/auth/login" -H "Content-Type: application/json" -d "{\"email\":\"addetta_test@kilolava.com\",\"password\":\"$TEST_FIXTURE_PASSWORD\"}" | python3 -c "import sys,json;print(json.load(sys.stdin)['access_token'])")
 SID=$(curl -s "$API_URL/api/structures" -H "Authorization: Bearer $TOK" | python3 -c "import sys,json; print([x for x in json.load(sys.stdin) if x.get('klv_code')=='KLV-0002'][0]['id'])")
 CLEANER_ID="1703aaee-2f51-4d2a-9ee5-2b5d32d594e3"
 
@@ -75,7 +78,7 @@ echo "== 13. Completa → completed =="
 curl -s -X POST "$API_URL/api/cleaning-tasks/$TID/complete" -H "Authorization: Bearer $CTOK" | python3 -c "import sys,json; d=json.load(sys.stdin); print('status:', d.get('status'), '| durata:', d.get('duration_minutes'), 'min | started_by:', d.get('started_by_name'))"
 
 echo "== 14. Cliente vede 'Pronto per 4 persone' senza durata =="
-KTOK=$(curl -s -X POST "$API_URL/api/auth/login" -H "Content-Type: application/json" -d '{"email":"cliente_test@kilolava.com","password":"ClienteTest123!"}' | python3 -c "import sys,json;print(json.load(sys.stdin)['access_token'])")
+KTOK=$(curl -s -X POST "$API_URL/api/auth/login" -H "Content-Type: application/json" -d "{\"email\":\"cliente_test@kilolava.com\",\"password\":\"$TEST_FIXTURE_PASSWORD\"}" | python3 -c "import sys,json;print(json.load(sys.stdin)['access_token'])")
 curl -s "$API_URL/api/portal/my-structures-today" -H "Authorization: Bearer $KTOK" | python3 -c "
 import sys,json
 for s in json.load(sys.stdin):

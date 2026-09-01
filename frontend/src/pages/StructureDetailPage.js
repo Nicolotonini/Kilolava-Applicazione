@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
-import api, { structuresApi, unitsApi, fileUrl } from '../lib/api';
+import api, { structuresApi, unitsApi } from '../lib/api';
+import { AuthImg, AuthVideo, openAuthFile } from '../components/kilolava/AuthMedia';
 import { Card, CardContent } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
@@ -827,12 +828,12 @@ function MediaSection({ structureId, units, hasUnits, form, setWarehouse, onSave
             <Card key={m.id} className="border shadow-none" data-testid={`media-item-${m.id}`}>
               <CardContent className="p-3 flex gap-3">
                 {m.media_type === 'photo' && (
-                  <a href={fileUrl(m.path)} target="_blank" rel="noreferrer" className="flex-shrink-0">
-                    <img src={fileUrl(m.path)} alt={m.title || ''} className="w-24 h-24 object-cover rounded-lg border border-border" />
-                  </a>
+                  <button type="button" onClick={() => openAuthFile(m.path)} className="flex-shrink-0">
+                    <AuthImg path={m.path} alt={m.title || ''} className="w-24 h-24 object-cover rounded-lg border border-border" />
+                  </button>
                 )}
                 {m.media_type === 'video' && (
-                  <video src={fileUrl(m.path)} controls className="w-40 h-24 rounded-lg border border-border bg-black flex-shrink-0" />
+                  <AuthVideo path={m.path} controls className="w-40 h-24 rounded-lg border border-border bg-black flex-shrink-0" />
                 )}
                 {m.media_type === 'note' && (
                   <div className="w-12 h-12 rounded-lg bg-amber-50 dark:bg-amber-900/20 flex items-center justify-center flex-shrink-0">

@@ -1,3 +1,5 @@
+import sys; sys.path.insert(0, "/app/backend/tests")
+from testenv import TEST_ADMIN_USERNAME, TEST_ADMIN_PASSWORD, TEST_FIXTURE_PASSWORD  # noqa: E402
 """Carica le foto prodotto per i cataloghi reali (NOL/FOR/PUL) su Object Storage.
 Mapping per CODICE permanente. Riusa le foto storiche + le nuove generate.
 Uso: python /app/scripts/upload_product_photos_v2.py
@@ -11,7 +13,7 @@ for line in open('/app/frontend/.env'):
         API = line.strip().split('=', 1)[1] + '/api'
 assert API
 
-r = requests.post(f"{API}/auth/login", json={"email": "test_user@kilolava.com", "password": "TestPass123!"})
+r = requests.post(f"{API}/auth/login", json={"email": "test_user@kilolava.com", "password": TEST_ADMIN_PASSWORD})
 token = r.json()["access_token"]
 H = {"Authorization": f"Bearer {token}"}
 

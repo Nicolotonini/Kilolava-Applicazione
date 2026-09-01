@@ -1,3 +1,4 @@
+from testenv import TEST_ADMIN_USERNAME, TEST_ADMIN_PASSWORD, TEST_FIXTURE_PASSWORD  # noqa: E402
 """Test that all catalog products have photos uploaded and files serve correctly."""
 import os
 import requests
@@ -6,7 +7,7 @@ import pytest
 BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', 'https://kilolava-rebuild.preview.emergentagent.com').rstrip('/')
 
 EMAIL = "test_user@kilolava.com"
-PASSWORD = "TestPass123!"
+PASSWORD = TEST_ADMIN_PASSWORD
 
 
 @pytest.fixture(scope="module")

@@ -1,3 +1,4 @@
+from testenv import TEST_ADMIN_USERNAME, TEST_ADMIN_PASSWORD, TEST_FIXTURE_PASSWORD  # noqa: E402
 """
 Backend tests for the Clienti/Strutture overhaul.
 
@@ -36,7 +37,7 @@ BASE_URL = _load_base_url()
 API = f"{BASE_URL}/api"
 
 ADMIN_EMAIL = "test_user@kilolava.com"
-ADMIN_PASSWORD = "TestPass123!"
+ADMIN_PASSWORD = TEST_ADMIN_PASSWORD
 
 
 def _tiny_png_bytes() -> bytes:

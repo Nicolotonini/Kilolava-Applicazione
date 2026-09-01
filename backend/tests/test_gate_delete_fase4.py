@@ -1,3 +1,4 @@
+from testenv import TEST_ADMIN_USERNAME, TEST_ADMIN_PASSWORD, TEST_FIXTURE_PASSWORD  # noqa: E402
 """GATE FASE 4 — Disattivazione vs hard delete: Clienti, Strutture, Unità, Prodotti, Kit. Fixture temporanee + cleanup."""
 import os
 import requests
@@ -18,7 +19,7 @@ def check(name, ok, extra=""):
 
 
 admin_tok = requests.post(f"{API}/auth/login", json={
-    "username": "admin@kilolava.it", "password": "TestPass123!"}).json()["access_token"]
+    "username": TEST_ADMIN_USERNAME, "password": TEST_ADMIN_PASSWORD}).json()["access_token"]
 A = {"Authorization": f"Bearer {admin_tok}"}
 
 cleanup = {"clients": [], "structures": [], "units": [], "users": [], "kits": [], "tasks": [], "events": [], "products": []}
@@ -30,7 +31,7 @@ try:
     cleanup["clients"].append(c["id"])
     # con account portale -> 400
     pu = requests.post(f"{API}/clients/{c['id']}/create-account", headers=A, json={
-        "email": "tg4.portal@testgate.it", "password": "GateTest123!", "name": "TG4 Portal"})
+        "email": "tg4.portal@testgate.it", "password": TEST_FIXTURE_PASSWORD, "name": "TG4 Portal"})
     check("Setup account portale = 200", pu.status_code == 200, pu.text[:100])
     rd = requests.delete(f"{API}/clients/{c['id']}", headers=A)
     check("DELETE cliente con account portale = 400 'Usa Disattiva'",

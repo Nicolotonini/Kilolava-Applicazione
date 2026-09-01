@@ -365,8 +365,7 @@ Non esiste uno script di seeding: registrare il primo utente da `/register` (o `
 
 ## 13. Dati demo / credenziali di test
 
-Nell'ambiente di sviluppo esiste un account demo admin (vedi `memory/test_credentials.md`, **non incluso nei segreti del repo**):
-- Email: `test_user@kilolava.com` — ruolo `admin`
+Nell'ambiente di sviluppo esiste un account tecnico admin: username e password sono documentati SOLO in `memory/test_credentials.md` (file **non versionato**, escluso via `.gitignore`) e nelle variabili `TEST_ADMIN_USERNAME` / `TEST_ADMIN_PASSWORD` di `backend/.env`.
 - Dati dimostrativi presenti: clienti (privato e azienda), strutture con unità e feed iCal, prenotazioni, task di pulizia/logistica/manutenzione, articoli di magazzino, ordini e DDT.
 
 Le collection si popolano comunque in automatico usando l'app (creazione clienti → strutture → sync iCal → task generate al checkout).

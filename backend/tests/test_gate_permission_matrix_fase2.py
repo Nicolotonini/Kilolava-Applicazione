@@ -1,3 +1,4 @@
+from testenv import TEST_ADMIN_USERNAME, TEST_ADMIN_PASSWORD, TEST_FIXTURE_PASSWORD  # noqa: E402
 """GATE FASE 2 — Permission Matrix definitiva: coerenza sidebar/UI/API per ogni ruolo. Fixture temporanee + cleanup."""
 import os
 import requests
@@ -15,7 +16,7 @@ def check(name, ok, extra=""):
 
 
 admin_tok = requests.post(f"{API}/auth/login", json={
-    "username": "admin@kilolava.it", "password": "TestPass123!"}).json()["access_token"]
+    "username": TEST_ADMIN_USERNAME, "password": TEST_ADMIN_PASSWORD}).json()["access_token"]
 A = {"Authorization": f"Bearer {admin_tok}"}
 
 created_users = []
@@ -24,12 +25,12 @@ created_users = []
 def mk_user(role, extra=None):
     r = requests.post(f"{API}/users", headers=A, json={
         "first_name": f"TEST_GATE2_{role}", "last_name": "Matrix", "role": role,
-        "password": "GateTest123!", "extra_roles": extra or []})
+        "password": TEST_FIXTURE_PASSWORD, "extra_roles": extra or []})
     assert r.status_code == 200, r.text
     u = r.json()
     created_users.append(u["id"])
     login = requests.post(f"{API}/auth/login", json={
-        "username": u["login_username"] or u["email"], "password": "GateTest123!"}).json()
+        "username": u["login_username"] or u["email"], "password": TEST_FIXTURE_PASSWORD}).json()
     return u, {"Authorization": f"Bearer {login['access_token']}"}, login
 
 

@@ -1,3 +1,4 @@
+from testenv import TEST_ADMIN_USERNAME, TEST_ADMIN_PASSWORD, TEST_FIXTURE_PASSWORD  # noqa: E402
 """Iteration 22 tests — Cataloghi Prodotti (3 domains) + Kit separati + delete flow.
 
 Copre:
@@ -27,7 +28,7 @@ def _load_env():
 _load_env()
 BASE = os.environ["REACT_APP_BACKEND_URL"].rstrip("/")
 EMAIL = "test_user@kilolava.com"
-PASS = "TestPass123!"
+PASS = TEST_ADMIN_PASSWORD
 
 
 @pytest.fixture(scope="module")

@@ -1,3 +1,4 @@
+from testenv import TEST_ADMIN_USERNAME, TEST_ADMIN_PASSWORD, TEST_FIXTURE_PASSWORD  # noqa: E402
 """Iteration 30 - Google Maps SERVER key: Routes API (computeRoutes/Matrix) + Geocoding.
 
 Copertura:
@@ -35,7 +36,7 @@ def _load_frontend_env():
 
 _load_frontend_env()
 BASE = os.environ["REACT_APP_BACKEND_URL"].rstrip("/") + "/api"
-ADMIN = {"email": "test_user@kilolava.com", "password": "TestPass123!"}
+ADMIN = {"email": "test_user@kilolava.com", "password": TEST_ADMIN_PASSWORD}
 STAMP = f"iter30_{int(time.time())}"
 
 # Trieste centro (Piazza Unità) - usato come "GPS del rider" in test route-to-next
@@ -100,7 +101,7 @@ def test_01_impostazioni_geocode_sede(admin_headers):
 # ---------- 02 Seed users + client + structures REAL Trieste addresses ----------
 
 def _mkuser(admin_headers, role, tag):
-    payload = {"email": f"TEST_{STAMP}_{tag}@kilolava.com", "password": "TestPass123!",
+    payload = {"email": f"TEST_{STAMP}_{tag}@kilolava.com", "password": TEST_ADMIN_PASSWORD,
                "first_name": f"Test{tag}", "last_name": "Iter30", "role": role}
     r = requests.post(f"{BASE}/users", json=payload, headers=admin_headers, timeout=15)
     assert r.status_code in (200, 201), r.text
@@ -334,7 +335,7 @@ def test_08_giro_percorso_permessi(admin_headers, tomorrow):
     # Login come rider_a
     r = requests.post(f"{BASE}/auth/login", timeout=15,
                      json={"email": f"TEST_{STAMP}_riderA@kilolava.com",
-                           "password": "TestPass123!"})
+                           "password": TEST_ADMIN_PASSWORD})
     assert r.status_code == 200, r.text
     tok_a = r.json()["access_token"]
     ha = {"Authorization": f"Bearer {tok_a}"}
@@ -387,7 +388,7 @@ def test_11_route_to_next_403_altro_rider(admin_headers, tomorrow):
     """rider_b (senza fermate assegnate) chiama route-to-next per fermata di rider_a -> 403."""
     r = requests.post(f"{BASE}/auth/login", timeout=15,
                      json={"email": f"TEST_{STAMP}_riderB@kilolava.com",
-                           "password": "TestPass123!"})
+                           "password": TEST_ADMIN_PASSWORD})
     assert r.status_code == 200
     hb = {"Authorization": f"Bearer {r.json()['access_token']}"}
     fa = _state["fermata_a"]["id"]

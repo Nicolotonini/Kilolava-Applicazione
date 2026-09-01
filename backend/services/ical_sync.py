@@ -11,6 +11,28 @@ import httpx
 from core.database import db
 from core.utils import now_iso
 
+_reconcile_cleaning = None
+SYSTEM_ACTOR = {"id": "system-ical", "name": "Sync iCal", "role": "admin"}
+
+
+def init_ical_deps(reconcile_cleaning):
+    global _reconcile_cleaning
+    _reconcile_cleaning = reconcile_cleaning
+
+
+async def _reconcile(event_id_or_doc):
+    if not _reconcile_cleaning:
+        return
+    try:
+        ev = event_id_or_doc
+        if isinstance(ev, str):
+            ev = await db.events.find_one({"id": ev}, {"_id": 0})
+        if ev:
+            await _reconcile_cleaning(ev, SYSTEM_ACTOR)
+    except Exception:
+        import logging
+        logging.getLogger(__name__).exception("Reconcile pulizia da sync iCal fallita")
+
 
 def detect_ical_source(url: str) -> str:
     url_lower = (url or "").lower()
@@ -97,6 +119,7 @@ async def sync_structure_ical(structure_id: str, ical_url: str, user_id: str) ->
                     }
                 await db.events.update_one({"id": ex["id"]}, {"$set": upd})
                 updated += 1
+                await _reconcile(ex["id"])
         else:
             event_id = str(uuid.uuid4())
             event_doc = {
@@ -129,7 +152,9 @@ async def sync_structure_ical(structure_id: str, ical_url: str, user_id: str) ->
                 "updated_at": now,
             }
             await db.events.insert_one(event_doc)
+            event_doc.pop("_id", None)
             created += 1
+            await _reconcile(event_doc)
 
     feed_uids = set(feed_events.keys())
     for uid, ex in existing_map.items():
@@ -143,7 +168,9 @@ async def sync_structure_ical(structure_id: str, ical_url: str, user_id: str) ->
                     await db.events.update_one({"id": ex["id"]}, {"$set": {
                         "status": "cancelled", "feed_cancelled": True, "updated_at": now}})
                     removed += 1
+                    await _reconcile(ex["id"])
             else:
+                await _reconcile({**ex, "_deleted": True})
                 await db.events.delete_one({"id": ex["id"]})
                 removed += 1
 

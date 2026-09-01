@@ -44,6 +44,7 @@ from services.ical_sync import (  # noqa: E402
     detect_ical_source as _detect_ical_source,
     sync_structure_ical as _sync_structure_ical,
     auto_sync_all_ical as _auto_sync_all_ical,
+    init_ical_deps as _init_ical_deps,
 )
 from services import scheduler_service  # noqa: E402
 
@@ -632,6 +633,18 @@ def _merged_permissions(role: str, extra_roles: list) -> list:
     return perms
 
 
+def effective_permissions(user: dict) -> list:
+    """Matrice permessi unica (fonte di verità): ruolo primario + extra_roles."""
+    return _merged_permissions(user.get("role"), user.get("extra_roles") or [])
+
+
+def require_permission(user: dict, perm: str):
+    """Guardia centralizzata basata sulla matrice permessi."""
+    perms = effective_permissions(user)
+    if "*" not in perms and perm not in perms:
+        raise HTTPException(status_code=403, detail="Non autorizzato")
+
+
 def _build_user_response(user: dict) -> UserResponse:
     """Build UserResponse from a raw user document."""
     first = user.get("first_name", "")
@@ -1069,6 +1082,8 @@ async def update_keys_settings(data: KeysSettingsUpdate, current_user: dict = De
 class KeyActionPayload(BaseModel):
     holder_user_id: Optional[str] = None
     note: Optional[str] = None
+    linked_task_id: Optional[str] = None
+    linked_task_type: Optional[str] = None  # cleaning | delivery
 
 KEY_COPIES = ("A", "B", "C")
 
@@ -1085,13 +1100,15 @@ async def _key_copy_state(structure_id: str, copy: str):
         raise HTTPException(status_code=400, detail="Copia mancante: non può essere movimentata")
     return s, kb
 
-async def _log_key_movement(s: dict, copy: str, action: str, holder: dict, note: str, user: dict) -> dict:
+async def _log_key_movement(s: dict, copy: str, action: str, holder: dict, note: str, user: dict,
+                            linked_task_id: Optional[str] = None, linked_task_type: Optional[str] = None) -> dict:
     mov = {
         "id": str(uuid.uuid4()),
         "structure_id": s["id"], "klv_code": s.get("klv_code"), "structure_name": s.get("name"),
         "copy": copy, "action": action,
         "holder_user_id": holder.get("id"), "holder_name": holder.get("name"),
         "note": note or "",
+        "linked_task_id": linked_task_id, "linked_task_type": linked_task_type,
         "by_user_id": user.get("id"), "by_user_name": user.get("name", ""),
         "at": now_iso(),
     }
@@ -1124,7 +1141,8 @@ async def key_ritiro(structure_id: str, copy: str, data: KeyActionPayload, curre
         f"access_info.key_boxes.{copy}.holder_name": holder["name"],
         f"access_info.key_boxes.{copy}.out_since": now,
         "updated_at": now}})
-    return await _log_key_movement(s, copy, "ritiro", holder, data.note, current_user)
+    return await _log_key_movement(s, copy, "ritiro", holder, data.note, current_user,
+                                   data.linked_task_id, data.linked_task_type)
 
 @api_router.post("/keys/{structure_id}/{copy}/riconsegna")
 async def key_riconsegna(structure_id: str, copy: str, data: KeyActionPayload, current_user: dict = Depends(get_current_user)):
@@ -1145,7 +1163,27 @@ async def key_riconsegna(structure_id: str, copy: str, data: KeyActionPayload, c
         f"access_info.key_boxes.{copy}.holder_name": None,
         f"access_info.key_boxes.{copy}.out_since": None,
         "updated_at": now}})
-    return await _log_key_movement(s, copy, "riconsegna", holder, data.note, current_user)
+    return await _log_key_movement(s, copy, "riconsegna", holder, data.note, current_user,
+                                   data.linked_task_id, data.linked_task_type)
+
+@api_router.get("/keys/out")
+async def keys_out_dashboard(current_user: dict = Depends(get_current_user)):
+    """Dashboard chiavi fuori sede: tutte le copie non presenti in ufficio con detentore e da quando."""
+    require_permission(current_user, "keys.read")
+    out = []
+    async for s in db.structures.find({"access_info.key_boxes": {"$exists": True}},
+                                      {"_id": 0, "id": 1, "name": 1, "klv_code": 1, "access_info.key_boxes": 1}):
+        boxes = (s.get("access_info") or {}).get("key_boxes") or {}
+        for copy, kb in boxes.items():
+            if isinstance(kb, dict) and kb.get("enabled", True) and not kb.get("present", True):
+                out.append({
+                    "structure_id": s["id"], "structure_name": s.get("name"), "klv_code": s.get("klv_code"),
+                    "copy": copy, "holder_user_id": kb.get("holder_user_id"),
+                    "holder_name": kb.get("holder_name"), "out_since": kb.get("out_since"),
+                })
+    out.sort(key=lambda x: x.get("out_since") or "")
+    return out
+
 
 @api_router.get("/keys/movements")
 async def key_movements_log(structure_id: Optional[str] = None, copy: Optional[str] = None,
@@ -2165,6 +2203,12 @@ class EventCreate(BaseModel):
     status: str = EventStatus.PENDING
     notes: Optional[str] = None
     source: Optional[str] = None
+    guests_count: Optional[int] = None
+    beds_double: Optional[int] = None
+    beds_single: Optional[int] = None
+    beds_sofa: Optional[int] = None
+    checkin_time: Optional[str] = None
+    checkout_time: Optional[str] = None
 
 class EventUpdate(BaseModel):
     event_type: Optional[str] = None
@@ -2340,10 +2384,25 @@ async def create_event(
         "status": event_data.status,
         "notes": event_data.notes,
         "source": event_data.source,
+        "guests_count": event_data.guests_count,
+        "beds_double": event_data.beds_double,
+        "beds_single": event_data.beds_single,
+        "beds_sofa": event_data.beds_sofa,
+        "checkin_time": event_data.checkin_time,
+        "checkout_time": event_data.checkout_time,
         "created_at": now,
         "updated_at": now,
     }
     await db.events.insert_one(event_doc)
+    event_doc.pop("_id", None)
+
+    # Fase 3 hardening: riconciliazione automatica soggiorno -> Pulizia
+    if event_data.event_type == "booking":
+        try:
+            await reconcile_cleaning_for_stay(event_doc, current_user)
+            await reconcile_cleaning_neighbors(event_doc, current_user)
+        except Exception as e:
+            logger.error(f"Reconcile pulizia su creazione soggiorno fallita: {e}")
 
     return EventResponse(
         id=event_id,
@@ -2436,6 +2495,14 @@ async def update_event(
     await db.events.update_one({"id": event_id}, {"$set": update_data})
 
     updated_ev = await db.events.find_one({"id": event_id}, {"_id": 0})
+    # Fase 3 hardening: riconciliazione automatica su modifica soggiorno (spostamento date, cancellazione, ecc.)
+    if updated_ev.get("event_type") == "booking":
+        try:
+            await reconcile_cleaning_for_stay(updated_ev, current_user)
+            await reconcile_cleaning_neighbors(updated_ev, current_user)
+            updated_ev = await db.events.find_one({"id": event_id}, {"_id": 0})
+        except Exception as e:
+            logger.error(f"Reconcile pulizia su modifica soggiorno fallita: {e}")
     struct = await db.structures.find_one({"id": updated_ev["structure_id"]}, {"_id": 0, "id": 1, "name": 1})
     unit_name = None
     if updated_ev.get("unit_id"):
@@ -2471,9 +2538,16 @@ async def update_event(
 @api_router.delete("/events/{event_id}")
 async def delete_event(event_id: str, current_user: dict = Depends(get_current_user)):
     require_ops(current_user)
-    result = await db.events.delete_one({"id": event_id})
-    if result.deleted_count == 0:
+    ev = await db.events.find_one({"id": event_id}, {"_id": 0})
+    if not ev:
         raise HTTPException(status_code=404, detail="Evento non trovato")
+    # Fase 3 hardening: cancellazione manuale soggiorno -> pulizia collegata cancelled (mai hard delete della pulizia)
+    if ev.get("event_type") == "booking":
+        try:
+            await reconcile_cleaning_for_stay({**ev, "_deleted": True}, current_user)
+        except Exception as e:
+            logger.error(f"Reconcile pulizia su cancellazione soggiorno fallita: {e}")
+    await db.events.delete_one({"id": event_id})
     return {"message": "Evento eliminato"}
 
 
@@ -3610,13 +3684,11 @@ async def upload_task_photo(
 async def serve_file(
     file_path: str,
     authorization: Optional[str] = Header(None),
-    auth: Optional[str] = Query(None),
 ):
+    # Fase 18 hardening: token SOLO nell'header Authorization (mai in query string)
     token = None
     if authorization and authorization.startswith("Bearer "):
         token = authorization.split(" ", 1)[1]
-    elif auth:
-        token = auth
     if not token:
         raise HTTPException(status_code=401, detail="Non autenticato")
     try:
@@ -3625,7 +3697,10 @@ async def serve_file(
             raise HTTPException(status_code=401, detail="Token non valido")
     except jwt.InvalidTokenError:
         raise HTTPException(status_code=401, detail="Token non valido")
-    data, content_type = get_object(file_path)
+    try:
+        data, content_type = get_object(file_path)
+    except Exception:
+        raise HTTPException(status_code=404, detail="File non trovato")
     return Response(content=data, media_type=content_type)
 
 
@@ -3935,9 +4010,7 @@ async def create_client_account(client_id: str, data: ClientAccountCreate, curre
     existing = await db.users.find_one({"email": data.email})
     if existing:
         raise HTTPException(status_code=400, detail="Email gia registrata")
-    existing_account = await db.users.find_one({"role": UserRole.CLIENT, "client_id": client_id})
-    if existing_account:
-        raise HTTPException(status_code=400, detail="Account portale gia esistente per questo cliente")
+    # Fase 14 hardening: consentiti PIÙ account portale per lo stesso cliente (es. proprietario + amministrazione)
 
     user_id = str(uuid.uuid4())
     now = now_iso()
@@ -3950,6 +4023,16 @@ async def create_client_account(client_id: str, data: ClientAccountCreate, curre
     }
     await db.users.insert_one(doc)
     return {"message": "Account portale creato", "user_id": user_id, "email": data.email}
+
+
+@api_router.get("/clients/{client_id}/portal-accounts")
+async def list_client_portal_accounts(client_id: str, current_user: dict = Depends(get_current_user)):
+    if not is_ops_user(current_user):
+        raise HTTPException(status_code=403, detail="Non autorizzato")
+    accounts = await db.users.find({"role": UserRole.CLIENT, "client_id": client_id},
+                                   {"_id": 0, "id": 1, "name": 1, "email": 1, "is_active": 1, "created_at": 1}
+                                   ).sort("created_at", 1).to_list(50)
+    return accounts
 
 
 # --- DELIVERY SLOT CONFIG (manager) ---
@@ -4035,6 +4118,8 @@ async def list_all_orders(
 
 @api_router.put("/operations/orders/{order_id}/status")
 async def update_order_status_manager(order_id: str, data: OrderStatusUpdate, current_user: dict = Depends(get_current_user)):
+    # Fase 6 hardening: sistema ordini legacy in SOLA LETTURA — il flusso canonico è /portal/ordini + Consegne
+    raise HTTPException(status_code=410, detail="Il vecchio sistema ordini è in sola lettura: usa il nuovo flusso Ordini")
     if not is_ops_user(current_user):
         raise HTTPException(status_code=403, detail="Non autorizzato")
     order = await db.orders.find_one({"id": order_id}, {"_id": 0})
@@ -4332,6 +4417,8 @@ async def portal_delivery_slots(
 
 @api_router.post("/portal/orders")
 async def create_order(data: OrderCreate, current_user: dict = Depends(get_current_user)):
+    # Fase 6 hardening: sistema ordini legacy in SOLA LETTURA — il flusso canonico è /portal/ordini
+    raise HTTPException(status_code=410, detail="Il vecchio sistema ordini è in sola lettura: usa il nuovo flusso Ordini")
     cid = _require_client(current_user)
     if cid != data.client_id:
         raise HTTPException(status_code=403, detail="Non autorizzato")
@@ -4425,6 +4512,8 @@ async def portal_order_detail(order_id: str, current_user: dict = Depends(get_cu
 
 @api_router.put("/portal/orders/{order_id}/cancel")
 async def cancel_order(order_id: str, current_user: dict = Depends(get_current_user)):
+    # Fase 6 hardening: sistema ordini legacy in SOLA LETTURA — il flusso canonico è /portal/ordini
+    raise HTTPException(status_code=410, detail="Il vecchio sistema ordini è in sola lettura: usa il nuovo flusso Ordini")
     cid = _require_client(current_user)
     order = await db.orders.find_one({"id": order_id, "client_id": cid}, {"_id": 0})
     if not order:
@@ -4585,6 +4674,8 @@ def _derive_order_status(richieste: list) -> str:
     if all(s == "annullata" for s, _ in stati):
         return "annullato"
     active = [x for x in stati if x[0] != "annullata"]
+    if any(s == "parzialmente_evasa" for s, _ in stati):
+        return "parziale"
     if active and all(s == "evasa" for s, _ in active):
         return "consegnato"
     if any(s == "in_consegna" for s, _ in stati):
@@ -5430,6 +5521,18 @@ def _cleaner_can_access(task: dict, user: dict) -> bool:
     return user["id"] in _cleaner_ids_of(task)
 
 
+def ensure_cleaning_access(task: dict, user: dict, write: bool = False):
+    """Fase 1 hardening — guardia centralizzata Pulizie:
+    OPS (admin/operations_manager) pieno; cleaner SOLO se assegnata al task; ogni altro ruolo 403."""
+    if is_ops_user(user):
+        return
+    if _acts_as_cleaner(user):
+        if not _cleaner_can_access(task, user):
+            raise HTTPException(status_code=403, detail="Non sei assegnata a questa pulizia")
+        return
+    raise HTTPException(status_code=403, detail="Non autorizzato")
+
+
 async def _validate_beds(structure_id: Optional[str], beds: dict):
     """Enforce structure bed capacity (max) and configured minimum."""
     if not structure_id:
@@ -5578,8 +5681,7 @@ async def get_cleaning_task(task_id: str, current_user: dict = Depends(get_curre
     if not task:
         raise HTTPException(status_code=404, detail="Task non trovato")
     # Cleaners can only see their own tasks
-    if _acts_as_cleaner(current_user) and not _cleaner_can_access(task, current_user):
-        raise HTTPException(status_code=403, detail="Non autorizzato")
+    ensure_cleaning_access(task, current_user)
     return await _enrich_cleaning_task(task)
 
 
@@ -5672,64 +5774,161 @@ class GeneraDaSoggiorniPayload(BaseModel):
     date: str
 
 
+async def reconcile_cleaning_for_stay(event: dict, actor: dict) -> dict:
+    """Fase 3 hardening — riconciliazione IDEMPOTENTE soggiorno (events booking) → Pulizia (cleaning_tasks).
+    - genera solo se la struttura ha il servizio 'cleaning' attivo
+    - link via booking_event_id (multi-unit safe: 1 booking = 1 pulizia)
+    - aggiorna data/check-in se la pulizia non è iniziata; warning se già iniziata/completata
+    - cancellazione soggiorno → pulizia cancelled (mai hard delete), warning se già operativa
+    """
+    if not event or event.get("event_type") != "booking":
+        return {"action": "skip"}
+    sid = event.get("structure_id")
+    if not sid:
+        return {"action": "skip"}
+    s = await db.structures.find_one({"id": sid}, {"_id": 0, "id": 1, "name": 1, "services": 1, "bed_config": 1,
+                                                   "check_in_time": 1, "check_out_time": 1})
+    if not s or StructureService.CLEANING not in (s.get("services") or []):
+        return {"action": "skip", "reason": "cleaning_service_off"}
+    checkout_date = (event.get("end_time") or "")[:10]
+    if not checkout_date:
+        return {"action": "skip"}
+    cancelled = bool(event.get("feed_cancelled")) or event.get("status") == "cancelled" or bool(event.get("_deleted"))
+    now = now_iso()
+
+    task = None
+    if event.get("cleaning_task_id"):
+        task = await db.cleaning_tasks.find_one({"id": event["cleaning_task_id"]}, {"_id": 0})
+    if not task:
+        task = await db.cleaning_tasks.find_one({"booking_event_id": event["id"], "status": {"$ne": CleaningTaskStatus.CANCELLED}}, {"_id": 0})
+
+    if cancelled:
+        if not task or task.get("status") == CleaningTaskStatus.CANCELLED:
+            return {"action": "none"}
+        if task["status"] in (CleaningTaskStatus.IN_PROGRESS, CleaningTaskStatus.COMPLETED):
+            await notify_ops_users("Pulizia da verificare",
+                                   f"Soggiorno cancellato ma la pulizia di {s['name']} del {task.get('date')} risulta già {task['status']}: verificare.",
+                                   "warning", priority="high", entity_type="cleaning_task", entity_id=task["id"])
+            return {"action": "warning_started", "task_id": task["id"]}
+        await db.cleaning_tasks.update_one({"id": task["id"]}, {"$set": {
+            "status": CleaningTaskStatus.CANCELLED, "cancel_reason": "Soggiorno cancellato", "updated_at": now}})
+        return {"action": "task_cancelled", "task_id": task["id"]}
+
+    # check-in stesso giorno sulla STESSA unità (o struttura se senza unità)
+    ci_q = {"event_type": "booking", "structure_id": sid, "id": {"$ne": event["id"]},
+            "feed_cancelled": {"$ne": True},
+            "start_time": {"$gte": checkout_date, "$lte": f"{checkout_date}T23:59:59"}}
+    if event.get("unit_id"):
+        ci_q["unit_id"] = event["unit_id"]
+    next_stay = await db.events.find_one(ci_q, {"_id": 0, "start_time": 1})
+    checkin_today = next_stay is not None
+    checkin_time = None
+    if checkin_today:
+        st = next_stay.get("start_time") or ""
+        checkin_time = st[11:16] if len(st) >= 16 and st[11:16] != "00:00" else (s.get("check_in_time") or None)
+
+    if task:
+        if task["status"] in (CleaningTaskStatus.IN_PROGRESS, CleaningTaskStatus.COMPLETED):
+            if task.get("date") != checkout_date:
+                await notify_ops_users("Pulizia da verificare",
+                                       f"Checkout spostato al {checkout_date} ma la pulizia di {s['name']} è già {task['status']} (data {task.get('date')}): verificare.",
+                                       "warning", priority="high", entity_type="cleaning_task", entity_id=task["id"])
+                return {"action": "warning_started", "task_id": task["id"]}
+            return {"action": "ok", "task_id": task["id"]}
+        updates = {}
+        if task.get("date") != checkout_date:
+            updates["date"] = checkout_date
+        if bool(task.get("checkin_today")) != checkin_today:
+            updates["checkin_today"] = checkin_today
+        if (task.get("checkin_time") or None) != checkin_time:
+            updates["checkin_time"] = checkin_time
+        if event.get("guests_count") is not None and task.get("guests_count") != event.get("guests_count"):
+            updates["guests_count"] = event["guests_count"]
+        if updates:
+            updates["updated_at"] = now
+            await db.cleaning_tasks.update_one({"id": task["id"]}, {"$set": updates})
+        if event.get("cleaning_task_id") != task["id"]:
+            await db.events.update_one({"id": event["id"]}, {"$set": {"cleaning_task_id": task["id"], "updated_at": now}})
+        return {"action": "updated" if updates else "ok", "task_id": task["id"]}
+
+    # nuova pulizia — letti: override soggiorno > Unit > Struttura
+    bc = {}
+    if event.get("unit_id"):
+        unit_doc = await db.units.find_one({"id": event["unit_id"]}, {"_id": 0})
+        if unit_doc:
+            bc = parse_unit_configs(unit_doc).get("bed_config") or {}
+    if not bc:
+        bc = s.get("bed_config") or {}
+    if hasattr(bc, "model_dump"):
+        bc = bc.model_dump()
+    payload = CleaningTaskCreate(
+        structure_id=sid,
+        unit_id=event.get("unit_id"),
+        date=checkout_date,
+        booking_event_id=event["id"],
+        scheduled_time=(event.get("checkout_time") or s.get("check_out_time")),
+        guests_count=event.get("guests_count"),
+        beds_double=event.get("beds_double") if event.get("beds_double") is not None else bc.get("beds_double"),
+        beds_single=event.get("beds_single") if event.get("beds_single") is not None else bc.get("beds_single"),
+        beds_sofa=event.get("beds_sofa") if event.get("beds_sofa") is not None else bc.get("sofa_beds"),
+        checkin_today=checkin_today,
+        checkin_time=checkin_time,
+        notes="Generata automaticamente dal soggiorno (checkout)",
+    )
+    created = await create_cleaning_task(payload, actor)
+    tid = created.get("id") if isinstance(created, dict) else getattr(created, "id", None)
+    return {"action": "created", "task_id": tid}
+
+
+async def reconcile_cleaning_neighbors(event: dict, actor: dict):
+    """Quando un soggiorno inizia/cambia data di check-in, aggiorna il flag 'check-in oggi'
+    sulle pulizie dei soggiorni che terminano quel giorno (stessa unità o struttura)."""
+    if not event or event.get("event_type") != "booking":
+        return
+    ci_date = (event.get("start_time") or "")[:10]
+    sid = event.get("structure_id")
+    if not ci_date or not sid:
+        return
+    q = {"event_type": "booking", "structure_id": sid, "id": {"$ne": event.get("id")},
+         "feed_cancelled": {"$ne": True},
+         "end_time": {"$gte": ci_date, "$lte": f"{ci_date}T23:59:59"}}
+    if event.get("unit_id"):
+        q["unit_id"] = event["unit_id"]
+    others = await db.events.find(q, {"_id": 0}).to_list(50)
+    for o in others:
+        try:
+            await reconcile_cleaning_for_stay(o, actor)
+        except Exception as e:
+            logger.error(f"Reconcile neighbor fallita per evento {o.get('id')}: {e}")
+
+
 @api_router.post("/cleaning-tasks/genera-da-soggiorni")
 async def genera_pulizie_da_soggiorni(data: GeneraDaSoggiorniPayload, current_user: dict = Depends(get_current_user)):
-    """Fase 8 — Prenotazioni→Pulizie: genera (idempotente) le pulizie dai checkout dei soggiorni."""
+    """Riconcilia giornata (recupero/amministrazione): il flusso normale è automatico via reconcile_cleaning_for_stay."""
     if not is_ops_user(current_user):
         raise HTTPException(status_code=403, detail="Non autorizzato")
     date = data.date
     bookings = await db.events.find({
         "event_type": "booking",
-        "end_time": {"$gte": f"{date}T00:00:00", "$lte": f"{date}T23:59:59"},
-        "feed_cancelled": {"$ne": True},
-    }, {"_id": 0}).to_list(500)
-    checkins_today = set()
-    async for b in db.events.find({
-        "event_type": "booking",
-        "start_time": {"$gte": f"{date}T00:00:00", "$lte": f"{date}T23:59:59"},
-        "feed_cancelled": {"$ne": True},
-    }, {"_id": 0, "structure_id": 1}):
-        if b.get("structure_id"):
-            checkins_today.add(b["structure_id"])
-
-    created, linked, skipped = 0, 0, 0
-    now = now_iso()
+        "end_time": {"$gte": date, "$lte": f"{date}T23:59:59"},
+    }, {"_id": 0}).to_list(1000)
+    tally = {"created": 0, "updated": 0, "cancelled": 0, "warnings": 0, "ok": 0, "skipped": 0}
     for b in bookings:
-        sid = b.get("structure_id")
-        if not sid:
-            skipped += 1
-            continue
-        if b.get("cleaning_task_id"):
-            t = await db.cleaning_tasks.find_one({"id": b["cleaning_task_id"], "status": {"$ne": "cancelled"}}, {"_id": 0, "id": 1})
-            if t:
-                skipped += 1
-                continue
-        existing = await db.cleaning_tasks.find_one({"structure_id": sid, "date": date, "status": {"$ne": "cancelled"}}, {"_id": 0, "id": 1})
-        if existing:
-            await db.events.update_one({"id": b["id"]}, {"$set": {"cleaning_task_id": existing["id"], "updated_at": now}})
-            linked += 1
-            continue
-        s = await db.structures.find_one({"id": sid}, {"_id": 0, "bed_config": 1, "check_in_time": 1, "check_out_time": 1})
-        if not s:
-            skipped += 1
-            continue
-        bc = s.get("bed_config") or {}
-        payload = CleaningTaskCreate(
-            structure_id=sid,
-            date=date,
-            booking_event_id=b["id"],
-            scheduled_time=s.get("check_out_time"),
-            guests_count=b.get("guests_count"),
-            beds_double=bc.get("beds_double"),
-            beds_single=bc.get("beds_single"),
-            beds_sofa=bc.get("sofa_beds"),
-            checkin_today=sid in checkins_today,
-            checkin_time=s.get("check_in_time") if sid in checkins_today else None,
-            notes="Generata automaticamente dal soggiorno (checkout)",
-        )
-        await create_cleaning_task(payload, current_user)
-        created += 1
-    return {"created": created, "linked": linked, "skipped": skipped, "bookings_analizzati": len(bookings), "date": date}
+        res = await reconcile_cleaning_for_stay(b, current_user)
+        a = res.get("action")
+        if a == "created":
+            tally["created"] += 1
+        elif a == "updated":
+            tally["updated"] += 1
+        elif a == "task_cancelled":
+            tally["cancelled"] += 1
+        elif a == "warning_started":
+            tally["warnings"] += 1
+        elif a == "ok":
+            tally["ok"] += 1
+        else:
+            tally["skipped"] += 1
+    return {**tally, "bookings_analizzati": len(bookings), "date": date}
 
 
 class AssignCleanerRequest(BaseModel):
@@ -5863,10 +6062,26 @@ async def update_cleaning_task(task_id: str, data: CleaningTaskUpdate, current_u
 async def delete_cleaning_task(task_id: str, current_user: dict = Depends(get_current_user)):
     if not is_ops_user(current_user):
         raise HTTPException(status_code=403, detail="Non autorizzato")
-    result = await db.cleaning_tasks.delete_one({"id": task_id})
-    if result.deleted_count == 0:
+    task = await db.cleaning_tasks.find_one({"id": task_id}, {"_id": 0})
+    if not task:
         raise HTTPException(status_code=404, detail="Task non trovato")
-    await db.cleaning_issues.delete_many({"cleaning_task_id": task_id})
+    # Fase 17 hardening: hard delete SOLO senza storico; altrimenti usare Annulla (status cancelled)
+    refs = []
+    if task.get("status") in (CleaningTaskStatus.IN_PROGRESS, CleaningTaskStatus.COMPLETED):
+        refs.append(f"stato '{task['status']}'")
+    if task.get("started_at"):
+        refs.append("lavoro iniziato")
+    if task.get("media"):
+        refs.append(f"Media ({len(task['media'])})")
+    if task.get("issues"):
+        refs.append(f"Segnalazioni ({len(task['issues'])})")
+    n_issues = await db.cleaning_issues.count_documents({"cleaning_task_id": task_id})
+    if n_issues:
+        refs.append(f"Segnalazioni collegate ({n_issues})")
+    if refs:
+        raise HTTPException(status_code=400,
+                            detail=f"Impossibile eliminare: la pulizia fa parte dello storico — {', '.join(refs)}. Usa Annulla.")
+    await db.cleaning_tasks.delete_one({"id": task_id})
     return {"message": "Task eliminato"}
 
 
@@ -5881,8 +6096,7 @@ async def update_cleaning_task_status(task_id: str, data: CleaningStatusUpdate, 
     task = await db.cleaning_tasks.find_one({"id": task_id}, {"_id": 0})
     if not task:
         raise HTTPException(status_code=404, detail="Task non trovato")
-    if _acts_as_cleaner(current_user) and not _cleaner_can_access(task, current_user):
-        raise HTTPException(status_code=403, detail="Non autorizzato")
+    ensure_cleaning_access(task, current_user)
     if data.status not in CLEANING_TASK_STATUSES:
         raise HTTPException(status_code=400, detail="Stato non valido")
     if _acts_as_cleaner(current_user) and data.status in (CleaningTaskStatus.IN_PROGRESS, CleaningTaskStatus.COMPLETED, CleaningTaskStatus.CANCELLED):
@@ -5923,8 +6137,7 @@ async def update_checklist_response(task_id: str, data: ChecklistResponseUpdate,
     task = await db.cleaning_tasks.find_one({"id": task_id}, {"_id": 0})
     if not task:
         raise HTTPException(status_code=404, detail="Task non trovato")
-    if _acts_as_cleaner(current_user) and not _cleaner_can_access(task, current_user):
-        raise HTTPException(status_code=403, detail="Non autorizzato")
+    ensure_cleaning_access(task, current_user)
     if not task.get("checklist"):
         raise HTTPException(status_code=400, detail="Nessuna checklist associata")
 
@@ -5951,8 +6164,7 @@ async def upload_cleaning_photo(
     task = await db.cleaning_tasks.find_one({"id": task_id}, {"_id": 0})
     if not task:
         raise HTTPException(status_code=404, detail="Task non trovato")
-    if _acts_as_cleaner(current_user) and not _cleaner_can_access(task, current_user):
-        raise HTTPException(status_code=403, detail="Non autorizzato")
+    ensure_cleaning_access(task, current_user)
 
     ext = file.filename.split(".")[-1] if "." in file.filename else "jpg"
     path = f"{APP_NAME}/cleaning/{task_id}/{photo_type}_{uuid.uuid4()}.{ext}"
@@ -5991,8 +6203,7 @@ async def report_cleaning_issue(
     task = await db.cleaning_tasks.find_one({"id": task_id}, {"_id": 0})
     if not task:
         raise HTTPException(status_code=404, detail="Task non trovato")
-    if _acts_as_cleaner(current_user) and not _cleaner_can_access(task, current_user):
-        raise HTTPException(status_code=403, detail="Non autorizzato")
+    ensure_cleaning_access(task, current_user)
     if data.category not in ISSUE_CATEGORIES:
         raise HTTPException(status_code=400, detail="Categoria non valida")
 
@@ -6111,8 +6322,7 @@ async def upload_cleaning_media(
     task = await db.cleaning_tasks.find_one({"id": task_id}, {"_id": 0})
     if not task:
         raise HTTPException(status_code=404, detail="Task non trovato")
-    if _acts_as_cleaner(current_user) and not _cleaner_can_access(task, current_user):
-        raise HTTPException(status_code=403, detail="Non autorizzato")
+    ensure_cleaning_access(task, current_user)
     if media_type not in CLEANING_MEDIA_TYPES:
         raise HTTPException(status_code=400, detail="Tipo media non valido")
     if task.get("status") in (CleaningTaskStatus.COMPLETED, CleaningTaskStatus.CANCELLED):
@@ -6190,8 +6400,7 @@ async def add_cleaning_note(task_id: str, data: CleaningNoteCreate, current_user
     task = await db.cleaning_tasks.find_one({"id": task_id}, {"_id": 0})
     if not task:
         raise HTTPException(status_code=404, detail="Task non trovato")
-    if _acts_as_cleaner(current_user) and not _cleaner_can_access(task, current_user):
-        raise HTTPException(status_code=403, detail="Non autorizzato")
+    ensure_cleaning_access(task, current_user)
     note = {
         "id": str(uuid.uuid4()),
         "text": data.text,
@@ -6225,8 +6434,7 @@ async def complete_cleaning_task(task_id: str, current_user: dict = Depends(get_
     task = await db.cleaning_tasks.find_one({"id": task_id}, {"_id": 0})
     if not task:
         raise HTTPException(status_code=404, detail="Task non trovato")
-    if _acts_as_cleaner(current_user) and not _cleaner_can_access(task, current_user):
-        raise HTTPException(status_code=403, detail="Non autorizzato")
+    ensure_cleaning_access(task, current_user)
     if task.get("status") == CleaningTaskStatus.COMPLETED:
         return await _enrich_cleaning_task(task)
 
@@ -6252,7 +6460,22 @@ async def complete_cleaning_task(task_id: str, current_user: dict = Depends(get_
         "$push": {"history": {"action": "completed", "by": current_user["id"], "by_name": current_user.get("name", ""), "at": now}},
     })
     updated = await db.cleaning_tasks.find_one({"id": task_id}, {"_id": 0})
-    return await _enrich_cleaning_task(updated)
+    enriched = await _enrich_cleaning_task(updated)
+    # Fase 10 hardening: warning chiave non riconsegnata al completamento
+    if task.get("structure_id"):
+        s_keys = await db.structures.find_one({"id": task["structure_id"]}, {"_id": 0, "name": 1, "access_info": 1})
+        boxes = ((s_keys or {}).get("access_info") or {}).get("key_boxes") or {}
+        held = sorted([c for c, kb in boxes.items()
+                       if isinstance(kb, dict) and not kb.get("present", True) and kb.get("holder_user_id") == current_user["id"]])
+        if held:
+            enriched["key_warning"] = (f"Hai ancora la chiave {', '.join(held)} di "
+                                       f"{(s_keys or {}).get('name', 'questa struttura')}: ricordati di riconsegnarla")
+            await notify_ops_users(
+                "Chiave non riconsegnata",
+                f"{current_user.get('name', '')} ha completato la pulizia di {(s_keys or {}).get('name', '')} "
+                f"ma ha ancora la chiave {', '.join(held)}.",
+                "warning", priority="high", entity_type="cleaning_task", entity_id=task_id)
+    return enriched
 
 
 def _copy_task_for_date(source: dict, date: str, user: dict) -> dict:
@@ -6398,8 +6621,7 @@ async def cleaning_task_operational(task_id: str, current_user: dict = Depends(g
     task = await db.cleaning_tasks.find_one({"id": task_id}, {"_id": 0})
     if not task:
         raise HTTPException(status_code=404, detail="Task non trovato")
-    if _acts_as_cleaner(current_user) and not _cleaner_can_access(task, current_user):
-        raise HTTPException(status_code=403, detail="Non autorizzato")
+    ensure_cleaning_access(task, current_user)
     if not user_has_role(current_user, UserRole.CLEANER) and not is_ops_user(current_user):
         raise HTTPException(status_code=403, detail="Non autorizzato")
     result = {"structure": None, "media": {"arrive": [], "enter": [], "warehouse": []}}
@@ -8505,6 +8727,11 @@ from routes.consegne import create_consegne_router, init_consegne_deps, migrate_
 from routes.lavanderia import create_lavanderia_router, init_lavanderia_deps  # noqa: E402
 from routes.mappa import create_mappa_router, init_mappa_deps  # noqa: E402
 from routes.sheets_anagrafiche import create_sheets_anagrafiche_router  # noqa: E402
+async def _ical_reconcile_hook(ev, actor):
+    await reconcile_cleaning_for_stay(ev, actor)
+    await reconcile_cleaning_neighbors(ev, actor)
+
+_init_ical_deps(_ical_reconcile_hook)
 init_segnalazioni_deps(
     create_notification=create_notification,
     notify_ops_users=notify_ops_users,
@@ -8529,6 +8756,7 @@ api_router.include_router(create_magazzino_router(get_current_user, is_ops_user)
 init_consegne_deps(
     get_client_display_name=get_client_display_name,
     create_notification=create_notification,
+    notify_ops_users=notify_ops_users,
     local_today=local_today,
     put_object=put_object,
 )

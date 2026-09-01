@@ -1,3 +1,4 @@
+from testenv import TEST_ADMIN_USERNAME, TEST_ADMIN_PASSWORD, TEST_FIXTURE_PASSWORD  # noqa: E402
 """Pytest per il Centro Gestione Segnalazioni (iteration 13)."""
 import os
 import time
@@ -12,9 +13,9 @@ load_dotenv("/app/backend/.env")
 BASE_URL = os.environ.get("REACT_APP_BACKEND_URL").rstrip("/")
 API = f"{BASE_URL}/api"
 
-ADMIN = {"email": "test_user@kilolava.com", "password": "TestPass123!"}
-ADDETTA = {"email": "addetta_test@kilolava.com", "password": "AddettaTest123!"}
-CLIENT = {"email": "cliente_test@kilolava.com", "password": "ClienteTest123!"}
+ADMIN = {"email": TEST_ADMIN_USERNAME, "password": TEST_ADMIN_PASSWORD}
+ADDETTA = {"email": "addetta_test@kilolava.com", "password": TEST_FIXTURE_PASSWORD}
+CLIENT = {"email": "cliente_test@kilolava.com", "password": TEST_FIXTURE_PASSWORD}
 
 
 def _login(creds):

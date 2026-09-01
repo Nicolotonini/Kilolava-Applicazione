@@ -1,3 +1,4 @@
+from testenv import TEST_ADMIN_USERNAME, TEST_ADMIN_PASSWORD, TEST_FIXTURE_PASSWORD  # noqa: E402
 """Iter32 — Fase 39 Auth/Users backend regression.
 
 Copre: login username kilolava + legacy email, brute force lockout, creazione utenti
@@ -26,9 +27,9 @@ if not BASE_URL:
 
 API = f"{BASE_URL}/api"
 
-ADMIN_USER = "admin@kilolava.it"
+ADMIN_USER = TEST_ADMIN_USERNAME
 ADMIN_EMAIL_LEGACY = "test_user@kilolava.com"
-ADMIN_PASS = "TestPass123!"
+ADMIN_PASS = TEST_ADMIN_PASSWORD
 
 ADMIN_DEV = f"dev-admin-iter32-{uuid.uuid4().hex[:8]}"
 

@@ -1,3 +1,4 @@
+from testenv import TEST_ADMIN_USERNAME, TEST_ADMIN_PASSWORD, TEST_FIXTURE_PASSWORD  # noqa: E402
 """GATE FASE 7 — Chiavi: ritiri e riconsegne tracciate (registro key_movements). Fixture + cleanup totale."""
 import os
 import requests
@@ -18,7 +19,7 @@ def check(name, ok, extra=""):
 
 
 admin_tok = requests.post(f"{API}/auth/login", json={
-    "username": "admin@kilolava.it", "password": "TestPass123!"}).json()["access_token"]
+    "username": TEST_ADMIN_USERNAME, "password": TEST_ADMIN_PASSWORD}).json()["access_token"]
 A = {"Authorization": f"Bearer {admin_tok}"}
 
 C = {"clients": [], "structures": [], "users": []}
@@ -42,15 +43,15 @@ try:
         }}}).json()
     C["structures"].append(s["id"])
     cl = requests.post(f"{API}/users", headers=A, json={
-        "first_name": "TEST_GATE7_cl", "last_name": "K", "role": "cleaner", "password": "GateTest123!"}).json()
+        "first_name": "TEST_GATE7_cl", "last_name": "K", "role": "cleaner", "password": TEST_FIXTURE_PASSWORD}).json()
     C["users"].append(cl["id"])
     CL = {"Authorization": "Bearer " + requests.post(f"{API}/auth/login", json={
-        "username": cl["login_username"], "password": "GateTest123!"}).json()["access_token"]}
+        "username": cl["login_username"], "password": TEST_FIXTURE_PASSWORD}).json()["access_token"]}
     rd = requests.post(f"{API}/users", headers=A, json={
-        "first_name": "TEST_GATE7_rd", "last_name": "K", "role": "rider", "password": "GateTest123!"}).json()
+        "first_name": "TEST_GATE7_rd", "last_name": "K", "role": "rider", "password": TEST_FIXTURE_PASSWORD}).json()
     C["users"].append(rd["id"])
     RD = {"Authorization": "Bearer " + requests.post(f"{API}/auth/login", json={
-        "username": rd["login_username"], "password": "GateTest123!"}).json()["access_token"]}
+        "username": rd["login_username"], "password": TEST_FIXTURE_PASSWORD}).json()["access_token"]}
 
     # 1. Ops registra ritiro copia A per la cleaner
     r = requests.post(f"{API}/keys/{s['id']}/A/ritiro", headers=A, json={"holder_user_id": cl["id"], "note": "pulizia mattina"})

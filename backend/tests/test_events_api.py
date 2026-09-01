@@ -1,3 +1,4 @@
+from testenv import TEST_ADMIN_USERNAME, TEST_ADMIN_PASSWORD, TEST_FIXTURE_PASSWORD  # noqa: E402
 """
 Kilolava Events API Tests - Calendar Module
 Tests for Events CRUD and Day Stats endpoints:
@@ -19,7 +20,7 @@ API_URL = f"{BASE_URL}/api"
 
 # Test credentials
 TEST_EMAIL = "test_user@kilolava.com"
-TEST_PASSWORD = "TestPass123!"
+TEST_PASSWORD = TEST_ADMIN_PASSWORD
 
 # Test date for events
 TEST_DATE = "2026-03-24"

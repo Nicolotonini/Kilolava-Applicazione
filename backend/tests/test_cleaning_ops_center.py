@@ -1,3 +1,4 @@
+from testenv import TEST_ADMIN_USERNAME, TEST_ADMIN_PASSWORD, TEST_FIXTURE_PASSWORD  # noqa: E402
 """
 Iteration 9 — CENTRO OPERATIVO PULIZIE Admin
 Tests: Zones CRUD/reorder/RBAC, Structure operational_zone_id + enrichment,
@@ -24,8 +25,8 @@ def _load_backend_url():
 BASE_URL = _load_backend_url()
 assert BASE_URL, "REACT_APP_BACKEND_URL not found"
 
-ADMIN = {"email": "test_user@kilolava.com", "password": "TestPass123!"}
-CLEANER = {"email": "addetta_test@kilolava.com", "password": "AddettaTest123!"}
+ADMIN = {"email": TEST_ADMIN_USERNAME, "password": TEST_ADMIN_PASSWORD}
+CLEANER = {"email": "addetta_test@kilolava.com", "password": TEST_FIXTURE_PASSWORD}
 TEST_STRUCTURE_ID = "3d70c213-d948-47ec-9839-b5a37acc2d23"  # Appartamento Centro (KLV-0002)
 
 
@@ -282,7 +283,7 @@ class TestRegression:
 
     def test_client_portal_minimal(self):
         # Client login → /portal endpoints must not expose internal data
-        tok = _login({"email": "cliente_test@kilolava.com", "password": "ClienteTest123!"})
+        tok = _login({"email": "cliente_test@kilolava.com", "password": TEST_FIXTURE_PASSWORD})
         h = {"Authorization": f"Bearer {tok}"}
         # Portal endpoints
         r = requests.get(f"{BASE_URL}/api/portal/me", headers=h, timeout=15)

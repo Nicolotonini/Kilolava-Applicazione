@@ -1,3 +1,4 @@
+from testenv import TEST_ADMIN_USERNAME, TEST_ADMIN_PASSWORD, TEST_FIXTURE_PASSWORD  # noqa: E402
 """
 Fidelity tests for Kilolava replica - verifies the imported data is accessible
 and core endpoints respond correctly.
@@ -9,7 +10,7 @@ from datetime import datetime
 
 BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "https://kilolava-rebuild.preview.emergentagent.com").rstrip("/")
 ADMIN_EMAIL = "test_user@kilolava.com"
-ADMIN_PASSWORD = "TestPass123!"
+ADMIN_PASSWORD = TEST_ADMIN_PASSWORD
 
 
 @pytest.fixture(scope="session")

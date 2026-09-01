@@ -1,3 +1,4 @@
+from testenv import TEST_ADMIN_USERNAME, TEST_ADMIN_PASSWORD, TEST_FIXTURE_PASSWORD  # noqa: E402
 """
 Test suite for Client Portal & Orders Module
 Tests: Portal endpoints, Orders CRUD, Operations endpoints, Client account management
@@ -11,7 +12,7 @@ BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', '').rstrip('/')
 
 # Test credentials
 MANAGER_EMAIL = "test_user@kilolava.com"
-MANAGER_PASSWORD = "TestPass123!"
+MANAGER_PASSWORD = TEST_ADMIN_PASSWORD
 CLIENT_EMAIL = "mario.rossi@cliente.it"
 CLIENT_PASSWORD = "Client123!"
 CLIENT_ID = "eab85d0f-45c0-458f-ab88-08c442810aff"

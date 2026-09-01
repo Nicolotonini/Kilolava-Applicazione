@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
 import api, { API_BASE } from '../lib/api';
+import { AuthImg } from '../components/kilolava/AuthMedia';
 import { NotificationBell } from '../components/NotificationBell';
 import { Card, CardContent } from '../components/ui/card';
 import { Button } from '../components/ui/button';
@@ -154,7 +155,7 @@ const TaskDetail = ({ task, onBack, onRefresh }) => {
               <div className="flex gap-2 overflow-x-auto">
                 {issuePhotos.map((p, i) => (
                   <div key={i} className="w-24 h-24 rounded-lg bg-muted border overflow-hidden flex-shrink-0">
-                    <img src={`${API_BASE}/files/${p.path}?auth=${localStorage.getItem('kilolava_token')}`} alt="" className="w-full h-full object-cover" />
+                    <AuthImg path={p.path} alt="" className="w-full h-full object-cover" />
                   </div>
                 ))}
               </div>
@@ -170,7 +171,7 @@ const TaskDetail = ({ task, onBack, onRefresh }) => {
               <div className="flex gap-2 overflow-x-auto">
                 {afterPhotos.map((p, i) => (
                   <div key={i} className="w-24 h-24 rounded-lg bg-muted border overflow-hidden flex-shrink-0">
-                    <img src={`${API_BASE}/files/${p.path}?auth=${localStorage.getItem('kilolava_token')}`} alt="" className="w-full h-full object-cover" />
+                    <AuthImg path={p.path} alt="" className="w-full h-full object-cover" />
                   </div>
                 ))}
               </div>

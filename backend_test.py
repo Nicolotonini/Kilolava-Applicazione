@@ -1,3 +1,5 @@
+import sys; sys.path.insert(0, "/app/backend/tests")
+from testenv import TEST_ADMIN_USERNAME, TEST_ADMIN_PASSWORD, TEST_FIXTURE_PASSWORD  # noqa: E402
 import requests
 import sys
 import json
@@ -99,7 +101,7 @@ class KilolavaAPITester:
         """Test user login with existing test user"""
         login_data = {
             "email": "test_user@kilolava.com",
-            "password": "TestPass123!"
+            "password": TEST_ADMIN_PASSWORD
         }
         
         response = self.run_test("User Login", "POST", "auth/login", 200, login_data, auth_required=False)

@@ -1,3 +1,4 @@
+from testenv import TEST_ADMIN_USERNAME, TEST_ADMIN_PASSWORD, TEST_FIXTURE_PASSWORD  # noqa: E402
 """Iteration 29 - Assistant AI + Client noleggio_config + Lavanderia Privata da_verificare + magazzino movimenti code search.
 
 Copertura:
@@ -31,7 +32,7 @@ def _load_env():
 
 _load_env()
 BASE = os.environ["REACT_APP_BACKEND_URL"].rstrip("/") + "/api"
-ADMIN = {"email": "test_user@kilolava.com", "password": "TestPass123!"}
+ADMIN = {"email": "test_user@kilolava.com", "password": TEST_ADMIN_PASSWORD}
 STAMP = f"iter29_{int(time.time())}"
 S = {"users": [], "clients": [], "structures": [], "cleaning_tasks": [],
      "fabbisogni": [], "logistics_tasks": [], "laundry_jobs": [], "movements": [],
@@ -370,7 +371,7 @@ def test_12_movimenti_search_by_code(admin_headers):
 # ---------- 13 Assistant: permessi + sessions + chat SSE ----------
 
 def _make_rider(admin_headers):
-    payload = {"email": f"TEST_{STAMP}_rider@kilolava.com", "password": "TestPass123!",
+    payload = {"email": f"TEST_{STAMP}_rider@kilolava.com", "password": TEST_ADMIN_PASSWORD,
                "first_name": "Rid", "last_name": "Er", "role": "rider"}
     r = requests.post(f"{BASE}/users", json=payload, headers=admin_headers, timeout=15)
     assert r.status_code in (200, 201), r.text

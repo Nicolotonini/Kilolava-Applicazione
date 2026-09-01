@@ -1,3 +1,4 @@
+from testenv import TEST_ADMIN_USERNAME, TEST_ADMIN_PASSWORD, TEST_FIXTURE_PASSWORD  # noqa: E402
 """
 Notifications Module API Tests for Kilolava
 Tests: CRUD operations, role isolation, auto-triggers from cleaning/maintenance/orders
@@ -10,7 +11,7 @@ import uuid
 BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', '').rstrip('/')
 
 # Test credentials
-ADMIN_CREDS = {"email": "test_user@kilolava.com", "password": "TestPass123!"}
+ADMIN_CREDS = {"email": "test_user@kilolava.com", "password": TEST_ADMIN_PASSWORD}
 CLEANER_CREDS = {"email": "maria.bianchi@kilolava.com", "password": "CleanPass123!"}
 MAINTENANCE_CREDS = {"email": "luigi.verdi@kilolava.com", "password": "MaintPass123!"}
 RIDER_CREDS = {"email": "rider1@kilolava.com", "password": "KilolavaPass!2026"}

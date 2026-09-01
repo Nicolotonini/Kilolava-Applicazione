@@ -48,6 +48,7 @@ const NAV = [
       { key: 'ms-overview', path: '/magazzino-strutture', label: 'Panoramica' },
       { key: 'ms-noleggio', path: '/magazzino-strutture/noleggio', label: 'Lavanderia a Noleggio' },
       { key: 'ms-forniture', path: '/magazzino-strutture/forniture', label: 'Forniture / Consumabili' },
+      { key: 'ms-pulizie', path: '/magazzino-strutture/pulizie', label: 'Prodotti Pulizie' },
       { key: 'ms-movimenti', path: '/magazzino-strutture/movimenti', label: 'Movimenti' },
     ],
   },
@@ -119,6 +120,8 @@ function getBreadcrumb(pathname, search) {
   if (pathname.startsWith('/magazzino-strutture/noleggio/')) return { title: 'Noleggio in struttura', crumbs: [{ label: 'Lavanderia a Noleggio', to: '/magazzino-strutture/noleggio' }] };
   if (pathname === '/magazzino-strutture/forniture') return { title: 'Forniture / Consumabili', crumbs: [{ label: 'Magazzino nelle Strutture' }] };
   if (pathname.startsWith('/magazzino-strutture/forniture/')) return { title: 'Forniture struttura', crumbs: [{ label: 'Forniture / Consumabili', to: '/magazzino-strutture/forniture' }] };
+  if (pathname === '/magazzino-strutture/pulizie') return { title: 'Prodotti Pulizie', crumbs: [{ label: 'Magazzino nelle Strutture' }] };
+  if (pathname.startsWith('/magazzino-strutture/pulizie/')) return { title: 'Pulizie in struttura', crumbs: [{ label: 'Prodotti Pulizie', to: '/magazzino-strutture/pulizie' }] };
   if (pathname === '/magazzino-strutture/movimenti') return { title: 'Movimenti Strutture', crumbs: [{ label: 'Magazzino nelle Strutture' }] };
   if (pathname === '/magazzino-generale') return { title: 'Panoramica', crumbs: [{ label: 'Magazzino Generale' }] };
   if (pathname === '/magazzino-generale/noleggio') return { title: 'Lavanderia a Noleggio', crumbs: [{ label: 'Magazzino Generale' }] };

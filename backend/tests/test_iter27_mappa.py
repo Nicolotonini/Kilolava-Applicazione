@@ -1,3 +1,4 @@
+from testenv import TEST_ADMIN_USERNAME, TEST_ADMIN_PASSWORD, TEST_FIXTURE_PASSWORD  # noqa: E402
 """Iteration 27 — Mappa Operativa + GPS obbligatorio backend tests.
 
 Tests:
@@ -17,11 +18,11 @@ BASE = os.environ.get("REACT_APP_BACKEND_URL", "").rstrip("/")
 API = f"{BASE}/api"
 
 ADMIN_EMAIL = "test_user@kilolava.com"
-ADMIN_PASS = "TestPass123!"
+ADMIN_PASS = TEST_ADMIN_PASSWORD
 
 TEST_RIDER = {
     "email": "TEST_iter27_rider@kilolava.com",
-    "password": "TestPass123!",
+    "password": TEST_ADMIN_PASSWORD,
     "first_name": "TEST27",
     "last_name": "Rider",
     "role": "rider",

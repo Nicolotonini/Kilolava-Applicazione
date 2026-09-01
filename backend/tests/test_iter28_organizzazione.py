@@ -1,3 +1,4 @@
+from testenv import TEST_ADMIN_USERNAME, TEST_ADMIN_PASSWORD, TEST_FIXTURE_PASSWORD  # noqa: E402
 """Iteration 28 - Organizzazione Pulizie + Consegne + Disponibilità giornaliera + Proposte automatiche.
 
 Copertura:
@@ -31,7 +32,7 @@ def _load_frontend_env():
 
 _load_frontend_env()
 BASE = os.environ["REACT_APP_BACKEND_URL"].rstrip("/") + "/api"
-ADMIN = {"email": "test_user@kilolava.com", "password": "TestPass123!"}
+ADMIN = {"email": "test_user@kilolava.com", "password": TEST_ADMIN_PASSWORD}
 STAMP = f"iter28_{int(time.time())}"
 
 _state = {"created": {"users": [], "clients": [], "structures": [], "cleaning_tasks": [],
@@ -71,7 +72,7 @@ def test_00_health_and_catalogs(admin_headers):
 # ---------- 01 Seed users, client, structure ----------
 
 def _mkuser(admin_headers, role, tag):
-    payload = {"email": f"TEST_{STAMP}_{tag}@kilolava.com", "password": "TestPass123!",
+    payload = {"email": f"TEST_{STAMP}_{tag}@kilolava.com", "password": TEST_ADMIN_PASSWORD,
                "first_name": f"Test{tag}", "last_name": "Iter28", "role": role}
     r = requests.post(f"{BASE}/users", json=payload, headers=admin_headers, timeout=15)
     assert r.status_code in (200, 201), r.text
@@ -388,7 +389,7 @@ def test_14_giri_conferma(admin_headers, tomorrow):
 def test_15_portal_client_and_gate(admin_headers):
     # crea utente client collegato al cliente
     client_id = _state["client"]["id"]
-    payload = {"email": f"TEST_{STAMP}_portal@kilolava.com", "password": "TestPass123!",
+    payload = {"email": f"TEST_{STAMP}_portal@kilolava.com", "password": TEST_ADMIN_PASSWORD,
                "first_name": "Portal", "last_name": "User", "role": "client", "client_id": client_id}
     r = requests.post(f"{BASE}/users", json=payload, headers=admin_headers, timeout=15)
     assert r.status_code in (200, 201), r.text

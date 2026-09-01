@@ -1,3 +1,4 @@
+from testenv import TEST_ADMIN_USERNAME, TEST_ADMIN_PASSWORD, TEST_FIXTURE_PASSWORD  # noqa: E402
 """
 Kilolava Planning Board API Tests - Property-Based Calendar
 Tests for Events API with date range queries and multi-day events:
@@ -18,7 +19,7 @@ API_URL = f"{BASE_URL}/api"
 
 # Test credentials
 TEST_EMAIL = "test_user@kilolava.com"
-TEST_PASSWORD = "TestPass123!"
+TEST_PASSWORD = TEST_ADMIN_PASSWORD
 
 # Test week dates (week of 2026-03-23)
 WEEK_START = "2026-03-23"

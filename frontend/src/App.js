@@ -47,6 +47,8 @@ import NoleggioPage from './pages/magazzino/NoleggioPage';
 import NoleggioDetailPage from './pages/magazzino/NoleggioDetailPage';
 import FornitureListPage from './pages/magazzino/FornitureListPage';
 import FornitureDetailPage from './pages/magazzino/FornitureDetailPage';
+import PulizieListPage from './pages/magazzino/PulizieListPage';
+import PulizieDetailPage from './pages/magazzino/PulizieDetailPage';
 import ZainiPage from './pages/magazzino/ZainiPage';
 import ZainoDetailPage from './pages/magazzino/ZainoDetailPage';
 import MovimentiPage from './pages/magazzino/MovimentiPage';
@@ -224,6 +226,8 @@ function AppRoutes() {
         <Route path="magazzino-strutture/noleggio/:structureId" element={<NoleggioDetailPage />} />
         <Route path="magazzino-strutture/forniture" element={<FornitureListPage />} />
         <Route path="magazzino-strutture/forniture/:structureId" element={<FornitureDetailPage />} />
+        <Route path="magazzino-strutture/pulizie" element={<PulizieListPage />} />
+        <Route path="magazzino-strutture/pulizie/:structureId" element={<PulizieDetailPage />} />
         <Route path="magazzino-strutture/kit-pulizie" element={<Navigate to="/magazzino-strutture" replace />} />
         <Route path="magazzino-strutture/movimenti" element={<MovimentiPage scope="strutture" />} />
         <Route path="magazzino-generale" element={<GeneraleOverviewPage />} />
@@ -238,8 +242,8 @@ function AppRoutes() {
         <Route path="magazzino/noleggio/:id" element={<LegacyDetailRedirect base="/magazzino-strutture/noleggio" />} />
         <Route path="magazzino/forniture" element={<Navigate to="/magazzino-strutture/forniture" replace />} />
         <Route path="magazzino/forniture/:id" element={<LegacyDetailRedirect base="/magazzino-strutture/forniture" />} />
-        <Route path="magazzino/pulizie" element={<Navigate to="/magazzino-strutture" replace />} />
-        <Route path="magazzino/pulizie/:id" element={<Navigate to="/magazzino-strutture" replace />} />
+        <Route path="magazzino/pulizie" element={<Navigate to="/magazzino-strutture/pulizie" replace />} />
+        <Route path="magazzino/pulizie/:id" element={<LegacyDetailRedirect base="/magazzino-strutture/pulizie" />} />
         <Route path="magazzino/zaini" element={<Navigate to="/magazzino-generale/zaini" replace />} />
         <Route path="magazzino/zaini/:id" element={<LegacyDetailRedirect base="/magazzino-generale/zaini" />} />
         <Route path="magazzino/movimenti" element={<Navigate to="/magazzino-strutture/movimenti" replace />} />

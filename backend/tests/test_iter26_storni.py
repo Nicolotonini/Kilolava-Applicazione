@@ -1,3 +1,4 @@
+from testenv import TEST_ADMIN_USERNAME, TEST_ADMIN_PASSWORD, TEST_FIXTURE_PASSWORD  # noqa: E402
 """
 Iteration 26 — Test suite Gestione Storni Movimenti (motore unico /api/magazzino/*).
 
@@ -33,7 +34,7 @@ import requests
 BASE_URL = (os.environ.get("REACT_APP_BACKEND_URL")
             or "https://kilolava-rebuild.preview.emergentagent.com").rstrip("/")
 ADMIN_EMAIL = "test_user@kilolava.com"
-ADMIN_PASSWORD = "TestPass123!"
+ADMIN_PASSWORD = TEST_ADMIN_PASSWORD
 
 STATE = {
     "token": None, "h": None,

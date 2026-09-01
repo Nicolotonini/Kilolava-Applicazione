@@ -1,3 +1,4 @@
+from testenv import TEST_ADMIN_USERNAME, TEST_ADMIN_PASSWORD, TEST_FIXTURE_PASSWORD  # noqa: E402
 """GATE FASE 6 — Quantità reali Rider: consegna con quantità effettive + ritiri tracciati sul giro. Fixture + cleanup totale."""
 import os
 from datetime import datetime
@@ -19,7 +20,7 @@ def check(name, ok, extra=""):
 
 
 admin_tok = requests.post(f"{API}/auth/login", json={
-    "username": "admin@kilolava.it", "password": "TestPass123!"}).json()["access_token"]
+    "username": TEST_ADMIN_USERNAME, "password": TEST_ADMIN_PASSWORD}).json()["access_token"]
 A = {"Authorization": f"Bearer {admin_tok}"}
 
 C = {"clients": [], "structures": [], "products": [], "users": [], "kits": [], "fermate": [], "fabbisogni": []}
@@ -44,10 +45,10 @@ try:
         "name": "TESTGATE6 Kit", "domain": "noleggio", "items": [{"product_id": p["id"], "qty": 4}]}).json()
     C["kits"].append(k["id"])
     rider = requests.post(f"{API}/users", headers=A, json={
-        "first_name": "TEST_GATE6_rider", "last_name": "R", "role": "rider", "password": "GateTest123!"}).json()
+        "first_name": "TEST_GATE6_rider", "last_name": "R", "role": "rider", "password": TEST_FIXTURE_PASSWORD}).json()
     C["users"].append(rider["id"])
     R = {"Authorization": "Bearer " + requests.post(f"{API}/auth/login", json={
-        "username": rider["login_username"], "password": "GateTest123!"}).json()["access_token"]}
+        "username": rider["login_username"], "password": TEST_FIXTURE_PASSWORD}).json()["access_token"]}
 
     # carico iniziale magazzino
     requests.post(f"{API}/magazzino/movimenti", headers=A, json={
@@ -73,10 +74,10 @@ try:
 
     # rider estraneo non può completare
     r2 = requests.post(f"{API}/users", headers=A, json={
-        "first_name": "TEST_GATE6_r2", "last_name": "R", "role": "rider", "password": "GateTest123!"}).json()
+        "first_name": "TEST_GATE6_r2", "last_name": "R", "role": "rider", "password": TEST_FIXTURE_PASSWORD}).json()
     C["users"].append(r2["id"])
     R2 = {"Authorization": "Bearer " + requests.post(f"{API}/auth/login", json={
-        "username": r2["login_username"], "password": "GateTest123!"}).json()["access_token"]}
+        "username": r2["login_username"], "password": TEST_FIXTURE_PASSWORD}).json()["access_token"]}
     check("Rider estraneo completa = 403",
           requests.post(f"{API}/consegne/fermate/{fer['id']}/completa", headers=R2, json={}).status_code == 403)
 

@@ -1,3 +1,4 @@
+from testenv import TEST_ADMIN_USERNAME, TEST_ADMIN_PASSWORD, TEST_FIXTURE_PASSWORD  # noqa: E402
 """
 Iteration 25 — Test suite per la riorganizzazione moduli Magazzino.
 
@@ -26,7 +27,7 @@ if not BASE_URL:
     BASE_URL = "https://kilolava-rebuild.preview.emergentagent.com"
 
 ADMIN_EMAIL = "test_user@kilolava.com"
-ADMIN_PASSWORD = "TestPass123!"
+ADMIN_PASSWORD = TEST_ADMIN_PASSWORD
 
 # Shared state across tests (module scoped fixtures below)
 STATE = {

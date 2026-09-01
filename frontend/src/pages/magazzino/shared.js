@@ -32,6 +32,7 @@ export const FABBISOGNO_STATUS_META = {
   aperta: { label: 'Aperta', tone: 'progress' },
   in_consegna: { label: 'In consegna', tone: 'neutral' },
   evasa: { label: 'Evasa', tone: 'success' },
+  parzialmente_evasa: { label: 'Parzialmente evasa', tone: 'waiting' },
   annullata: { label: 'Annullata', tone: 'cancelled' },
 };
 

@@ -1,3 +1,4 @@
+from testenv import TEST_ADMIN_USERNAME, TEST_ADMIN_PASSWORD, TEST_FIXTURE_PASSWORD  # noqa: E402
 """
 Pytest for Kilolava CLEANING MODULE fixes v3 (iteration 8).
 Covers the 5 corrections requested by the user, focused on the backend side:
@@ -39,8 +40,8 @@ def _read_backend_url():
 BASE = _read_backend_url()
 API = f"{BASE}/api"
 
-ADMIN = ("test_user@kilolava.com", "TestPass123!")
-CLEANER = ("addetta_test@kilolava.com", "AddettaTest123!")
+ADMIN = (TEST_ADMIN_USERNAME, TEST_ADMIN_PASSWORD)
+CLEANER = ("addetta_test@kilolava.com", TEST_FIXTURE_PASSWORD)
 
 # Minimal valid media payloads
 JPG_BYTES = bytes.fromhex(

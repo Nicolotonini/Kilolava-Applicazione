@@ -1,3 +1,4 @@
+from testenv import TEST_ADMIN_USERNAME, TEST_ADMIN_PASSWORD, TEST_FIXTURE_PASSWORD  # noqa: E402
 """Backend tests — Guesty/Hostaway/Octorate OAuth adapters + webhooks + regressions.
 
 Focus:
@@ -32,7 +33,7 @@ load_dotenv("/app/frontend/.env")
 
 BASE_URL = os.environ["REACT_APP_BACKEND_URL"].rstrip("/")
 API = f"{BASE_URL}/api"
-ADMIN = {"email": "test_user@kilolava.com", "password": "TestPass123!"}
+ADMIN = {"email": "test_user@kilolava.com", "password": TEST_ADMIN_PASSWORD}
 MONGO_URL = os.environ["MONGO_URL"].strip('"')
 DB_NAME = os.environ["DB_NAME"].strip('"')
 

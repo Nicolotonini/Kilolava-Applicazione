@@ -1,3 +1,4 @@
+from testenv import TEST_ADMIN_USERNAME, TEST_ADMIN_PASSWORD, TEST_FIXTURE_PASSWORD  # noqa: E402
 """Iteration 31 — Modulo Utenti Interni: CRUD, ruoli, contratti, disponibilità, permessi, audit, GPS."""
 import os
 from datetime import datetime, timedelta, timezone
@@ -21,7 +22,7 @@ def _load_base_url():
 BASE_URL = _load_base_url()
 API = f"{BASE_URL}/api"
 ADMIN_EMAIL = "test_user@kilolava.com"
-ADMIN_PASS = "TestPass123!"
+ADMIN_PASS = TEST_ADMIN_PASSWORD
 
 TODAY = datetime.now(timezone.utc).strftime("%Y-%m-%d")
 TOMORROW = (datetime.now(timezone.utc) + timedelta(days=1)).strftime("%Y-%m-%d")
@@ -93,7 +94,7 @@ def created(admin_tok):
 def _create_user(admin_tok, email_suffix, role, **kw):
     payload = {
         "email": f"test_iter31_{email_suffix}@kilolava.com",
-        "password": "TestPass123!",
+        "password": TEST_ADMIN_PASSWORD,
         "first_name": f"Test{email_suffix.title()}",
         "last_name": "Iter31",
         "role": role,
@@ -264,7 +265,7 @@ def test_caso_e_disattivato_no_login_no_riders(admin_tok, created):
 
     # Login con disattivato → 403
     lg = requests.post(f"{API}/auth/login",
-                       json={"email": f"test_iter31_toggle_e@kilolava.com", "password": "TestPass123!"}, timeout=10)
+                       json={"email": f"test_iter31_toggle_e@kilolava.com", "password": TEST_ADMIN_PASSWORD}, timeout=10)
     assert lg.status_code == 403, f"expected 403 for deactivated, got {lg.status_code}"
 
 
@@ -342,7 +343,7 @@ def test_caso_g_cleaner_forbidden(admin_tok, created):
     r = _create_user(admin_tok, "cln_perm", "cleaner")
     uid = r.json()["id"]
     created["users"].append(uid)
-    tok = _login(f"test_iter31_cln_perm@kilolava.com", "TestPass123!")
+    tok = _login(f"test_iter31_cln_perm@kilolava.com", TEST_ADMIN_PASSWORD)
     assert tok, "cleaner login failed"
 
     r1 = requests.post(f"{API}/magazzino/movimenti/fake-id/storno",
@@ -362,7 +363,7 @@ def test_caso_g_laundry_permissions(admin_tok, created):
         pytest.skip(f"cannot create laundry user: {r.text}")
     uid = r.json()["id"]
     created["users"].append(uid)
-    tok = _login(f"test_iter31_lndry@kilolava.com", "TestPass123!")
+    tok = _login(f"test_iter31_lndry@kilolava.com", TEST_ADMIN_PASSWORD)
     assert tok
 
     # GET jobs → 200
@@ -400,7 +401,7 @@ def test_caso_h_service_status_cleaner_403(admin_tok, created):
     r = _create_user(admin_tok, "svc_403", "cleaner")
     uid = r.json()["id"]
     created["users"].append(uid)
-    tok = _login(f"test_iter31_svc_403@kilolava.com", "TestPass123!")
+    tok = _login(f"test_iter31_svc_403@kilolava.com", TEST_ADMIN_PASSWORD)
     r2 = requests.get(f"{API}/users/{uid}/service-status", headers=_h(tok), timeout=10)
     assert r2.status_code == 403
 
@@ -498,7 +499,7 @@ def test_reset_password_ok_and_last_login(admin_tok, created):
     assert rr.status_code == 200
 
     # login con vecchia password fallisce
-    old = requests.post(f"{API}/auth/login", json={"email": email, "password": "TestPass123!"}, timeout=10)
+    old = requests.post(f"{API}/auth/login", json={"email": email, "password": TEST_ADMIN_PASSWORD}, timeout=10)
     assert old.status_code == 401
 
     # login con nuova → 200 e last_login aggiornato
@@ -514,7 +515,7 @@ def test_reset_password_non_admin_403(admin_tok, created):
     r = _create_user(admin_tok, "cln_reset_403", "cleaner")
     uid_cleaner = r.json()["id"]
     created["users"].append(uid_cleaner)
-    tok = _login("test_iter31_cln_reset_403@kilolava.com", "TestPass123!")
+    tok = _login("test_iter31_cln_reset_403@kilolava.com", TEST_ADMIN_PASSWORD)
     target = created["users"][0]
     rr = requests.post(f"{API}/users/{target}/reset-password",
                        json={"new_password": "NewPass9876!"}, headers=_h(tok), timeout=10)

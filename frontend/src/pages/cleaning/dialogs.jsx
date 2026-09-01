@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import api, { fileUrl } from '../../lib/api';
+import api from '../../lib/api';
+import { AuthImg, openAuthFile } from '../../components/kilolava/AuthMedia';
 import { Badge } from '../../components/ui/badge';
 import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
@@ -27,9 +28,9 @@ function MediaChip({ icon: Icon, label, media }) {
     return <span className="flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-full bg-muted text-muted-foreground"><Icon className="h-3.5 w-3.5" />{label}: mancante</span>;
   }
   return (
-    <a href={fileUrl(media.file_path)} target="_blank" rel="noreferrer" className="flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-full bg-emerald-100 text-emerald-700 hover:opacity-80">
+    <button type="button" onClick={() => openAuthFile(media.file_path)} className="flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-full bg-emerald-100 text-emerald-700 hover:opacity-80">
       <CheckCircle2 className="h-3.5 w-3.5" />{label}
-    </a>
+    </button>
   );
 }
 
@@ -103,9 +104,9 @@ export function TaskDetailDialog({ taskId, onClose }) {
             {warehousePhotos.length > 0 && (
               <div className="flex gap-2 flex-wrap">
                 {warehousePhotos.map(p => (
-                  <a key={p.id} href={fileUrl(p.file_path)} target="_blank" rel="noreferrer">
-                    <img src={fileUrl(p.file_path)} alt="magazzino" className="w-16 h-16 object-cover rounded-lg border border-border" />
-                  </a>
+                  <button type="button" key={p.id} onClick={() => openAuthFile(p.file_path)}>
+                    <AuthImg path={p.file_path} alt="magazzino" className="w-16 h-16 object-cover rounded-lg border border-border" />
+                  </button>
                 ))}
               </div>
             )}
@@ -119,7 +120,7 @@ export function TaskDetailDialog({ taskId, onClose }) {
                   {(n.media || []).length > 0 && (
                     <div className="flex gap-1.5 mt-1.5">
                       {n.media.map(m => (
-                        <a key={m.id} href={fileUrl(m.file_path)} target="_blank" rel="noreferrer" className="text-xs underline text-primary">{m.kind === 'video' ? 'Video' : 'Foto'}</a>
+                        <button type="button" key={m.id} onClick={() => openAuthFile(m.file_path)} className="text-xs underline text-primary">{m.kind === 'video' ? 'Video' : 'Foto'}</button>
                       ))}
                     </div>
                   )}

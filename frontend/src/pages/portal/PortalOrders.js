@@ -10,6 +10,7 @@ const STATUS_META = {
   in_revisione: { label: 'In revisione', cls: 'bg-sky-100 text-sky-700' },
   confermato: { label: 'Confermato', cls: 'bg-emerald-100 text-emerald-700' },
   pianificato: { label: 'In consegna', cls: 'bg-amber-100 text-amber-700' },
+  parziale: { label: 'Parzialmente consegnato', cls: 'bg-amber-100 text-amber-700' },
   consegnato: { label: 'Consegnato', cls: 'bg-emerald-600 text-white' },
   annullato: { label: 'Annullato', cls: 'bg-muted text-muted-foreground' },
 };

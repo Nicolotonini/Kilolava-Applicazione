@@ -1,3 +1,4 @@
+from testenv import TEST_ADMIN_USERNAME, TEST_ADMIN_PASSWORD, TEST_FIXTURE_PASSWORD  # noqa: E402
 """
 Logistics Module API Tests
 Tests for: Tasks CRUD, Assignment, Status Updates, Photo Upload, Day Summary, Riders CRUD, My-Tasks, Bulk Reorder
@@ -12,7 +13,7 @@ BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', '').rstrip('/')
 
 # Test credentials
 MANAGER_EMAIL = "test_user@kilolava.com"
-MANAGER_PASSWORD = "TestPass123!"
+MANAGER_PASSWORD = TEST_ADMIN_PASSWORD
 RIDER_EMAIL = "rider1@kilolava.com"
 RIDER_PASSWORD = "Rider123!"
 

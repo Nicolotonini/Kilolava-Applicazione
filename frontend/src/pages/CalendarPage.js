@@ -27,8 +27,9 @@ const VIEWS = [
   { key: 'month', label: 'Mese' },
 ];
 
-function NuovoSoggiornoDialog({ open, onClose, structures, defaultStructureId, defaultDate, onCreated }) {
+function NuovoSoggiornoDialog({ open, onClose, structures, units = [], defaultStructureId, defaultDate, onCreated }) {
   const [structureId, setStructureId] = useState('');
+  const [unitId, setUnitId] = useState('');
   const [inDate, setInDate] = useState('');
   const [outDate, setOutDate] = useState('');
   const [inTime, setInTime] = useState('15:00');
@@ -40,11 +41,14 @@ function NuovoSoggiornoDialog({ open, onClose, structures, defaultStructureId, d
   useEffect(() => {
     if (open) {
       setStructureId(defaultStructureId || '');
+      setUnitId('');
       setInDate(defaultDate || fmtDate(new Date()));
       setOutDate('');
       setInTime('15:00'); setOutTime('10:00'); setGuests(''); setNotes('');
     }
   }, [open, defaultStructureId, defaultDate]);
+
+  const structUnits = useMemo(() => (units || []).filter((u) => u.structure_id === structureId), [units, structureId]);
 
   const save = async () => {
     if (!structureId || !inDate || !outDate) { toast.error('Struttura e date IN/OUT obbligatorie'); return; }
@@ -53,13 +57,12 @@ function NuovoSoggiornoDialog({ open, onClose, structures, defaultStructureId, d
     try {
       await eventsApi.create({
         event_type: 'booking', title: 'Soggiorno', structure_id: structureId,
-        start_time: inDate, end_time: outDate, source: 'direct',
-      }).then(async (r) => {
-        await eventsApi.update(r.data.id, {
-          guests_count: guests ? parseInt(guests) : null,
-          checkin_time: inTime || null, checkout_time: outTime || null,
-          notes: notes || null,
-        });
+        unit_id: unitId || null,
+        start_time: `${inDate}T${inTime || '15:00'}:00`, end_time: `${outDate}T${outTime || '10:00'}:00`,
+        source: 'direct',
+        guests_count: guests ? parseInt(guests) : null,
+        checkin_time: inTime || null, checkout_time: outTime || null,
+        notes: notes || null,
       });
       toast.success('Soggiorno creato');
       onCreated();
@@ -74,7 +77,7 @@ function NuovoSoggiornoDialog({ open, onClose, structures, defaultStructureId, d
         <div className="space-y-3">
           <div className="space-y-1.5">
             <Label className="text-xs">Struttura *</Label>
-            <Select value={structureId || 'none'} onValueChange={(v) => setStructureId(v === 'none' ? '' : v)}>
+            <Select value={structureId || 'none'} onValueChange={(v) => { setStructureId(v === 'none' ? '' : v); setUnitId(''); }}>
               <SelectTrigger data-testid="soggiorno-structure-select"><SelectValue placeholder="Seleziona" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="none">—</SelectItem>
@@ -82,6 +85,18 @@ function NuovoSoggiornoDialog({ open, onClose, structures, defaultStructureId, d
               </SelectContent>
             </Select>
           </div>
+          {structUnits.length > 0 && (
+            <div className="space-y-1.5">
+              <Label className="text-xs">Unità</Label>
+              <Select value={unitId || 'none'} onValueChange={(v) => setUnitId(v === 'none' ? '' : v)}>
+                <SelectTrigger data-testid="soggiorno-unit-select"><SelectValue placeholder="Intera struttura" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">Intera struttura</SelectItem>
+                  {structUnits.map((u) => <SelectItem key={u.id} value={u.id}>{u.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <Label className="text-xs">Check-in *</Label>
@@ -102,6 +117,9 @@ function NuovoSoggiornoDialog({ open, onClose, structures, defaultStructureId, d
             <Label className="text-xs">Note</Label>
             <Textarea rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} className="resize-none" data-testid="nuovo-notes" />
           </div>
+          <p className="text-xs text-muted-foreground bg-muted/40 rounded-lg p-2.5" data-testid="soggiorno-auto-cleaning-hint">
+            Se la struttura ha il servizio Pulizie attivo, la pulizia al check-out viene creata automaticamente e resta collegata al soggiorno.
+          </p>
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>Annulla</Button>
@@ -459,6 +477,7 @@ const CalendarPage = () => {
         open={!!newSoggiorno}
         onClose={() => setNewSoggiorno(null)}
         structures={structures}
+        units={units}
         defaultStructureId={newSoggiorno?.structureId}
         defaultDate={newSoggiorno?.date}
         onCreated={() => { setNewSoggiorno(null); fetchEvents(); }}

@@ -1,14 +1,13 @@
 import React, { useState, useCallback, useEffect } from 'react';
-import { fileUrl } from '../../lib/api';
 import { Dialog, DialogContent, DialogTitle } from '../ui/dialog';
 import { ChevronLeft, ChevronRight, Video, ImageOff, Play, RotateCcw, X } from 'lucide-react';
 import { cn } from '../../lib/utils';
+import { useAuthFile, invalidateAuthFile } from './AuthMedia';
 
 /* Miniatura media con fallback elegante: MAI l'icona nativa di immagine rotta. */
 export function MediaThumb({ media, onClick, size = 'w-20 h-20', testId }) {
-  const [error, setError] = useState(false);
   const [retry, setRetry] = useState(0);
-  const src = media.file_path ? `${fileUrl(media.file_path)}&r=${retry}` : null;
+  const { url, error } = useAuthFile(media.kind === 'video' ? null : media.file_path, retry);
 
   if (media.kind === 'video') {
     return (
@@ -18,22 +17,25 @@ export function MediaThumb({ media, onClick, size = 'w-20 h-20', testId }) {
       </button>
     );
   }
-  if (error || !src) {
+  if (error || !media.file_path) {
     return (
       <div className={cn(size, 'rounded-lg border border-dashed border-border bg-muted/40 flex flex-col items-center justify-center gap-1 text-muted-foreground shrink-0 p-1')} data-testid={testId ? `${testId}-fallback` : 'media-fallback'}>
         <ImageOff className="h-4 w-4" />
         <span className="text-xs text-center leading-tight">Media non disponibile</span>
-        {src && (
-          <button onClick={e => { e.stopPropagation(); setError(false); setRetry(r => r + 1); }} className="text-xs underline flex items-center gap-0.5" data-testid="media-retry-btn">
+        {media.file_path && (
+          <button onClick={e => { e.stopPropagation(); invalidateAuthFile(media.file_path); setRetry(r => r + 1); }} className="text-xs underline flex items-center gap-0.5" data-testid="media-retry-btn">
             <RotateCcw className="h-3 w-3" />Riprova
           </button>
         )}
       </div>
     );
   }
+  if (!url) {
+    return <div className={cn(size, 'rounded-lg border border-border bg-muted/40 shrink-0 animate-pulse')} data-testid={testId} />;
+  }
   return (
     <button onClick={onClick} className="shrink-0" data-testid={testId}>
-      <img src={src} alt="" onError={() => setError(true)}
+      <img src={url} alt=""
         className={cn(size, 'object-cover rounded-lg border border-border hover:opacity-90 klv-interactive')} />
     </button>
   );
@@ -42,8 +44,9 @@ export function MediaThumb({ media, onClick, size = 'w-20 h-20', testId }) {
 /* Viewer unico foto/video con precedente/successivo e meta. */
 export function MediaViewer({ items, index, onClose, onNavigate }) {
   const item = items[index];
-  const [error, setError] = useState(false);
-  useEffect(() => { setError(false); }, [index]);
+  const [retry, setRetry] = useState(0);
+  useEffect(() => { setRetry(0); }, [index]);
+  const { url, error } = useAuthFile(item ? item.file_path : null, retry);
 
   const prev = useCallback(() => onNavigate((index - 1 + items.length) % items.length), [index, items.length, onNavigate]);
   const next = useCallback(() => onNavigate((index + 1) % items.length), [index, items.length, onNavigate]);
@@ -63,16 +66,18 @@ export function MediaViewer({ items, index, onClose, onNavigate }) {
       <DialogContent className="max-w-3xl p-0 overflow-hidden bg-foreground/95 border-0 [&>button]:hidden" data-testid="media-viewer">
         <DialogTitle className="sr-only">Media</DialogTitle>
         <div className="relative flex items-center justify-center min-h-[300px] max-h-[75vh]">
-          {item.kind === 'video' ? (
-            <video src={fileUrl(item.file_path)} controls autoPlay className="max-h-[75vh] w-full" data-testid="viewer-video" />
-          ) : error ? (
+          {error ? (
             <div className="flex flex-col items-center gap-2 text-background/80 py-16" data-testid="viewer-fallback">
               <ImageOff className="h-8 w-8" />
               <p className="text-sm">Impossibile caricare il media</p>
-              <button onClick={() => setError(false)} className="text-sm underline flex items-center gap-1"><RotateCcw className="h-3.5 w-3.5" />Riprova</button>
+              <button onClick={() => { invalidateAuthFile(item.file_path); setRetry(r => r + 1); }} className="text-sm underline flex items-center gap-1"><RotateCcw className="h-3.5 w-3.5" />Riprova</button>
             </div>
+          ) : !url ? (
+            <div className="flex items-center justify-center py-16 text-background/60 text-sm">Caricamento…</div>
+          ) : item.kind === 'video' ? (
+            <video src={url} controls autoPlay className="max-h-[75vh] w-full" data-testid="viewer-video" />
           ) : (
-            <img src={fileUrl(item.file_path)} alt="" onError={() => setError(true)} className="max-h-[75vh] object-contain" data-testid="viewer-image" />
+            <img src={url} alt="" className="max-h-[75vh] object-contain" data-testid="viewer-image" />
           )}
           <button onClick={onClose} className="absolute top-3 right-3 h-9 w-9 rounded-full bg-background/20 hover:bg-background/40 text-background flex items-center justify-center klv-interactive" data-testid="viewer-close">
             <X className="h-5 w-5" />

@@ -1,3 +1,4 @@
+from testenv import TEST_ADMIN_USERNAME, TEST_ADMIN_PASSWORD, TEST_FIXTURE_PASSWORD  # noqa: E402
 """Test suite Sistema Magazzino Kilolava — design NUOVO (Gen 2026):
 Magazzino nelle Strutture (fisico) + Magazzino Generale.
 
@@ -42,7 +43,7 @@ BASE_URL = (os.environ.get('REACT_APP_BACKEND_URL') or _read_env('REACT_APP_BACK
 assert BASE_URL, "REACT_APP_BACKEND_URL not set"
 API = f"{BASE_URL}/api"
 
-ADMIN = {"email": "test_user@kilolava.com", "password": "TestPass123!"}
+ADMIN = {"email": "test_user@kilolava.com", "password": TEST_ADMIN_PASSWORD}
 
 
 def _login(creds):

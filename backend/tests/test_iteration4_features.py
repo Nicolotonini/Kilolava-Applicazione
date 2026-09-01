@@ -1,3 +1,4 @@
+from testenv import TEST_ADMIN_USERNAME, TEST_ADMIN_PASSWORD, TEST_FIXTURE_PASSWORD  # noqa: E402
 """Iteration 4 tests: key_boxes persistence, client logo, google-sheets endpoints,
 sheets_sync._build_tabs 9-tab shape & sensitive-code exclusion."""
 import os
@@ -21,7 +22,7 @@ if not os.environ.get("REACT_APP_BACKEND_URL"):
 
 BASE_URL = os.environ["REACT_APP_BACKEND_URL"].rstrip("/")
 ADMIN_EMAIL = "test_user@kilolava.com"
-ADMIN_PASS = "TestPass123!"
+ADMIN_PASS = TEST_ADMIN_PASSWORD
 
 # Ensure backend module is importable for direct call tests
 sys.path.insert(0, "/app/backend")

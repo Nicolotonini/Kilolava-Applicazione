@@ -1,3 +1,4 @@
+from testenv import TEST_ADMIN_USERNAME, TEST_ADMIN_PASSWORD, TEST_FIXTURE_PASSWORD  # noqa: E402
 """
 E2E pytest for Kilolava CLEANING MODULE v2 (iteration 7).
 Focus:
@@ -36,9 +37,9 @@ def _read_backend_url():
 BASE = _read_backend_url()
 API = f"{BASE}/api"
 
-ADMIN = ("test_user@kilolava.com", "TestPass123!")
-CLEANER = ("addetta_test@kilolava.com", "AddettaTest123!")
-CLIENT = ("cliente_test@kilolava.com", "ClienteTest123!")
+ADMIN = (TEST_ADMIN_USERNAME, TEST_ADMIN_PASSWORD)
+CLEANER = ("addetta_test@kilolava.com", TEST_FIXTURE_PASSWORD)
+CLIENT = ("cliente_test@kilolava.com", TEST_FIXTURE_PASSWORD)
 
 # small valid media payloads
 JPG_BYTES = bytes.fromhex(

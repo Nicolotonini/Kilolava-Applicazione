@@ -1,3 +1,4 @@
+from testenv import TEST_ADMIN_USERNAME, TEST_ADMIN_PASSWORD, TEST_FIXTURE_PASSWORD  # noqa: E402
 """GATE FASE 5 — Magazzino: motore unico, movimenti immutabili, storno, rettifica, legacy dismesso. Fixture + cleanup totale."""
 import os
 from datetime import datetime, timedelta
@@ -20,7 +21,7 @@ def check(name, ok, extra=""):
 
 
 admin_tok = requests.post(f"{API}/auth/login", json={
-    "username": "admin@kilolava.it", "password": "TestPass123!"}).json()["access_token"]
+    "username": TEST_ADMIN_USERNAME, "password": TEST_ADMIN_PASSWORD}).json()["access_token"]
 A = {"Authorization": f"Bearer {admin_tok}"}
 
 cleanup = {"clients": [], "structures": [], "products": [], "users": []}
@@ -113,9 +114,9 @@ try:
     rl2 = requests.delete(f"{API}/inventory/movements/qualsiasi", headers=A)
     check("Legacy DELETE /inventory/movements = 410 (immutabilità)", rl2.status_code == 410, str(rl2.status_code))
     cu = requests.post(f"{API}/users", headers=A, json={
-        "first_name": "TEST_GATE5_cl", "last_name": "Mag", "role": "cleaner", "password": "GateTest123!"}).json()
+        "first_name": "TEST_GATE5_cl", "last_name": "Mag", "role": "cleaner", "password": TEST_FIXTURE_PASSWORD}).json()
     cleanup["users"].append(cu["id"])
-    cl_tok = requests.post(f"{API}/auth/login", json={"username": cu["login_username"], "password": "GateTest123!"}).json()["access_token"]
+    cl_tok = requests.post(f"{API}/auth/login", json={"username": cu["login_username"], "password": TEST_FIXTURE_PASSWORD}).json()["access_token"]
     CL = {"Authorization": f"Bearer {cl_tok}"}
     check("Cleaner POST legacy = 403 (guardia prima del 410)",
           requests.post(f"{API}/inventory/movements", headers=CL, json=legacy_body).status_code == 403)

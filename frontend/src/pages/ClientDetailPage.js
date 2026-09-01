@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useLanguage } from '../contexts/LanguageContext';
 import { clientsApi, structuresApi, unitsApi, operationsApi, inventoryApi } from '../lib/api';
 import api from '../lib/api';
+import { AuthImg } from '../components/kilolava/AuthMedia';
 import { GestioneSegnalazioniCard } from './segnalazioni/ConfigDialog';
 import { PrivateLaundryPriceCard } from '../components/PrivateLaundryPriceCard';
 import { Card, CardContent } from '../components/ui/card';
@@ -610,6 +611,7 @@ const ClientDetailPage = () => {
 
   // Portal management
   const [portalPanel, setPortalPanel] = useState(false);
+  const [portalAccounts, setPortalAccounts] = useState([]);
   const [catalogPanel, setCatalogPanel] = useState(false);
   const [accountForm, setAccountForm] = useState({ email: '', password: '', name: '' });
   const [catalogEntries, setCatalogEntries] = useState([]);
@@ -719,6 +721,11 @@ const ClientDetailPage = () => {
   };
 
   // Portal management functions
+  const fetchPortalAccounts = useCallback(() => {
+    api.get(`/clients/${clientId}/portal-accounts`).then(r => setPortalAccounts(r.data)).catch(() => setPortalAccounts([]));
+  }, [clientId]);
+  useEffect(() => { fetchPortalAccounts(); }, [fetchPortalAccounts]);
+
   const handleCreateAccount = async () => {
     if (!accountForm.email || !accountForm.password || !accountForm.name) {
       toast.error('Email, password e nome richiesti'); return;
@@ -730,6 +737,7 @@ const ClientDetailPage = () => {
       setPortalPanel(false);
       setAccountForm({ email: '', password: '', name: '' });
       fetchClient();
+      fetchPortalAccounts();
     } catch (e) { toast.error(e.response?.data?.detail || 'Errore'); }
     finally { setSavingPortal(false); }
   };
@@ -904,6 +912,7 @@ const ClientDetailPage = () => {
     { key: 'referenti', label: `Referenti${client?.contacts?.length ? ` (${client.contacts.length})` : ''}` },
     { key: 'strutture', label: `Strutture (${structures.length})` },
     { key: 'configurazioni', label: 'Configurazioni' },
+    { key: 'portale', label: `Portale${portalAccounts.length ? ` (${portalAccounts.length})` : ''}` },
     { key: 'listino', label: 'Listino' },
     { key: 'attivita', label: 'Attività' },
     { key: 'amministrazione', label: 'Amministrazione' },
@@ -922,8 +931,8 @@ const ClientDetailPage = () => {
           <div className="flex items-center gap-4">
             <div className="flex-shrink-0">
               {client?.logo_path ? (
-                <img
-                  src={`${process.env.REACT_APP_BACKEND_URL}/api/files/${client.logo_path}?auth=${localStorage.getItem('kilolava_token')}`}
+                <AuthImg
+                  path={client.logo_path}
                   alt=""
                   className="w-16 h-16 rounded-xl object-cover border border-border"
                   data-testid="client-logo-img"
@@ -1064,23 +1073,43 @@ const ClientDetailPage = () => {
         <ReferentiSection client={client} clientId={clientId} onSaved={fetchClient} />
       )}
 
-      {/* TAB: Configurazioni */}
-      {activeTab === 'configurazioni' && (
-        <div className="space-y-4">
-          {/* Portal Management */}
+      {/* TAB: Portale (autonomo — account multipli + ordini) */}
+      {activeTab === 'portale' && (
+        <div className="space-y-4" data-testid="tab-portale-content">
+          <Card className="border">
+            <CardContent className="p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <h3 className="text-sm font-semibold flex items-center gap-2"><Shield className="h-4 w-4 text-muted-foreground" />Account Portale</h3>
+                <Button variant="outline" size="sm" className="h-8 gap-1" onClick={() => setPortalPanel(true)} data-testid="create-portal-account-btn">
+                  <Plus className="h-3.5 w-3.5" />Nuovo account
+                </Button>
+              </div>
+              {portalAccounts.length === 0 ? (
+                <p className="text-sm text-muted-foreground" data-testid="portal-accounts-empty">
+                  Nessun account portale. Puoi crearne più di uno (es. proprietario + amministrazione).
+                </p>
+              ) : (
+                <div className="divide-y divide-border/60" data-testid="portal-accounts-list">
+                  {portalAccounts.map(a => (
+                    <div key={a.id} className="flex items-center gap-3 py-2" data-testid={`portal-account-${a.id}`}>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-medium truncate">{a.name || '—'}</p>
+                        <p className="text-xs text-muted-foreground truncate">{a.email}</p>
+                      </div>
+                      <span className={cn('text-xs px-2 py-0.5 rounded-full font-medium',
+                        a.is_active !== false ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300' : 'bg-muted text-muted-foreground')}>
+                        {a.is_active !== false ? 'Attivo' : 'Disattivato'}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
           <Card className="border">
             <CardContent className="p-4">
-              <div className="flex items-center justify-between mb-3">
-                <h3 className="text-sm font-semibold flex items-center gap-2"><Shield className="h-4 w-4 text-muted-foreground" />Portale Cliente</h3>
-              </div>
+              <h3 className="text-sm font-semibold mb-3">Ordini dal Portale</h3>
               <div className="flex flex-wrap gap-3 items-center">
-                {client?.has_portal_account ? (
-                  <span className="text-xs px-2 py-1 rounded-full bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300 font-medium">Account attivo</span>
-                ) : (
-                  <Button variant="outline" size="sm" className="h-8 gap-1" onClick={() => setPortalPanel(true)} data-testid="create-portal-account-btn">
-                    <Plus className="h-3.5 w-3.5" />Crea account portale
-                  </Button>
-                )}
                 <div className="flex items-center gap-2">
                   <Label className="text-xs text-muted-foreground">Ordini</Label>
                   <Switch checked={client?.ordering_enabled || false} onCheckedChange={handleToggleOrdering} data-testid="ordering-toggle" />
@@ -1098,7 +1127,12 @@ const ClientDetailPage = () => {
               </div>
             </CardContent>
           </Card>
+        </div>
+      )}
 
+      {/* TAB: Configurazioni */}
+      {activeTab === 'configurazioni' && (
+        <div className="space-y-4">
           {/* Configurazione Lavanderia a Noleggio */}
           <Card className="border">
             <CardContent className="p-4">
