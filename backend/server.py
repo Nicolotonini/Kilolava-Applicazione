@@ -1128,23 +1128,11 @@ async def clients_overview(current_user: dict = Depends(get_current_user)):
         ]):
             entry(doc["_id"])["alerts"] += doc["n"]
 
-    neg_pipeline = [
-        {"$match": {"structure_id": {"$nin": [None, ""]}}},
-        {"$unwind": "$items"},
-        {"$group": {
-            "_id": {"s": "$structure_id", "a": "$items.article_id"},
-            "bal": {"$sum": {"$cond": [
-                {"$eq": ["$movement_type", "delivered"]}, "$items.quantity",
-                {"$cond": [
-                    {"$in": ["$movement_type", ["picked_up", "returned", "missing", "damaged"]]},
-                    {"$multiply": ["$items.quantity", -1]}, 0
-                ]}
-            ]}},
-        }},
-        {"$match": {"bal": {"$lt": 0}}},
-        {"$group": {"_id": "$_id.s"}},
-    ]
-    neg_structure_ids = [d["_id"] async for d in db.movements.aggregate(neg_pipeline)]
+    # Fase 5 — motore unico: le giacenze negative si leggono da stock_levels
+    neg_structure_ids = [d["_id"] async for d in db.stock_levels.aggregate([
+        {"$match": {"location_type": "structure", "qty": {"$lt": 0}, "location_id": {"$nin": [None, ""]}}},
+        {"$group": {"_id": "$location_id"}},
+    ])]
     if neg_structure_ids:
         async for s in db.structures.find({"id": {"$in": neg_structure_ids}}, {"_id": 0, "client_id": 1}):
             if s.get("client_id"):
@@ -2868,71 +2856,19 @@ async def list_movements(
     return result
 
 
-@api_router.post("/inventory/movements", response_model=MovementResponse)
+@api_router.post("/inventory/movements")
 async def create_movement(data: MovementCreate, current_user: dict = Depends(get_current_user)):
     require_ops(current_user)
-    now = now_iso()
-    mov_id = str(uuid.uuid4())
-    items_raw = [it.model_dump() for it in data.items]
-
-    doc = {
-        "id": mov_id, "movement_type": data.movement_type, "date": data.date,
-        "client_id": data.client_id, "structure_id": data.structure_id, "unit_id": data.unit_id,
-        "items": items_raw, "notes": data.notes,
-        "created_at": now, "updated_at": now,
-    }
-    await db.movements.insert_one(doc)
-
-    # Update stock
-    for it in data.items:
-        delta = it.quantity if data.movement_type in STOCK_IN else -it.quantity
-        await db.articles.update_one({"id": it.article_id}, {"$inc": {"quantity_available": delta}})
-
-    # Resolve names for response
-    art_map = {}
-    art_ids = [it.article_id for it in data.items]
-    if art_ids:
-        async for a in db.articles.find({"id": {"$in": art_ids}}, {"_id": 0, "id": 1, "name": 1}):
-            art_map[a["id"]] = a["name"]
-    cl_name = None
-    if data.client_id:
-        c = await db.clients.find_one({"id": data.client_id}, {"_id": 0})
-        if c:
-            cl_name = get_client_display_name(c)
-    st_name = None
-    if data.structure_id:
-        s = await db.structures.find_one({"id": data.structure_id}, {"_id": 0, "id": 1, "name": 1})
-        if s:
-            st_name = s["name"]
-    un_name = None
-    if data.unit_id:
-        u = await db.units.find_one({"id": data.unit_id}, {"_id": 0, "id": 1, "name": 1})
-        if u:
-            un_name = u["name"]
-
-    items_resp = [MovementItemResponse(article_id=it["article_id"], article_name=art_map.get(it["article_id"]), quantity=it["quantity"]) for it in items_raw]
-    return MovementResponse(
-        id=mov_id, movement_type=data.movement_type, date=data.date,
-        client_id=data.client_id, client_name=cl_name,
-        structure_id=data.structure_id, structure_name=st_name,
-        unit_id=data.unit_id, unit_name=un_name,
-        items=items_resp, notes=data.notes,
-        created_at=now, updated_at=now,
-    )
+    # Fase 5 — motore movimenti UNIFICATO (stock_levels + warehouse_movements):
+    # questo endpoint legacy creava un registro parallelo (db.movements) ed è dismesso.
+    raise HTTPException(status_code=410, detail="Endpoint dismesso: i movimenti si registrano solo nel Magazzino unificato (/api/magazzino/movimenti)")
 
 
 @api_router.delete("/inventory/movements/{movement_id}")
 async def delete_movement(movement_id: str, current_user: dict = Depends(get_current_user)):
     require_ops(current_user)
-    mov = await db.movements.find_one({"id": movement_id}, {"_id": 0})
-    if not mov:
-        raise HTTPException(status_code=404, detail="Movimento non trovato")
-    # Reverse stock change
-    for it in mov.get("items", []):
-        delta = -it["quantity"] if mov["movement_type"] in STOCK_IN else it["quantity"]
-        await db.articles.update_one({"id": it["article_id"]}, {"$inc": {"quantity_available": delta}})
-    await db.movements.delete_one({"id": movement_id})
-    return {"message": "Movimento eliminato"}
+    # Fase 5 — i movimenti sono IMMUTABILI: niente hard delete, si usa lo Storno collegato
+    raise HTTPException(status_code=410, detail="I movimenti non si eliminano: usare lo Storno dal Magazzino unificato (/api/magazzino/movimenti/{id}/storno)")
 
 
 # --- MONTHLY REGISTER ---
@@ -7626,26 +7562,14 @@ async def dashboard_overview(
 
     # Attention list
     attention = []
-    neg_pipeline = [
-        {"$match": {"structure_id": {"$nin": [None, ""]}}},
-        {"$unwind": "$items"},
-        {"$group": {
-            "_id": {"s": "$structure_id", "a": "$items.article_id"},
-            "bal": {"$sum": {"$cond": [
-                {"$eq": ["$movement_type", "delivered"]}, "$items.quantity",
-                {"$cond": [
-                    {"$in": ["$movement_type", ["picked_up", "returned", "missing", "damaged"]]},
-                    {"$multiply": ["$items.quantity", -1]}, 0
-                ]}
-            ]}},
-        }},
-        {"$match": {"bal": {"$lt": 0}}},
-        {"$group": {"_id": "$_id.s"}},
-    ]
-    neg_ids = [d["_id"] async for d in db.movements.aggregate(neg_pipeline)]
+    # Fase 5 — motore unico: le giacenze negative si leggono da stock_levels
+    neg_ids = [d["_id"] async for d in db.stock_levels.aggregate([
+        {"$match": {"location_type": "structure", "qty": {"$lt": 0}, "location_id": {"$nin": [None, ""]}}},
+        {"$group": {"_id": "$location_id"}},
+    ])]
     if neg_ids:
         names = [s["name"] async for s in db.structures.find({"id": {"$in": neg_ids}}, {"_id": 0, "name": 1}).limit(3)]
-        attention.append({"type": "negative_stock", "severity": "danger", "count": len(neg_ids), "detail": ", ".join(names), "link": "/structure-inventory"})
+        attention.append({"type": "negative_stock", "severity": "danger", "count": len(neg_ids), "detail": ", ".join(names), "link": "/magazzino-strutture"})
 
     below = await db.articles.count_documents({"is_active": True, "minimum_threshold": {"$gt": 0}, "$expr": {"$lte": ["$quantity_available", "$minimum_threshold"]}})
     if below:
@@ -7755,15 +7679,17 @@ async def report_client(
     async for doc in db.orders.aggregate(order_pipeline):
         order_stats = {"total": doc.get("total", 0), "count": doc.get("count", 0)}
 
+    # Fase 5 — motore unico: consumi dal registro movimenti unificato (via strutture del cliente)
+    client_struct_ids = [s["id"] async for s in db.structures.find({"client_id": client_id}, {"_id": 0, "id": 1})]
     inv_pipeline = [
-        {"$match": {"date": {"$gte": start, "$lt": end}, "client_id": client_id}},
-        {"$unwind": "$items"},
-        {"$group": {"_id": "$items.article_id", "total_qty": {"$sum": "$items.quantity"}, "article_name": {"$first": "$items.article_name"}}},
+        {"$match": {"at": {"$gte": start, "$lt": end}, "structure_id": {"$in": client_struct_ids},
+                    "movement_type": {"$nin": ["storno", "annullamento"]}}},
+        {"$group": {"_id": "$product_id", "total_qty": {"$sum": "$qty"}, "article_name": {"$first": "$product_name"}}},
         {"$sort": {"total_qty": -1}},
         {"$limit": 10},
     ]
     top_items = []
-    async for doc in db.inventory_movements.aggregate(inv_pipeline):
+    async for doc in db.warehouse_movements.aggregate(inv_pipeline):
         top_items.append({"article_id": doc["_id"], "article_name": doc.get("article_name", ""), "quantity": doc["total_qty"]})
 
     return {
@@ -7795,26 +7721,26 @@ async def report_inventory(
         raise HTTPException(status_code=403, detail="Non autorizzato")
     start, end = _date_range(month, date_from, date_to)
 
+    # Fase 5 — motore unico: report basato sul registro movimenti unificato (warehouse_movements)
     top_pipeline = [
-        {"$match": {"date": {"$gte": start, "$lt": end}}},
-        {"$unwind": "$items"},
-        {"$group": {"_id": "$items.article_id", "total_qty": {"$sum": "$items.quantity"}, "article_name": {"$first": "$items.article_name"}}},
+        {"$match": {"at": {"$gte": start, "$lt": end}, "movement_type": {"$nin": ["storno", "annullamento"]}}},
+        {"$group": {"_id": "$product_id", "total_qty": {"$sum": "$qty"}, "article_name": {"$first": "$product_name"}}},
         {"$sort": {"total_qty": -1}},
         {"$limit": 15},
     ]
     top_items = []
-    async for doc in db.inventory_movements.aggregate(top_pipeline):
+    async for doc in db.warehouse_movements.aggregate(top_pipeline):
         top_items.append({"article_id": doc["_id"], "name": doc.get("article_name", ""), "quantity": doc["total_qty"]})
 
     type_pipeline = [
-        {"$match": {"date": {"$gte": start, "$lt": end}}},
+        {"$match": {"at": {"$gte": start, "$lt": end}}},
         {"$group": {"_id": "$movement_type", "count": {"$sum": 1}}},
     ]
     by_type = {}
-    async for doc in db.inventory_movements.aggregate(type_pipeline):
+    async for doc in db.warehouse_movements.aggregate(type_pipeline):
         by_type[doc["_id"]] = doc["count"]
 
-    total_movements = await db.inventory_movements.count_documents({"date": {"$gte": start, "$lt": end}})
+    total_movements = await db.warehouse_movements.count_documents({"at": {"$gte": start, "$lt": end}})
 
     low_stock = await db.articles.find(
         {"$expr": {"$lte": ["$quantity_available", "$minimum_threshold"]}},
@@ -8334,39 +8260,29 @@ async def generate_ddt_from_logistics(task_id: str, current_user: dict = Depends
 async def generate_ddt_from_movement(movement_id: str, current_user: dict = Depends(get_current_user)):
     if not is_ops_user(current_user):
         raise HTTPException(status_code=403, detail="Non autorizzato")
-    mov = await db.movements.find_one({"id": movement_id}, {"_id": 0})
+    # Fase 5 — motore unico: il DDT si genera dal registro movimenti unificato
+    mov = await db.warehouse_movements.find_one({"$or": [{"id": movement_id}, {"code": movement_id}]}, {"_id": 0})
     if not mov:
         raise HTTPException(status_code=404, detail="Movimento non trovato")
-    # Resolve article names
-    art_ids = [it["article_id"] for it in mov.get("items", [])]
-    art_map = {}
-    if art_ids:
-        async for a in db.articles.find({"id": {"$in": art_ids}}, {"_id": 0, "id": 1, "name": 1}):
-            art_map[a["id"]] = a["name"]
-    items = []
-    for it in mov.get("items", []):
-        items.append(DocumentItemInput(
-            article_id=it.get("article_id"),
-            description=art_map.get(it["article_id"], "Articolo"),
-            quantity=it.get("quantity", 1),
-            unit="pz",
-        ))
-    # Resolve address
+    desc = (f"{mov['product_code']} — " if mov.get("product_code") else "") + (mov.get("product_name") or "Articolo")
+    items = [DocumentItemInput(article_id=mov.get("product_id"), description=desc, quantity=mov.get("qty", 1), unit="pz")]
+    structure_id = mov.get("structure_id")
     address = None
-    if mov.get("structure_id"):
-        s = await db.structures.find_one({"id": mov["structure_id"]}, {"_id": 0, "address": 1})
+    client_id = None
+    if structure_id:
+        s = await db.structures.find_one({"id": structure_id}, {"_id": 0, "address": 1, "client_id": 1})
         if s:
             address = s.get("address")
-    doc_type = "internal_movement" if not mov.get("client_id") else "ddt"
+            client_id = s.get("client_id")
+    doc_type = "ddt" if client_id else "internal_movement"
     data = DocumentCreate(
         document_type=doc_type,
-        client_id=mov.get("client_id"),
-        structure_id=mov.get("structure_id"),
-        unit_id=mov.get("unit_id"),
+        client_id=client_id,
+        structure_id=structure_id,
         destination_address=address,
         items=items,
-        notes=f"Generato da movimento inventario ({mov.get('movement_type', '')}) del {mov.get('date', '')}",
-        movement_id=movement_id,
+        notes=f"Generato da movimento magazzino {mov.get('code') or ''} ({mov.get('movement_type', '')}) del {str(mov.get('at', ''))[:10]}",
+        movement_id=mov.get("id"),
     )
     return await create_document(data, current_user)
 
