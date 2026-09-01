@@ -1064,6 +1064,101 @@ async def update_keys_settings(data: KeysSettingsUpdate, current_user: dict = De
     await db.app_settings.update_one({"_id": "keys"}, {"$set": {"box_capacity": capacity}}, upsert=True)
     return {"box_capacity": capacity}
 
+# ============== FASE 7 — CHIAVI: ritiri e riconsegne tracciate ==============
+
+class KeyActionPayload(BaseModel):
+    holder_user_id: Optional[str] = None
+    note: Optional[str] = None
+
+KEY_COPIES = ("A", "B", "C")
+
+async def _key_copy_state(structure_id: str, copy: str):
+    s = await db.structures.find_one({"id": structure_id}, {"_id": 0, "id": 1, "name": 1, "klv_code": 1, "access_info": 1})
+    if not s:
+        raise HTTPException(status_code=404, detail="Struttura non trovata")
+    ai = s.get("access_info") or {}
+    kb = (ai.get("key_boxes") or {}).get(copy)
+    if not ai.get("kilolava_has_keys") or not kb:
+        raise HTTPException(status_code=400, detail="Copia chiave non tracciata per questa struttura")
+    exists = kb.get("exists") if "exists" in kb else bool(kb.get("present"))
+    if not exists:
+        raise HTTPException(status_code=400, detail="Copia mancante: non può essere movimentata")
+    return s, kb
+
+async def _log_key_movement(s: dict, copy: str, action: str, holder: dict, note: str, user: dict) -> dict:
+    mov = {
+        "id": str(uuid.uuid4()),
+        "structure_id": s["id"], "klv_code": s.get("klv_code"), "structure_name": s.get("name"),
+        "copy": copy, "action": action,
+        "holder_user_id": holder.get("id"), "holder_name": holder.get("name"),
+        "note": note or "",
+        "by_user_id": user.get("id"), "by_user_name": user.get("name", ""),
+        "at": now_iso(),
+    }
+    await db.key_movements.insert_one(mov)
+    mov.pop("_id", None)
+    return mov
+
+@api_router.post("/keys/{structure_id}/{copy}/ritiro")
+async def key_ritiro(structure_id: str, copy: str, data: KeyActionPayload, current_user: dict = Depends(get_current_user)):
+    copy = copy.upper()
+    if copy not in KEY_COPIES:
+        raise HTTPException(status_code=400, detail="Copia non valida (A, B o C)")
+    s, kb = await _key_copy_state(structure_id, copy)
+    if not kb.get("present", False):
+        raise HTTPException(status_code=400, detail=f"Chiave già fuori sede{(' — ' + kb['holder_name']) if kb.get('holder_name') else ''}")
+    if is_ops_user(current_user):
+        holder_id = data.holder_user_id or current_user["id"]
+    elif current_user["role"] in (UserRole.CLEANER, UserRole.RIDER):
+        holder_id = current_user["id"]  # keys.own: solo per sé stessi
+    else:
+        raise HTTPException(status_code=403, detail="Non autorizzato")
+    hu = await db.users.find_one({"id": holder_id}, {"_id": 0, "id": 1, "first_name": 1, "last_name": 1})
+    if not hu:
+        raise HTTPException(status_code=404, detail="Utente detentore non trovato")
+    holder = {"id": hu["id"], "name": f"{hu.get('first_name', '')} {hu.get('last_name', '')}".strip()}
+    now = now_iso()
+    await db.structures.update_one({"id": structure_id}, {"$set": {
+        f"access_info.key_boxes.{copy}.present": False,
+        f"access_info.key_boxes.{copy}.holder_user_id": holder["id"],
+        f"access_info.key_boxes.{copy}.holder_name": holder["name"],
+        f"access_info.key_boxes.{copy}.out_since": now,
+        "updated_at": now}})
+    return await _log_key_movement(s, copy, "ritiro", holder, data.note, current_user)
+
+@api_router.post("/keys/{structure_id}/{copy}/riconsegna")
+async def key_riconsegna(structure_id: str, copy: str, data: KeyActionPayload, current_user: dict = Depends(get_current_user)):
+    copy = copy.upper()
+    if copy not in KEY_COPIES:
+        raise HTTPException(status_code=400, detail="Copia non valida (A, B o C)")
+    s, kb = await _key_copy_state(structure_id, copy)
+    if kb.get("present", False):
+        raise HTTPException(status_code=400, detail="Chiave già in sede")
+    if not is_ops_user(current_user):
+        if current_user["role"] not in (UserRole.CLEANER, UserRole.RIDER) or kb.get("holder_user_id") != current_user["id"]:
+            raise HTTPException(status_code=403, detail="Puoi riconsegnare solo le chiavi che hai ritirato")
+    holder = {"id": kb.get("holder_user_id"), "name": kb.get("holder_name")}
+    now = now_iso()
+    await db.structures.update_one({"id": structure_id}, {"$set": {
+        f"access_info.key_boxes.{copy}.present": True,
+        f"access_info.key_boxes.{copy}.holder_user_id": None,
+        f"access_info.key_boxes.{copy}.holder_name": None,
+        f"access_info.key_boxes.{copy}.out_since": None,
+        "updated_at": now}})
+    return await _log_key_movement(s, copy, "riconsegna", holder, data.note, current_user)
+
+@api_router.get("/keys/movements")
+async def key_movements_log(structure_id: Optional[str] = None, copy: Optional[str] = None,
+                            limit: int = 50, current_user: dict = Depends(get_current_user)):
+    if not is_ops_user(current_user):
+        raise HTTPException(status_code=403, detail="Non autorizzato")
+    q = {}
+    if structure_id:
+        q["structure_id"] = structure_id
+    if copy:
+        q["copy"] = copy.upper()
+    return await db.key_movements.find(q, {"_id": 0}).sort("at", -1).to_list(max(1, min(limit, 200)))
+
 @api_router.get("/integrations/google-sheets/status")
 async def google_sheets_status(current_user: dict = Depends(get_current_user)):
     if not is_ops_user(current_user):
@@ -1529,6 +1624,7 @@ async def delete_structure(structure_id: str, current_user: dict = Depends(get_c
         (db.fabbisogni, {"structure_id": structure_id}, "Richieste/Fabbisogni"),
         (db.laundry_jobs, {"structure_id": structure_id}, "Lavanderia Privata"),
         (db.documents, {"structure_id": structure_id}, "Documenti/DDT"),
+        (db.key_movements, {"structure_id": structure_id}, "Movimenti chiavi"),
     ]
     refs = []
     for coll, q, label in checks:

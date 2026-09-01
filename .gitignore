@@ -113,3 +113,4 @@ frontend/node_modules/.cache/default-development/1.pack
 /scripts/import_real_users.py
 /tests/__pycache__/
 *.dump
+frontend/node_modules/.cache/default-development/10.pack

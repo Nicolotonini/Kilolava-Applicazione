@@ -1,9 +1,14 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import api, { structuresApi } from '../lib/api';
 import { Card, CardContent } from '../components/ui/card';
 import { Input } from '../components/ui/input';
-import { KeyRound, Search, CheckCircle2, XCircle, MapPin, User, ArrowUpRight } from 'lucide-react';
+import { Button } from '../components/ui/button';
+import { Textarea } from '../components/ui/textarea';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
+import { OperationalDrawer } from '../components/kilolava/OperationalDrawer';
+import { toast } from 'sonner';
+import { KeyRound, Search, CheckCircle2, XCircle, MapPin, User, ArrowUpRight, Undo2, History } from 'lucide-react';
 import { cn } from '../lib/utils';
 
 const KEY_DEFS = [
@@ -21,8 +26,14 @@ const KeysPage = () => {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState('all');
+  const [drawer, setDrawer] = useState(null); // { s, copy }
+  const [users, setUsers] = useState([]);
+  const [movements, setMovements] = useState([]);
+  const [holderId, setHolderId] = useState('');
+  const [actionNote, setActionNote] = useState('');
+  const [actionLoading, setActionLoading] = useState(false);
 
-  useEffect(() => {
+  const fetchData = useCallback(() => {
     Promise.all([
       structuresApi.getAll(),
       api.get('/settings/keys').catch(() => ({ data: { box_capacity: 60 } })),
@@ -35,6 +46,39 @@ const KeysPage = () => {
       .finally(() => setLoading(false));
   }, []);
 
+  useEffect(() => { fetchData(); }, [fetchData]);
+
+  const openDrawer = async (e, s, copy) => {
+    e.stopPropagation();
+    if (!copy.tracked || !copy.exists) return;
+    setDrawer({ s, copy });
+    setHolderId('');
+    setActionNote('');
+    try {
+      const [uRes, mRes] = await Promise.all([
+        users.length ? Promise.resolve({ data: users }) : api.get('/users', { params: { internal: 1 } }),
+        api.get('/keys/movements', { params: { structure_id: s.id, copy: copy.letter, limit: 10 } }),
+      ]);
+      setUsers(uRes.data.filter(u => u.is_active !== false));
+      setMovements(mRes.data);
+    } catch { setMovements([]); }
+  };
+
+  const doAction = async (action) => {
+    if (action === 'ritiro' && !holderId) { toast.error('Seleziona chi ritira la chiave'); return; }
+    setActionLoading(true);
+    try {
+      await api.post(`/keys/${drawer.s.id}/${drawer.copy.letter}/${action}`, {
+        holder_user_id: action === 'ritiro' ? holderId : undefined,
+        note: actionNote || null,
+      });
+      toast.success(action === 'ritiro' ? 'Ritiro chiave registrato' : 'Riconsegna registrata');
+      setDrawer(null);
+      fetchData();
+    } catch (e) { toast.error(e.response?.data?.detail || 'Errore'); }
+    finally { setActionLoading(false); }
+  };
+
   const copies = (s) => KEY_DEFS.map(d => {
     const raw = (s.access_info?.key_boxes || {})[d.letter];
     const exists = raw ? (raw.exists !== undefined ? !!raw.exists : !!raw.present) : false;
@@ -45,6 +89,8 @@ const KeysPage = () => {
       box: raw?.box || d.letter,
       slot: raw?.slot || '',
       present: exists && !!raw?.present,
+      holder: raw?.holder_name || null,
+      outSince: raw?.out_since || null,
     };
   });
   const hasKeys = (s) => !!s.access_info?.kilolava_has_keys;
@@ -188,7 +234,12 @@ const KeysPage = () => {
                       </div>
                     </div>
                     {cps.map(c => (
-                      <CopyCell key={c.letter} copy={c} testId={`copy-${s.id}-${c.letter}`} />
+                      <button key={c.letter} type="button" onClick={(e) => openDrawer(e, s, c)}
+                        className={cn('flex items-center gap-1.5 text-sm text-left rounded-md px-1 py-0.5 -mx-1',
+                          c.tracked && c.exists && 'hover:bg-muted/70 cursor-pointer')}
+                        data-testid={`copy-${s.id}-${c.letter}`}>
+                        <CopyStatus copy={c} />
+                      </button>
                     ))}
                   </CardContent>
 
@@ -214,10 +265,11 @@ const KeysPage = () => {
                     )}
                     <div className="space-y-1.5 pt-1 border-t border-border">
                       {cps.map(c => (
-                        <div key={c.letter} className="flex items-center gap-2 text-sm" data-testid={`copy-mobile-${s.id}-${c.letter}`}>
+                        <button key={c.letter} type="button" onClick={(e) => openDrawer(e, s, c)}
+                          className="flex items-center gap-2 text-sm w-full text-left" data-testid={`copy-mobile-${s.id}-${c.letter}`}>
                           <span className="font-mono font-bold w-4">{c.letter}</span>
                           <CopyStatus copy={c} />
-                        </div>
+                        </button>
                       ))}
                     </div>
                   </CardContent>
@@ -227,17 +279,94 @@ const KeysPage = () => {
           </div>
         </div>
       )}
+      {drawer && (
+        <OperationalDrawer open onOpenChange={(v) => { if (!v) setDrawer(null); }}
+          title={`Chiave ${drawer.s.klv_code || ''} — Copia ${drawer.copy.letter}`}
+          description={`${drawer.s.name} · Box ${drawer.copy.box}${drawer.copy.slot ? ` · Slot ${drawer.copy.slot}` : ''}`}
+          footer={
+            <div className="flex items-center justify-end gap-2 w-full">
+              <Button variant="outline" onClick={() => setDrawer(null)} data-testid="drawer-cancel-btn">Chiudi</Button>
+              {drawer.copy.present ? (
+                <Button onClick={() => doAction('ritiro')} disabled={actionLoading}
+                  className="bg-[#F24E75] hover:bg-[#E03B62] text-white" data-testid="key-ritiro-btn">
+                  <ArrowUpRight className="h-4 w-4 mr-1.5" />Registra ritiro
+                </Button>
+              ) : (
+                <Button onClick={() => doAction('riconsegna')} disabled={actionLoading}
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white" data-testid="key-riconsegna-btn">
+                  <Undo2 className="h-4 w-4 mr-1.5" />Registra riconsegna
+                </Button>
+              )}
+            </div>
+          }
+          testId="keys-drawer">
+          <div className="space-y-4">
+            <div className="rounded-lg border border-border p-3">
+              <p className="text-xs uppercase tracking-wider text-muted-foreground mb-1">Stato attuale</p>
+              {drawer.copy.present ? (
+                <p className="text-sm font-medium flex items-center gap-1.5"><CheckCircle2 className="h-4 w-4 text-emerald-500" />In sede{drawer.copy.slot ? ` — Slot ${drawer.copy.slot}` : ''}</p>
+              ) : (
+                <div>
+                  <p className="text-sm font-medium text-amber-600 flex items-center gap-1.5"><ArrowUpRight className="h-4 w-4" />Fuori sede</p>
+                  {drawer.copy.holder && <p className="text-sm mt-0.5" data-testid="drawer-holder">Detenuta da <span className="font-medium">{drawer.copy.holder}</span></p>}
+                  {drawer.copy.outSince && <p className="text-xs text-muted-foreground mt-0.5">Dal {new Date(drawer.copy.outSince).toLocaleString('it-IT', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</p>}
+                </div>
+              )}
+            </div>
+
+            {drawer.copy.present && (
+              <div className="space-y-2">
+                <p className="text-xs font-medium text-muted-foreground uppercase">Chi ritira la chiave *</p>
+                <Select value={holderId} onValueChange={setHolderId}>
+                  <SelectTrigger data-testid="key-holder-select"><SelectValue placeholder="Seleziona persona..." /></SelectTrigger>
+                  <SelectContent>
+                    {users.map(u => (
+                      <SelectItem key={u.id} value={u.id} data-testid={`holder-opt-${u.id}`}>
+                        {u.first_name} {u.last_name}{u.usr_code ? ` · ${u.usr_code}` : ''}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+
+            <div className="space-y-2">
+              <p className="text-xs font-medium text-muted-foreground uppercase">Note (facoltative)</p>
+              <Textarea value={actionNote} onChange={(e) => setActionNote(e.target.value)} rows={2} className="resize-none text-sm" data-testid="key-note" />
+            </div>
+
+            <div>
+              <p className="text-xs font-medium text-muted-foreground uppercase mb-2 flex items-center gap-1.5"><History className="h-3.5 w-3.5" />Ultimi movimenti</p>
+              {movements.length === 0 ? (
+                <p className="text-sm text-muted-foreground" data-testid="key-history-empty">Nessun movimento registrato.</p>
+              ) : (
+                <div className="space-y-1.5" data-testid="key-history">
+                  {movements.map(m => (
+                    <div key={m.id} className="flex items-start gap-2 text-sm border-b border-border/60 pb-1.5">
+                      {m.action === 'ritiro'
+                        ? <ArrowUpRight className="h-3.5 w-3.5 mt-0.5 text-amber-500 shrink-0" />
+                        : <Undo2 className="h-3.5 w-3.5 mt-0.5 text-emerald-500 shrink-0" />}
+                      <div className="min-w-0">
+                        <p className="truncate">
+                          <span className="font-medium">{m.action === 'ritiro' ? 'Ritiro' : 'Riconsegna'}</span>
+                          {m.holder_name ? ` — ${m.holder_name}` : ''}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          {new Date(m.at).toLocaleString('it-IT', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                          {m.by_user_name ? ` · registrato da ${m.by_user_name}` : ''}{m.note ? ` · ${m.note}` : ''}
+                        </p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </OperationalDrawer>
+      )}
     </div>
   );
 };
-
-function CopyCell({ copy, testId }) {
-  return (
-    <div className="flex items-center gap-1.5 text-sm" data-testid={testId}>
-      <CopyStatus copy={copy} />
-    </div>
-  );
-}
 
 function CopyStatus({ copy }) {
   if (!copy.tracked) {
@@ -259,8 +388,13 @@ function CopyStatus({ copy }) {
     );
   }
   return (
-    <span className="flex items-center gap-1.5 text-amber-600 dark:text-amber-400 font-semibold text-sm whitespace-nowrap">
-      <ArrowUpRight className="h-4 w-4 shrink-0" />FUORI SEDE
+    <span className="flex flex-col items-start">
+      <span className="flex items-center gap-1.5 text-amber-600 dark:text-amber-400 font-semibold text-sm whitespace-nowrap">
+        <ArrowUpRight className="h-4 w-4 shrink-0" />FUORI SEDE
+      </span>
+      {copy.holder && (
+        <span className="text-xs text-muted-foreground truncate max-w-[160px]" data-testid="copy-holder">{copy.holder}</span>
+      )}
     </span>
   );
 }
