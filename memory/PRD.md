@@ -1,5 +1,13 @@
 # Kilolava - Product Requirements Document
 
+## Phase 41 (31/08/2026) — Fondamenta Design System — COMPLETATO (iteration_33: 100%, 30/30 route + mobile + dark)
+- SOLO UI: zero modifiche a backend/API/dati/route/logiche. Documentazione ufficiale: /app/frontend/DESIGN_SYSTEM.md (token, scala tipografica, regole pagina-dedicata/drawer/popup, sidebar, responsive, a11y).
+- Token: scala tipografica Tailwind (text-page-title 28/34, section-title 20/28, card-title 16/24, body=text-sm 15/22, caption=text-xs 13/18, kpi 32/38), --radius-control 10px (rounded-control), colori già allineati alle specifiche (#F34F72/#0F1729/#65758B/#F8FAFC/#E7EAEE/#10B981) e documentati in index.css.
+- Componenti ui consolidati: Button (sm 32/default 40/lg 44/icon 40/icon-sm 32, rounded-control, ring-2), Input/SelectTrigger h-10 rounded-control ring-2 disabled:bg-muted/50, Textarea min-h-24, Card shadow-sm p-5, Badge pill rounded-full.
+- Nuovi componenti kilolava: AppPage (padding 16/20/32 + space-y-6), SectionHeader, EntityListPage, EntityDetailPage (scaffold per migrazioni future, NON ancora usati dalle pagine), DataTable (colonne+hideBelow+renderMobileCard), FormField, ErrorState+TableSkeleton (in EmptyState.jsx), OperationalDrawer (560px/full mobile, header/scroll/footer), ConfirmDialog. PageHeader esteso (back/code/badges/description) retro-compatibile; KpiCard a text-kpi.
+- Sidebar: una sola tendina aperta alla volta (toggleGroup + auto-open sostitutivo), voci h-10 uniformi, attiva font-semibold, aria-expanded sui gruppi.
+- PROSSIMO STEP CONCORDATO CON L'UTENTE: trasformazione scheda Cliente in pagina dedicata (EntityDetailPage) — NON iniziare senza sua conferma; poi migrazione progressiva degli altri moduli a EntityListPage/EntityDetailPage/DataTable.
+
 ## Phase 40 (30/08/2026) — UI/UX Prima attivazione + loading brandizzato — COMPLETATO (self-tested 360/390/412/desktop, light+dark, e2e ok)
 - LoginPage.js riscritta lato UI (logica auth INVARIATA): attivazione a UNA colonna su mobile (grid-cols-1 sm:grid-cols-2), campi full width h-11 uniformi, label sopra senza wrap; card mx-5 p-6 su mobile, logo h-14 sm:h-20 mai tagliato, niente overflow orizzontale.
 - SecretInput riutilizzabile con occhio mostra/nascondi indipendente per: codice attivazione (default visibile), password login, nuova password, conferma, PIN, conferma PIN, PIN setpin (default nascosti). Solo visualizzazione: nessun dato in chiaro salvato.

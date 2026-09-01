@@ -11,7 +11,7 @@ export function KpiCard({ label, value, sub, accent, onClick, active, testId }) 
     >
       <CardContent className="p-4">
         <p className="text-xs uppercase tracking-wider text-muted-foreground truncate">{label}</p>
-        <p className={cn('text-3xl font-semibold tabular-nums mt-1', accent)} data-testid={testId}>{value ?? '—'}</p>
+        <p className={cn('text-kpi tabular-nums mt-1', accent)} data-testid={testId}>{value ?? '—'}</p>
         {sub && <p className="text-xs text-muted-foreground mt-1 truncate">{sub}</p>}
       </CardContent>
     </Card>

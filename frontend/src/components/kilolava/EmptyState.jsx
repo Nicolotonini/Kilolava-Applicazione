@@ -1,14 +1,42 @@
 import React from 'react';
-import { AlertTriangle } from 'lucide-react';
+import { AlertTriangle, RotateCcw, ArrowLeft } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { cn } from '../../lib/utils';
 import { Skeleton } from '../ui/skeleton';
+import { Button } from '../ui/button';
 
-export function EmptyState({ icon: Icon = AlertTriangle, message, action, className, testId }) {
+/* Stato vuoto standard: icona, titolo opzionale, spiegazione, CTA facoltativa. */
+export function EmptyState({ icon: Icon = AlertTriangle, title, message, action, className, testId }) {
   return (
-    <div className={cn('text-center py-14 border border-dashed border-border rounded-xl', className)} data-testid={testId || 'empty-state'}>
+    <div className={cn('text-center py-14 px-4 border border-dashed border-border rounded-xl', className)} data-testid={testId || 'empty-state'}>
       <Icon className="h-8 w-8 mx-auto text-muted-foreground/30 mb-3" />
+      {title && <p className="text-card-title mb-1">{title}</p>}
       <p className="text-sm text-muted-foreground">{message}</p>
-      {action && <div className="mt-3 flex justify-center">{action}</div>}
+      {action && <div className="mt-4 flex justify-center">{action}</div>}
+    </div>
+  );
+}
+
+/* Stato di errore standard: messaggio comprensibile, Riprova, eventuale ritorno indietro. */
+export function ErrorState({ title = 'Qualcosa non ha funzionato', message, onRetry, backTo, backLabel, className, testId }) {
+  const navigate = useNavigate();
+  return (
+    <div className={cn('text-center py-14 px-4 border border-dashed border-destructive/30 rounded-xl', className)} data-testid={testId || 'error-state'}>
+      <AlertTriangle className="h-8 w-8 mx-auto text-destructive/50 mb-3" />
+      <p className="text-card-title mb-1">{title}</p>
+      {message && <p className="text-sm text-muted-foreground max-w-md mx-auto">{message}</p>}
+      <div className="mt-4 flex items-center justify-center gap-2">
+        {onRetry && (
+          <Button variant="outline" size="sm" onClick={onRetry} className="gap-1.5" data-testid="error-retry-btn">
+            <RotateCcw className="h-3.5 w-3.5" />Riprova
+          </Button>
+        )}
+        {backTo && (
+          <Button variant="ghost" size="sm" onClick={() => navigate(backTo)} className="gap-1.5" data-testid="error-back-btn">
+            <ArrowLeft className="h-3.5 w-3.5" />{backLabel || 'Torna indietro'}
+          </Button>
+        )}
+      </div>
     </div>
   );
 }
@@ -56,6 +84,21 @@ export function DetailSkeleton() {
         </div>
         <Skeleton className="h-60 w-full rounded-xl" />
       </div>
+    </div>
+  );
+}
+
+export function TableSkeleton({ rows = 6, cols = 5 }) {
+  return (
+    <div className="rounded-xl border border-border overflow-hidden" data-testid="table-skeleton">
+      <div className="flex gap-4 px-4 py-3 border-b border-border">
+        {Array.from({ length: cols }).map((_, i) => <Skeleton key={i} className="h-3 flex-1" />)}
+      </div>
+      {Array.from({ length: rows }).map((_, i) => (
+        <div key={i} className="flex gap-4 px-4 py-3.5 border-b border-border/60 last:border-0">
+          {Array.from({ length: cols }).map((_, j) => <Skeleton key={j} className="h-3.5 flex-1" />)}
+        </div>
+      ))}
     </div>
   );
 }

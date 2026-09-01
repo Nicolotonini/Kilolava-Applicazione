@@ -17,11 +17,19 @@ module.exports = {
                 base: ['1rem', { lineHeight: '1.5rem' }],
                 lg: ['1.125rem', { lineHeight: '1.75rem' }],
                 xl: ['1.25rem', { lineHeight: '1.75rem' }],
+                /* Scala tipografica ufficiale Kilolava (Design System) */
+                'page-title': ['1.75rem', { lineHeight: '2.125rem', fontWeight: '600' }],      // 28/34
+                'section-title': ['1.25rem', { lineHeight: '1.75rem', fontWeight: '600' }],    // 20/28
+                'card-title': ['1rem', { lineHeight: '1.5rem', fontWeight: '600' }],           // 16/24
+                'body': ['0.9375rem', { lineHeight: '1.375rem' }],                             // 15/22 (= text-sm)
+                'caption': ['0.8125rem', { lineHeight: '1.125rem' }],                          // 13/18 (= text-xs)
+                'kpi': ['2rem', { lineHeight: '2.375rem', fontWeight: '600' }],                // 32/38
             },
             borderRadius: {
                 lg: 'var(--radius)',
                 md: 'calc(var(--radius) - 2px)',
-                sm: 'calc(var(--radius) - 4px)'
+                sm: 'calc(var(--radius) - 4px)',
+                control: 'var(--radius-control)'
             },
             colors: {
                 background: 'hsl(var(--background))',

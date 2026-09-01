@@ -176,13 +176,12 @@ const AppLayout = ({ children }) => {
     return location.pathname === p || location.pathname.startsWith(p + '/');
   };
 
-  // Auto-open the group containing the active route
+  // Auto-open the group containing the active route (una sola tendina aperta alla volta)
   useEffect(() => {
-    NAV.forEach((entry) => {
-      if (entry.type === 'group' && entry.children.some((c) => isPathActive(c.path))) {
-        setOpenGroups((prev) => (prev[entry.key] ? prev : { ...prev, [entry.key]: true }));
-      }
-    });
+    const activeGroup = NAV.find(
+      (entry) => entry.type === 'group' && entry.children.some((c) => isPathActive(c.path))
+    );
+    if (activeGroup) setOpenGroups({ [activeGroup.key]: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [location.pathname, location.search]);
 
@@ -204,7 +203,7 @@ const AppLayout = ({ children }) => {
     })
     .filter(Boolean);
 
-  const toggleGroup = (key) => setOpenGroups((prev) => ({ ...prev, [key]: !prev[key] }));
+  const toggleGroup = (key) => setOpenGroups((prev) => (prev[key] ? {} : { [key]: true }));
 
   const handleRoleSwitch = (newRole) => {
     setImpersonatedRole(newRole === realRole ? null : newRole);
@@ -230,7 +229,7 @@ const AppLayout = ({ children }) => {
           onClick={onNavigate}
           data-testid={`nav-${entry.key}`}
           className={cn(
-            'flex items-center gap-3 px-3 py-2.5 rounded-md text-sm transition-colors',
+            'flex items-center gap-3 h-10 px-3 rounded-md text-sm transition-colors',
             active
               ? 'bg-primary/10 text-primary font-semibold'
               : 'text-foreground/70 hover:bg-muted hover:text-foreground'
@@ -260,9 +259,10 @@ const AppLayout = ({ children }) => {
         <button
           onClick={() => toggleGroup(entry.key)}
           data-testid={`nav-group-${entry.key}`}
+          aria-expanded={open}
           className={cn(
-            'w-full flex items-center gap-3 px-3 py-2.5 rounded-md text-sm transition-colors',
-            childActive && !open ? 'text-primary font-medium' : 'text-foreground/70 hover:bg-muted hover:text-foreground'
+            'w-full flex items-center gap-3 h-10 px-3 rounded-md text-sm transition-colors',
+            childActive && !open ? 'text-primary font-semibold' : 'text-foreground/70 hover:bg-muted hover:text-foreground'
           )}
         >
           <entry.icon className={cn('h-5 w-5 flex-shrink-0', childActive ? 'text-primary' : 'text-foreground/50')} />
@@ -280,7 +280,7 @@ const AppLayout = ({ children }) => {
                   onClick={onNavigate}
                   data-testid={`nav-${child.key}`}
                   className={cn(
-                    'flex items-center gap-2 pl-11 pr-3 py-2 rounded-md text-sm transition-colors',
+                    'flex items-center gap-2 h-10 pl-11 pr-3 rounded-md text-sm transition-colors',
                     active
                       ? 'bg-primary/10 text-primary font-semibold'
                       : 'text-foreground/60 hover:bg-muted hover:text-foreground'
