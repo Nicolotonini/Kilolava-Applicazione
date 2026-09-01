@@ -1,19 +1,25 @@
 import { useAuth } from '../contexts/AuthContext';
 import { useState, useEffect, useCallback } from 'react';
 
+// Specchio esatto della matrice backend ROLE_PERMISSIONS (server.py) — fonte di verità: backend.
+// Il backend invia user.permissions (ruolo + extra_roles unificati); questa copia serve solo
+// per l'anteprima "Visualizza come" (impersonation) e come fallback.
 const ROLE_PERMISSIONS = {
   admin: ['*'],
   operations_manager: [
     'clients.read', 'clients.write', 'structures.read', 'structures.write',
     'units.read', 'units.write', 'calendar.read', 'calendar.write',
+    'cleaning.read', 'cleaning.write', 'keys.read', 'keys.write',
     'logistics.read', 'logistics.write', 'inventory.read', 'inventory.write',
-    'orders.read', 'orders.write', 'automation.read', 'automation.write',
+    'orders.read', 'orders.write', 'segnalazioni.read', 'segnalazioni.write',
+    'maintenance.read', 'maintenance.write', 'laundry.read', 'laundry.write',
+    'users.read', 'map.read', 'reports.read', 'automation.read', 'automation.write',
     'portal_ops.read', 'portal_ops.write',
   ],
-  cleaner: ['tasks.own.read', 'tasks.own.write'],
-  rider: ['logistics.own.read', 'logistics.own.write'],
-  maintenance: ['maintenance.own.read', 'maintenance.own.write'],
-  laundry: ['laundry.own.read', 'laundry.own.write'],
+  cleaner: ['tasks.own.read', 'tasks.own.write', 'keys.own.read', 'keys.own.write', 'segnalazioni.own.write'],
+  rider: ['logistics.own.read', 'logistics.own.write', 'keys.own.read', 'keys.own.write', 'segnalazioni.own.write'],
+  maintenance: ['maintenance.own.read', 'maintenance.own.write', 'segnalazioni.own.write'],
+  laundry: ['laundry.own.read', 'laundry.own.write', 'segnalazioni.own.write'],
   client: ['portal.read', 'portal.write'],
 };
 

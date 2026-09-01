@@ -1,1 +1,0 @@
-{"indexes":[{"v":{"$numberInt":"2"},"key":{"_id":{"$numberInt":"1"}},"name":"_id_"}],"uuid":"60448e3953584279915080afa7a36005","collectionName":"oauth_states","type":"collection"}

@@ -1,1 +1,0 @@
-{"indexes":[{"v":{"$numberInt":"2"},"key":{"_id":{"$numberInt":"1"}},"name":"_id_"},{"v":{"$numberInt":"2"},"key":{"connection_id":{"$numberInt":"1"},"external_id":{"$numberInt":"1"}},"name":"cm_res_stable_key","unique":true}],"uuid":"673bbfcb3d3d4edcb471a8f620f21dbc","collectionName":"cm_reservations","type":"collection"}

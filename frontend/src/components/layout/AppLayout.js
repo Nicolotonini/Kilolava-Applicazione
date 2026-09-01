@@ -92,6 +92,7 @@ const ROLE_ICONS = {
   cleaner: Sparkles,
   rider: Truck,
   maintenance: Wrench,
+  laundry: Shirt,
   client: Users,
 };
 
@@ -162,10 +163,11 @@ const AppLayout = ({ children }) => {
   const accountRef = useRef(null);
   const segBadge = useSegnalazioniBadge();
 
-  // L'Addetto Lavanderia vive solo dentro Lavanderia Privata
+  // L'Addetto Lavanderia vive solo dentro Lavorazioni (history/prezzi restano ops-only)
   const laundryOnly = role === 'laundry';
   useEffect(() => {
-    if (laundryOnly && !location.pathname.startsWith('/private-laundry')) {
+    const allowed = location.pathname.startsWith('/private-laundry/jobs') || location.pathname === '/notifications';
+    if (laundryOnly && !allowed) {
       navigate('/private-laundry/jobs', { replace: true });
     }
   }, [laundryOnly, location.pathname, navigate]);
@@ -212,7 +214,8 @@ const AppLayout = ({ children }) => {
     setMobileMenuOpen(false);
     const homeRoutes = {
       admin: '/dashboard', operations_manager: '/dashboard',
-      cleaner: '/cleaner', rider: '/rider', maintenance: '/maintenance', client: '/portal',
+      cleaner: '/cleaner', rider: '/rider', maintenance: '/maintenance',
+      laundry: '/private-laundry/jobs', client: '/portal',
     };
     navigate(homeRoutes[newRole] || '/dashboard');
   };

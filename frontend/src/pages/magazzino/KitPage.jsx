@@ -174,6 +174,19 @@ function KitEditDialog({ kit, onClose, onDone }) {
   const [addId, setAddId] = useState('');
   const [versions, setVersions] = useState(null);
   const [saving, setSaving] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+
+  const removeKit = async () => {
+    if (!confirmDelete) { setConfirmDelete(true); return; }
+    setDeleting(true);
+    try {
+      await api.delete(`/magazzino/kits/${kit.id}`);
+      toast.success('Kit eliminato');
+      onDone();
+    } catch (e) { toast.error(e.response?.data?.detail || 'Errore'); setConfirmDelete(false); }
+    finally { setDeleting(false); }
+  };
 
   useEffect(() => {
     api.get(`/magazzino/catalog/${domain}`).then(r => setCatalog(r.data)).catch(() => setCatalog([]));
@@ -323,11 +336,19 @@ function KitEditDialog({ kit, onClose, onDone }) {
             </div>
           )}
 
-          <div className="flex justify-end gap-2">
-            <Button variant="ghost" onClick={onClose}>Annulla</Button>
-            <Button onClick={save} disabled={saving} className="bg-primary text-primary-foreground hover:bg-primary/90" data-testid="kit-save-btn">
-              {saving ? 'Salvataggio...' : 'Salva kit'}
-            </Button>
+          <div className="flex justify-between gap-2">
+            {kit ? (
+              <Button variant="outline" onClick={removeKit} disabled={deleting}
+                className="text-destructive border-destructive/30 hover:bg-destructive/10" data-testid="kit-delete-btn">
+                <Trash2 className="h-3.5 w-3.5 mr-1.5" />{confirmDelete ? 'Confermi eliminazione?' : 'Elimina'}
+              </Button>
+            ) : <span />}
+            <div className="flex gap-2">
+              <Button variant="ghost" onClick={onClose}>Annulla</Button>
+              <Button onClick={save} disabled={saving} className="bg-primary text-primary-foreground hover:bg-primary/90" data-testid="kit-save-btn">
+                {saving ? 'Salvataggio...' : 'Salva kit'}
+              </Button>
+            </div>
           </div>
         </div>
       </DialogContent>

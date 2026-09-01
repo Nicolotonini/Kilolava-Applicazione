@@ -459,6 +459,135 @@ const StructureEditPanel = ({ open, onClose, structure, clientId, onSave, t }) =
   );
 };
 
+const emptyContact = { name: '', role: '', phone: '', email: '', notes: '' };
+
+// Sezione Referenti del Cliente (contacts CRUD, salvati sul cliente via PUT /clients/{id})
+const ReferentiSection = ({ client, clientId, onSaved }) => {
+  const contacts = client?.contacts || [];
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [editing, setEditing] = useState(null);
+  const [form, setForm] = useState(emptyContact);
+  const [saving, setSaving] = useState(false);
+  const [removing, setRemoving] = useState(null);
+
+  const openNew = () => { setEditing(null); setForm(emptyContact); setDialogOpen(true); };
+  const openEdit = (c) => {
+    setEditing(c);
+    setForm({ name: c.name || '', role: c.role || '', phone: c.phone || '', email: c.email || '', notes: c.notes || '' });
+    setDialogOpen(true);
+  };
+
+  const saveContacts = async (next) => {
+    await api.put(`/clients/${clientId}`, { contacts: next });
+    onSaved();
+  };
+
+  const handleSave = async () => {
+    if (!form.name.trim()) { toast.error('Il nome del referente è obbligatorio'); return; }
+    setSaving(true);
+    try {
+      const next = editing
+        ? contacts.map(c => (c.id === editing.id ? { ...c, ...form } : c))
+        : [...contacts, { ...form }];
+      await saveContacts(next);
+      toast.success(editing ? 'Referente aggiornato' : 'Referente aggiunto');
+      setDialogOpen(false);
+    } catch (e) { toast.error(e.response?.data?.detail || 'Errore'); }
+    finally { setSaving(false); }
+  };
+
+  const handleRemove = async (c) => {
+    setRemoving(c.id);
+    try {
+      await saveContacts(contacts.filter(x => x.id !== c.id));
+      toast.success('Referente rimosso');
+    } catch (e) { toast.error('Errore'); }
+    finally { setRemoving(null); }
+  };
+
+  return (
+    <div className="space-y-3" data-testid="referenti-section">
+      <div className="flex items-center justify-between">
+        <p className="text-sm text-muted-foreground">Persone di contatto del cliente (proprietà, amministrazione, operatività...).</p>
+        <Button size="sm" className="h-8 bg-[#F24E75] hover:bg-[#E03B62] text-white" onClick={openNew} data-testid="referenti-add-btn">
+          <Plus className="h-4 w-4 mr-1.5" />Aggiungi referente
+        </Button>
+      </div>
+
+      {contacts.length === 0 ? (
+        <Card className="border">
+          <CardContent className="p-8 text-center" data-testid="referenti-empty">
+            <User className="h-10 w-10 mx-auto text-muted-foreground/30 mb-2" />
+            <p className="text-muted-foreground text-sm">Nessun referente inserito</p>
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="space-y-2">
+          {contacts.map((c) => (
+            <Card key={c.id} className="border" data-testid={`referente-row-${c.id}`}>
+              <CardContent className="p-4 flex items-start gap-4">
+                <div className="w-10 h-10 rounded-full bg-primary/10 text-primary flex items-center justify-center flex-shrink-0 font-bold text-sm">
+                  {(c.name || '?').split(' ').filter(Boolean).slice(0, 2).map(w => w[0]).join('').toUpperCase()}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="font-medium text-sm">{c.name}</span>
+                    {c.role && <span className="px-1.5 py-0.5 text-xs bg-muted text-muted-foreground rounded">{c.role}</span>}
+                  </div>
+                  <div className="flex items-center gap-4 text-xs text-muted-foreground mt-1 flex-wrap">
+                    {c.phone && (
+                      <a href={`tel:${c.phone}`} className="flex items-center gap-1 hover:text-primary"><Phone className="h-3 w-3" />{c.phone}</a>
+                    )}
+                    {c.email && (
+                      <a href={`mailto:${c.email}`} className="flex items-center gap-1 hover:text-primary"><Mail className="h-3 w-3" />{c.email}</a>
+                    )}
+                  </div>
+                  {c.notes && <p className="text-xs text-muted-foreground mt-1.5">{c.notes}</p>}
+                </div>
+                <div className="flex items-center gap-1.5 flex-shrink-0">
+                  <Button size="sm" variant="outline" className="h-7 text-xs px-2" onClick={() => openEdit(c)} data-testid={`referente-edit-${c.id}`}>
+                    <Pencil className="h-3 w-3 mr-1" />Modifica
+                  </Button>
+                  <Button size="sm" variant="outline" disabled={removing === c.id}
+                    className="h-7 text-xs px-2 text-destructive border-destructive/30 hover:bg-destructive/10"
+                    onClick={() => handleRemove(c)} data-testid={`referente-delete-${c.id}`}>
+                    <Trash2 className="h-3 w-3" />
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      )}
+
+      <SidePanel open={dialogOpen} onClose={() => setDialogOpen(false)} title={editing ? 'Modifica referente' : 'Nuovo referente'}>
+        <div className="flex flex-col h-full">
+          <div className="flex-1 overflow-y-auto p-5 space-y-4">
+            <div className="space-y-2"><Label>Nome e cognome *</Label>
+              <Input value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))} data-testid="referente-name-input" /></div>
+            <div className="space-y-2"><Label>Ruolo</Label>
+              <Input value={form.role} onChange={e => setForm(p => ({ ...p, role: e.target.value }))} placeholder="es. Proprietario, Amministrazione..." data-testid="referente-role-input" /></div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2"><Label>Telefono</Label>
+                <Input value={form.phone} onChange={e => setForm(p => ({ ...p, phone: e.target.value }))} placeholder="+39..." data-testid="referente-phone-input" /></div>
+              <div className="space-y-2"><Label>Email</Label>
+                <Input type="email" value={form.email} onChange={e => setForm(p => ({ ...p, email: e.target.value }))} data-testid="referente-email-input" /></div>
+            </div>
+            <div className="space-y-2"><Label>Note</Label>
+              <Textarea value={form.notes} onChange={e => setForm(p => ({ ...p, notes: e.target.value }))} rows={3} className="resize-none" data-testid="referente-notes-input" /></div>
+          </div>
+          <div className="px-5 py-4 border-t border-border flex gap-3 flex-shrink-0">
+            <Button variant="outline" onClick={() => setDialogOpen(false)} className="flex-1">Annulla</Button>
+            <Button onClick={handleSave} disabled={saving} className="flex-1 bg-[#F24E75] hover:bg-[#E03B62] text-white" data-testid="referente-save-btn">
+              {saving ? '...' : (editing ? 'Salva' : 'Aggiungi')}
+            </Button>
+          </div>
+        </div>
+      </SidePanel>
+    </div>
+  );
+};
+
 const ClientDetailPage = () => {
   const { t } = useLanguage();
   const { clientId } = useParams();
@@ -758,8 +887,8 @@ const ClientDetailPage = () => {
   const [activeTab, setActiveTab] = useState('anagrafica');
 
   useEffect(() => {
-    if (activeTab === 'storico' && history.length === 0 && !historyLoading) fetchHistory();
-    if (activeTab === 'fatturazione') fetchBilling();
+    if (activeTab === 'attivita' && history.length === 0 && !historyLoading) fetchHistory();
+    if (activeTab === 'amministrazione') fetchBilling();
   }, [activeTab, history.length, historyLoading, fetchHistory, fetchBilling]);
 
   if (loading) {
@@ -772,10 +901,12 @@ const ClientDetailPage = () => {
 
   const TABS = [
     { key: 'anagrafica', label: 'Anagrafica' },
+    { key: 'referenti', label: `Referenti${client?.contacts?.length ? ` (${client.contacts.length})` : ''}` },
     { key: 'strutture', label: `Strutture (${structures.length})` },
-    { key: 'segnalazioni', label: 'Segnalazioni' },
-    { key: 'storico', label: 'Storico' },
-    { key: 'fatturazione', label: 'Fatturazione' },
+    { key: 'configurazioni', label: 'Configurazioni' },
+    { key: 'listino', label: 'Listino' },
+    { key: 'attivita', label: 'Attività' },
+    { key: 'amministrazione', label: 'Amministrazione' },
   ];
 
   const filteredHistory = historyFilter === 'all' ? history : history.filter(h => h._type === historyFilter);
@@ -807,9 +938,17 @@ const ClientDetailPage = () => {
               )}
             </div>
             <div className="min-w-0">
-              <h1 className="text-xl lg:text-2xl font-heading font-semibold text-foreground truncate">
-                {client?.display_name}
-              </h1>
+              <div className="flex items-center gap-2 flex-wrap">
+                {client?.cli_code && (
+                  <span className="px-1.5 py-0.5 text-xs font-mono font-bold bg-primary/10 text-primary rounded" data-testid="client-cli-code">{client.cli_code}</span>
+                )}
+                <h1 className="text-xl lg:text-2xl font-heading font-semibold text-foreground truncate">
+                  {client?.display_name}
+                </h1>
+                {client?.is_active === false && (
+                  <span className="px-2 py-0.5 text-xs rounded-full bg-muted text-muted-foreground font-medium" data-testid="client-inactive-badge">Disattivato</span>
+                )}
+              </div>
               <span className="text-xs text-muted-foreground">{t(`clients.types.${client?.client_type}`)}</span>
               <div className="flex items-center gap-3 mt-1.5">
                 <input type="file" accept="image/*" id="client-logo-input" className="hidden" onChange={handleLogoUpload} data-testid="client-logo-input" />
@@ -917,7 +1056,17 @@ const ClientDetailPage = () => {
               </div>
             </CardContent>
           </Card>
+        </div>
+      )}
 
+      {/* TAB: Referenti */}
+      {activeTab === 'referenti' && (
+        <ReferentiSection client={client} clientId={clientId} onSaved={fetchClient} />
+      )}
+
+      {/* TAB: Configurazioni */}
+      {activeTab === 'configurazioni' && (
+        <div className="space-y-4">
           {/* Portal Management */}
           <Card className="border">
             <CardContent className="p-4">
@@ -989,6 +1138,9 @@ const ClientDetailPage = () => {
               </div>
             </CardContent>
           </Card>
+
+          {/* Gestione Segnalazioni per cliente */}
+          <GestioneSegnalazioniCard scope="client" id={clientId} />
         </div>
       )}
 
@@ -1223,8 +1375,26 @@ const ClientDetailPage = () => {
         </div>
       )}
 
-      {/* TAB: Storico */}
-      {activeTab === 'storico' && (
+      {/* TAB: Listino */}
+      {activeTab === 'listino' && (
+        <div className="space-y-4">
+          <PrivateLaundryPriceCard clientId={clientId} />
+          <Card className="border">
+            <CardContent className="p-4">
+              <div className="flex items-center justify-between gap-3 flex-wrap">
+                <div>
+                  <h3 className="text-sm font-semibold flex items-center gap-2"><BookOpen className="h-4 w-4 text-muted-foreground" />Catalogo articoli e prezzi personalizzati</h3>
+                  <p className="text-xs text-muted-foreground mt-1">Articoli ordinabili dal portale, con eventuale prezzo dedicato per questo cliente.</p>
+                </div>
+                <Button variant="outline" size="sm" className="h-8" onClick={openCatalogPanel} data-testid="open-catalog-btn">Gestisci catalogo</Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {/* TAB: Attività */}
+      {activeTab === 'attivita' && (
         <div className="space-y-3">
           {/* Filters */}
           <div className="flex items-center gap-2 flex-wrap">
@@ -1306,14 +1476,39 @@ const ClientDetailPage = () => {
         </div>
       )}
 
-      {/* TAB: Fatturazione */}
-      {activeTab === 'segnalazioni' && (
-        <GestioneSegnalazioniCard scope="client" id={clientId} />
-      )}
-
-      {activeTab === 'fatturazione' && (
+      {/* TAB: Amministrazione (dati fiscali + fatturazione) */}
+      {activeTab === 'amministrazione' && (
         <div className="space-y-4">
-          <PrivateLaundryPriceCard clientId={clientId} />
+          <Card className="border">
+            <CardContent className="p-4">
+              <h3 className="text-sm font-semibold mb-3">Dati amministrativi e fiscali</h3>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 text-sm" data-testid="client-fiscal-data">
+                {(() => {
+                  const info = client?.client_type === 'company' ? client?.company_info : client?.private_info;
+                  const rows = client?.client_type === 'company' ? [
+                    ['Ragione sociale', info?.company_name],
+                    ['P.IVA', info?.vat_number],
+                    ['Codice Fiscale', info?.fiscal_code],
+                    ['Codice SDI', info?.sdi],
+                    ['PEC', info?.pec],
+                    ['Indirizzo', info?.address],
+                  ] : [
+                    ['Nome', [info?.name, info?.surname].filter(Boolean).join(' ')],
+                    ['Codice Fiscale', info?.fiscal_code],
+                    ['Codice SDI', info?.sdi],
+                    ['Indirizzo', info?.address],
+                  ];
+                  return rows.map(([label, val]) => (
+                    <div key={label}>
+                      <span className="text-xs text-muted-foreground block">{label}</span>
+                      <span className="font-medium">{val || '—'}</span>
+                    </div>
+                  ));
+                })()}
+              </div>
+            </CardContent>
+          </Card>
+          <h3 className="text-sm font-semibold pt-1">Fatturazione</h3>
           <div className="flex items-center justify-between flex-wrap gap-2">
             <Select value={billingMonth} onValueChange={setBillingMonth}>
               <SelectTrigger className="h-8 w-[190px] text-xs" data-testid="billing-month-select"><SelectValue /></SelectTrigger>

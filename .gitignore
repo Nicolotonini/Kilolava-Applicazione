@@ -105,3 +105,11 @@ credentials.json
 *.key
 .credentials
 frontend/node_modules/.cache/default-development/1.pack
+
+# Kilolava security: dati sensibili MAI versionati
+/database_export/
+/memory/
+/test_reports/
+/scripts/import_real_users.py
+/tests/__pycache__/
+*.dump

@@ -143,7 +143,12 @@ const StructuresListPage = () => {
                       </span>
                     </td>
                     <td className="py-3 px-2">
-                      <p className="font-semibold text-sm leading-tight">{s.name}</p>
+                      <p className="font-semibold text-sm leading-tight flex items-center gap-2">
+                        <span>{s.name}</span>
+                        {s.is_active === false && (
+                          <span className="px-1.5 py-0.5 text-xs rounded-full bg-muted text-muted-foreground font-medium" data-testid={`structure-inactive-${s.id}`}>Disattivata</span>
+                        )}
+                      </p>
                       <div className="flex items-center gap-3 mt-1 flex-wrap">
                         {s.address && (
                           <span className="flex items-center gap-1 text-xs text-muted-foreground">
@@ -227,6 +232,9 @@ const StructuresListPage = () => {
                 <div className="flex items-center gap-2 flex-wrap">
                   <span className="px-2 py-0.5 rounded-md bg-primary/10 text-primary font-mono text-xs font-bold">{s.klv_code || '—'}</span>
                   <p className="font-semibold text-sm flex-1 min-w-0 truncate">{s.name}</p>
+                  {s.is_active === false && (
+                    <span className="px-1.5 py-0.5 text-xs rounded-full bg-muted text-muted-foreground font-medium flex-shrink-0">Disattivata</span>
+                  )}
                   <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-destructive" onClick={e => handleDelete(s.id, e)}>
                     <Trash2 className="h-3.5 w-3.5" />
                   </Button>

@@ -8,6 +8,7 @@ import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { Textarea } from '../components/ui/textarea';
+import { Switch } from '../components/ui/switch';
 import {
   Select,
   SelectContent,
@@ -272,7 +273,15 @@ const ClientsPage = () => {
                     </div>
                   )}
                   <div className="min-w-0">
-                    <p className="font-semibold text-base truncate">{client.display_name}</p>
+                    <p className="font-semibold text-base truncate flex items-center gap-2">
+                      {client.cli_code && (
+                        <span className="px-1.5 py-0.5 text-xs font-mono font-bold bg-primary/10 text-primary rounded flex-shrink-0" data-testid={`cli-code-${client.id}`}>{client.cli_code}</span>
+                      )}
+                      <span className="truncate">{client.display_name}</span>
+                      {client.is_active === false && (
+                        <span className="px-1.5 py-0.5 text-xs rounded-full bg-muted text-muted-foreground font-medium flex-shrink-0" data-testid={`client-inactive-${client.id}`}>Disattivato</span>
+                      )}
+                    </p>
                     <p className="text-xs text-muted-foreground mt-1">{t(`clients.types.${client.client_type}`)}</p>
                   </div>
                 </div>
@@ -350,10 +359,10 @@ const ClientsPage = () => {
                     </span>
                   )}
                   <div className="w-px h-5 bg-border mx-1" />
-                  <Button variant="ghost" size="icon" onClick={(e) => openEditSheet(client, e)} className="h-8 w-8 text-muted-foreground">
+                  <Button variant="ghost" size="icon" onClick={(e) => openEditSheet(client, e)} className="h-8 w-8 text-muted-foreground" data-testid={`client-edit-${client.id}`}>
                     <Pencil className="h-3.5 w-3.5" />
                   </Button>
-                  <Button variant="ghost" size="icon" onClick={(e) => openDeleteDialog(client, e)} className="h-8 w-8 text-muted-foreground hover:text-destructive">
+                  <Button variant="ghost" size="icon" onClick={(e) => openDeleteDialog(client, e)} className="h-8 w-8 text-muted-foreground hover:text-destructive" data-testid={`client-delete-${client.id}`}>
                     <Trash2 className="h-3.5 w-3.5" />
                   </Button>
                 </div>
@@ -412,31 +421,32 @@ const ClientsPage = () => {
                       value={formData.private_info.surname}
                       onChange={(e) => updatePrivateInfo('surname', e.target.value)}
                       className="h-9"
+                      data-testid="nc-surname"
                     />
                   </div>
                 </div>
                 <div className="space-y-2">
                   <Label className="text-sm">{t('clients.address')}</Label>
-                  <Input value={formData.private_info.address || ''} onChange={(e) => updatePrivateInfo('address', e.target.value)} className="h-9" />
+                  <Input value={formData.private_info.address || ''} onChange={(e) => updatePrivateInfo('address', e.target.value)} className="h-9" data-testid="nc-address" />
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-2">
                     <Label className="text-sm">{t('clients.phone')}</Label>
-                    <Input value={formData.private_info.phone || ''} onChange={(e) => updatePrivateInfo('phone', e.target.value)} className="h-9" placeholder="+39..." />
+                    <Input value={formData.private_info.phone || ''} onChange={(e) => updatePrivateInfo('phone', e.target.value)} className="h-9" placeholder="+39..." data-testid="nc-phone" />
                   </div>
                   <div className="space-y-2">
                     <Label className="text-sm">{t('clients.email')}</Label>
-                    <Input type="email" value={formData.private_info.email || ''} onChange={(e) => updatePrivateInfo('email', e.target.value)} className="h-9" />
+                    <Input type="email" value={formData.private_info.email || ''} onChange={(e) => updatePrivateInfo('email', e.target.value)} className="h-9" data-testid="nc-email" />
                   </div>
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-2">
                     <Label className="text-sm">{t('clients.fiscalCode')}</Label>
-                    <Input value={formData.private_info.fiscal_code || ''} onChange={(e) => updatePrivateInfo('fiscal_code', e.target.value)} className="h-9" />
+                    <Input value={formData.private_info.fiscal_code || ''} onChange={(e) => updatePrivateInfo('fiscal_code', e.target.value)} className="h-9" data-testid="nc-cf" />
                   </div>
                   <div className="space-y-2">
                     <Label className="text-sm">{t('clients.sdi')}</Label>
-                    <Input value={formData.private_info.sdi || '0000000'} onChange={(e) => updatePrivateInfo('sdi', e.target.value)} className="h-9" />
+                    <Input value={formData.private_info.sdi || '0000000'} onChange={(e) => updatePrivateInfo('sdi', e.target.value)} className="h-9" data-testid="nc-sdi" />
                   </div>
                 </div>
               </div>
@@ -460,49 +470,62 @@ const ClientsPage = () => {
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-2">
                     <Label className="text-sm">{t('clients.representativeName')}</Label>
-                    <Input value={formData.company_info.representative_name} onChange={(e) => updateCompanyInfo('representative_name', e.target.value)} className="h-9" />
+                    <Input value={formData.company_info.representative_name} onChange={(e) => updateCompanyInfo('representative_name', e.target.value)} className="h-9" data-testid="nc-rep-name" />
                   </div>
                   <div className="space-y-2">
                     <Label className="text-sm">{t('clients.representativeSurname')}</Label>
-                    <Input value={formData.company_info.representative_surname} onChange={(e) => updateCompanyInfo('representative_surname', e.target.value)} className="h-9" />
+                    <Input value={formData.company_info.representative_surname} onChange={(e) => updateCompanyInfo('representative_surname', e.target.value)} className="h-9" data-testid="nc-rep-surname" />
                   </div>
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-2">
                     <Label className="text-sm">{t('clients.vatNumber')}</Label>
-                    <Input value={formData.company_info.vat_number || ''} onChange={(e) => updateCompanyInfo('vat_number', e.target.value)} className="h-9" />
+                    <Input value={formData.company_info.vat_number || ''} onChange={(e) => updateCompanyInfo('vat_number', e.target.value)} className="h-9" data-testid="nc-vat" />
                   </div>
                   <div className="space-y-2">
                     <Label className="text-sm">{t('clients.fiscalCode')}</Label>
-                    <Input value={formData.company_info.fiscal_code || ''} onChange={(e) => updateCompanyInfo('fiscal_code', e.target.value)} className="h-9" />
+                    <Input value={formData.company_info.fiscal_code || ''} onChange={(e) => updateCompanyInfo('fiscal_code', e.target.value)} className="h-9" data-testid="nc-company-cf" />
                   </div>
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-2">
                     <Label className="text-sm">{t('clients.sdi')}</Label>
-                    <Input value={formData.company_info.sdi || '0000000'} onChange={(e) => updateCompanyInfo('sdi', e.target.value)} className="h-9" />
+                    <Input value={formData.company_info.sdi || '0000000'} onChange={(e) => updateCompanyInfo('sdi', e.target.value)} className="h-9" data-testid="nc-company-sdi" />
                   </div>
                   <div className="space-y-2">
                     <Label className="text-sm">{t('clients.pec')}</Label>
-                    <Input value={formData.company_info.pec || ''} onChange={(e) => updateCompanyInfo('pec', e.target.value)} className="h-9" placeholder="pec@example.com" />
+                    <Input value={formData.company_info.pec || ''} onChange={(e) => updateCompanyInfo('pec', e.target.value)} className="h-9" placeholder="pec@example.com" data-testid="nc-pec" />
                   </div>
                 </div>
                 <div className="space-y-2">
                   <Label className="text-sm">{t('clients.address')}</Label>
-                  <Input value={formData.company_info.address || ''} onChange={(e) => updateCompanyInfo('address', e.target.value)} className="h-9" />
+                  <Input value={formData.company_info.address || ''} onChange={(e) => updateCompanyInfo('address', e.target.value)} className="h-9" data-testid="nc-company-address" />
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-2">
                     <Label className="text-sm">{t('clients.phone')}</Label>
-                    <Input value={formData.company_info.phone || ''} onChange={(e) => updateCompanyInfo('phone', e.target.value)} className="h-9" placeholder="+39..." />
+                    <Input value={formData.company_info.phone || ''} onChange={(e) => updateCompanyInfo('phone', e.target.value)} className="h-9" placeholder="+39..." data-testid="nc-company-phone" />
                   </div>
                   <div className="space-y-2">
                     <Label className="text-sm">{t('clients.email')}</Label>
-                    <Input type="email" value={formData.company_info.email || ''} onChange={(e) => updateCompanyInfo('email', e.target.value)} className="h-9" />
+                    <Input type="email" value={formData.company_info.email || ''} onChange={(e) => updateCompanyInfo('email', e.target.value)} className="h-9" data-testid="nc-company-email" />
                   </div>
                 </div>
               </div>
             )}
+
+            {/* Stato */}
+            <div className="flex items-center justify-between gap-3 pt-3 border-t border-border">
+              <div>
+                <Label className="text-sm">Cliente attivo</Label>
+                <p className="text-xs text-muted-foreground">Se disattivato resta nello storico ma non compare tra i clienti operativi.</p>
+              </div>
+              <Switch
+                checked={formData.is_active}
+                onCheckedChange={(v) => setFormData({ ...formData, is_active: v })}
+                data-testid="nc-active-toggle"
+              />
+            </div>
 
             {/* Notes */}
             <div className="space-y-2 pt-3 border-t border-border">
@@ -512,6 +535,7 @@ const ClientsPage = () => {
                 onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
                 rows={2}
                 className="resize-none"
+                data-testid="nc-notes"
               />
             </div>
 

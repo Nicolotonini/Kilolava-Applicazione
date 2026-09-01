@@ -48,7 +48,10 @@ from services.ical_sync import (  # noqa: E402
 from services import scheduler_service  # noqa: E402
 
 # Security
-SECRET_KEY = os.environ.get('JWT_SECRET', 'kilolava-secret-key-change-in-production')
+SECRET_KEY = os.environ.get('JWT_SECRET')
+if not SECRET_KEY:
+    # Sicurezza: mai avviare con un secret di default. Configurare JWT_SECRET in backend/.env
+    raise RuntimeError("JWT_SECRET non configurato: impostarlo in backend/.env (avvio bloccato per sicurezza)")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_HOURS = 24
 
@@ -64,18 +67,24 @@ api_router = APIRouter(prefix="/api")
 # ============== ENUMS ==============
 
 ROLE_PERMISSIONS = {
+    # Matrice permessi centralizzata Kilolava (fonte di verità concettuale, frontend+backend).
+    # Super Admin: tutto. Responsabile Generale: gestione operativa completa, MAI secrets/config
+    # tecnica/gestione Super Admin. Ruoli operativi: solo dati propri. Cliente: solo proprio client_id.
     "admin": ["*"],
     "operations_manager": [
         "clients.read", "clients.write", "structures.read", "structures.write",
         "units.read", "units.write", "calendar.read", "calendar.write",
+        "cleaning.read", "cleaning.write", "keys.read", "keys.write",
         "logistics.read", "logistics.write", "inventory.read", "inventory.write",
-        "orders.read", "orders.write", "automation.read", "automation.write",
+        "orders.read", "orders.write", "segnalazioni.read", "segnalazioni.write",
+        "maintenance.read", "maintenance.write", "laundry.read", "laundry.write",
+        "users.read", "map.read", "reports.read", "automation.read", "automation.write",
         "portal_ops.read", "portal_ops.write",
     ],
-    "cleaner": ["tasks.own.read", "tasks.own.write"],
-    "rider": ["logistics.own.read", "logistics.own.write"],
-    "maintenance": ["maintenance.own.read", "maintenance.own.write"],
-    "laundry": ["laundry.own.read", "laundry.own.write"],
+    "cleaner": ["tasks.own.read", "tasks.own.write", "keys.own.read", "keys.own.write", "segnalazioni.own.write"],
+    "rider": ["logistics.own.read", "logistics.own.write", "keys.own.read", "keys.own.write", "segnalazioni.own.write"],
+    "maintenance": ["maintenance.own.read", "maintenance.own.write", "segnalazioni.own.write"],
+    "laundry": ["laundry.own.read", "laundry.own.write", "segnalazioni.own.write"],
     "client": ["portal.read", "portal.write"],
 }
 
@@ -214,10 +223,20 @@ class CompanyClientInfo(BaseModel):
     email: Optional[str] = None
     pec: Optional[str] = None
 
+class ClientContact(BaseModel):
+    """Referente del Cliente (persona di contatto)."""
+    id: Optional[str] = None
+    name: str
+    role: Optional[str] = None
+    phone: Optional[str] = None
+    email: Optional[str] = None
+    notes: Optional[str] = None
+
 class ClientCreate(BaseModel):
     client_type: str = ClientType.PRIVATE
     private_info: Optional[PrivateClientInfo] = None
     company_info: Optional[CompanyClientInfo] = None
+    contacts: List[ClientContact] = []
     notes: Optional[str] = None
     is_active: bool = True
     ordering_enabled: bool = False
@@ -226,6 +245,7 @@ class ClientUpdate(BaseModel):
     client_type: Optional[str] = None
     private_info: Optional[PrivateClientInfo] = None
     company_info: Optional[CompanyClientInfo] = None
+    contacts: Optional[List[ClientContact]] = None
     notes: Optional[str] = None
     is_active: Optional[bool] = None
     ordering_enabled: Optional[bool] = None
@@ -233,9 +253,11 @@ class ClientUpdate(BaseModel):
 class ClientResponse(BaseModel):
     model_config = ConfigDict(extra="ignore")
     id: str
+    cli_code: Optional[str] = None
     client_type: str
     private_info: Optional[PrivateClientInfo] = None
     company_info: Optional[CompanyClientInfo] = None
+    contacts: List[dict] = []
     display_name: str = ""
     phone: Optional[str] = None
     email: Optional[str] = None
@@ -561,6 +583,12 @@ def is_ops_user(user: dict) -> bool:
     return user.get("role") in OPS_ROLES
 
 
+def require_ops(user: dict):
+    """Guardia centralizzata: solo Super Admin e Responsabile Generale."""
+    if not is_ops_user(user):
+        raise HTTPException(status_code=403, detail="Non autorizzato")
+
+
 def user_has_role(user: dict, role: str) -> bool:
     """Una persona = un utente: vero se il ruolo è principale O aggiuntivo."""
     if not user:
@@ -590,6 +618,18 @@ def _contract_status(contract: Optional[dict]) -> Optional[str]:
     if delta <= 30:
         return "scade_30"
     return "ok"
+
+
+def _merged_permissions(role: str, extra_roles: list) -> list:
+    """Permessi effettivi: unione ruolo principale + extra_roles (una persona = un utente)."""
+    perms = list(ROLE_PERMISSIONS.get(role, []))
+    if "*" in perms:
+        return ["*"]
+    for r in (extra_roles or []):
+        for p in ROLE_PERMISSIONS.get(r, []):
+            if p not in perms:
+                perms.append(p)
+    return perms
 
 
 def _build_user_response(user: dict) -> UserResponse:
@@ -635,7 +675,7 @@ def _build_user_response(user: dict) -> UserResponse:
         admin_data_status=_admin_data_status(user) if role != "client" else None,
         pin_set=bool(user.get("pin_hash")),
         activation_status=activation_status,
-        permissions=ROLE_PERMISSIONS.get(role, []),
+        permissions=_merged_permissions(role, user.get("extra_roles")),
         created_at=user.get("created_at", ""),
     )
 
@@ -862,17 +902,24 @@ def get_client_email(client: dict) -> Optional[str]:
 
 @api_router.post("/clients", response_model=ClientResponse)
 async def create_client(client_data: ClientCreate, current_user: dict = Depends(get_current_user)):
-    if current_user["role"] not in [UserRole.MANAGER]:
-        raise HTTPException(status_code=403, detail="Non autorizzato")
-    
+    require_ops(current_user)
+
     client_id = str(uuid.uuid4())
     now = now_iso()
-    
+    cli_code = await next_cli_code()
+    contacts = []
+    for c in client_data.contacts or []:
+        cd = c.model_dump()
+        cd["id"] = cd.get("id") or str(uuid.uuid4())
+        contacts.append(cd)
+
     client_doc = {
         "id": client_id,
+        "cli_code": cli_code,
         "client_type": client_data.client_type,
         "private_info": serialize_config(client_data.private_info) if client_data.private_info else None,
         "company_info": serialize_config(client_data.company_info) if client_data.company_info else None,
+        "contacts": contacts,
         "notes": client_data.notes,
         "is_active": client_data.is_active,
         "ordering_enabled": client_data.ordering_enabled,
@@ -888,9 +935,11 @@ async def create_client(client_data: ClientCreate, current_user: dict = Depends(
     
     return ClientResponse(
         id=client_id,
+        cli_code=cli_code,
         client_type=client_data.client_type,
         private_info=client_data.private_info,
         company_info=client_data.company_info,
+        contacts=contacts,
         display_name=display_name,
         phone=phone,
         email=email,
@@ -937,6 +986,7 @@ async def get_clients(
     client_type: Optional[str] = None,
     current_user: dict = Depends(get_current_user)
 ):
+    require_ops(current_user)
     query = {}
     if is_active is not None:
         query["is_active"] = is_active
@@ -944,6 +994,7 @@ async def get_clients(
         query["client_type"] = client_type
     if search:
         query["$or"] = [
+            {"cli_code": {"$regex": search, "$options": "i"}},
             {"private_info.name": {"$regex": search, "$options": "i"}},
             {"private_info.surname": {"$regex": search, "$options": "i"}},
             {"company_info.company_name": {"$regex": search, "$options": "i"}},
@@ -974,9 +1025,11 @@ async def get_clients(
         
         result.append(ClientResponse(
             id=client_doc["id"],
+            cli_code=client_doc.get("cli_code"),
             client_type=client_doc.get("client_type", "private"),
             private_info=private_info,
             company_info=company_info,
+            contacts=client_doc.get("contacts") or [],
             display_name=get_client_display_name(client_doc),
             phone=get_client_phone(client_doc),
             email=get_client_email(client_doc),
@@ -1101,6 +1154,11 @@ async def clients_overview(current_user: dict = Depends(get_current_user)):
 
 @api_router.get("/clients/{client_id}", response_model=ClientResponse)
 async def get_client(client_id: str, current_user: dict = Depends(get_current_user)):
+    # Scoping: ops completo; un account portale vede SOLO il proprio cliente
+    if not is_ops_user(current_user) and not (
+        current_user.get("role") == UserRole.CLIENT and current_user.get("client_id") == client_id
+    ):
+        raise HTTPException(status_code=403, detail="Non autorizzato")
     client = await db.clients.find_one({"id": client_id}, {"_id": 0})
     if not client:
         raise HTTPException(status_code=404, detail="Cliente non trovato")
@@ -1117,9 +1175,11 @@ async def get_client(client_id: str, current_user: dict = Depends(get_current_us
     
     return ClientResponse(
         id=client["id"],
+        cli_code=client.get("cli_code"),
         client_type=client.get("client_type", "private"),
         private_info=private_info,
         company_info=company_info,
+        contacts=client.get("contacts") or [],
         display_name=get_client_display_name(client),
         phone=get_client_phone(client),
         email=get_client_email(client),
@@ -1140,8 +1200,7 @@ async def update_client(
     client_data: ClientUpdate,
     current_user: dict = Depends(get_current_user)
 ):
-    if current_user["role"] not in [UserRole.MANAGER]:
-        raise HTTPException(status_code=403, detail="Non autorizzato")
+    require_ops(current_user)
     
     client = await db.clients.find_one({"id": client_id}, {"_id": 0})
     if not client:
@@ -1152,6 +1211,8 @@ async def update_client(
         if value is not None:
             if key in ["private_info", "company_info"]:
                 update_data[key] = serialize_config(value)
+            elif key == "contacts":
+                update_data[key] = [{**c, "id": c.get("id") or str(uuid.uuid4())} for c in value]
             else:
                 update_data[key] = value
     
@@ -1169,9 +1230,11 @@ async def update_client(
     
     return ClientResponse(
         id=updated_client["id"],
+        cli_code=updated_client.get("cli_code"),
         client_type=updated_client.get("client_type", "private"),
         private_info=private_info,
         company_info=company_info,
+        contacts=updated_client.get("contacts") or [],
         display_name=get_client_display_name(updated_client),
         phone=get_client_phone(updated_client),
         email=get_client_email(updated_client),
@@ -1194,11 +1257,28 @@ async def delete_client(client_id: str, current_user: dict = Depends(get_current
     if not client:
         raise HTTPException(status_code=404, detail="Cliente non trovato")
     
-    structure_count = await db.structures.count_documents({"client_id": client_id})
-    if structure_count > 0:
-        raise HTTPException(status_code=400, detail="Impossibile eliminare: il cliente ha strutture associate")
+    # Fase 4: hard delete consentito SOLO senza storico operativo; altrimenti usare Disattiva
+    checks = [
+        (db.structures, {"client_id": client_id}, "Strutture"),
+        (db.orders, {"client_id": client_id}, "Ordini"),
+        (db.cleaning_tasks, {"client_id": client_id}, "Pulizie"),
+        (db.logistics_tasks, {"client_id": client_id}, "Consegne"),
+        (db.maintenance_issues, {"client_id": client_id}, "Manutenzioni"),
+        (db.segnalazioni, {"client_id": client_id}, "Segnalazioni"),
+        (db.documents, {"client_id": client_id}, "Documenti/DDT"),
+        (db.laundry_jobs, {"client_id": client_id}, "Lavanderia Privata"),
+        (db.users, {"role": UserRole.CLIENT, "client_id": client_id}, "Account portale"),
+    ]
+    refs = []
+    for coll, q, label in checks:
+        n = await coll.count_documents(q)
+        if n:
+            refs.append(f"{label} ({n})")
+    if refs:
+        raise HTTPException(status_code=400, detail=f"Impossibile eliminare: il cliente fa parte dello storico operativo — {', '.join(refs)}. Usa Disattiva.")
     
     await db.clients.delete_one({"id": client_id})
+    await db.client_catalog.delete_many({"client_id": client_id})
     return {"message": "Cliente eliminato"}
 
 # ============== STRUCTURE ENDPOINTS ==============
@@ -1229,6 +1309,33 @@ async def ensure_klv_codes():
     for s in missing:
         code = await next_klv_code()
         await db.structures.update_one({"id": s["id"]}, {"$set": {"klv_code": code}})
+
+
+async def next_cli_code() -> str:
+    doc = await db.counters.find_one_and_update(
+        {"_id": "cli_client"},
+        {"$inc": {"seq": 1}},
+        upsert=True,
+        return_document=True,
+    )
+    return f"CLI-{doc['seq']:04d}"
+
+
+async def ensure_cli_codes():
+    """Assegna codici CLI progressivi ai clienti senza codice (ordine cronologico). Idempotente, codici mai riusati."""
+    max_seq = 0
+    async for c in db.clients.find({"cli_code": {"$exists": True, "$ne": None}}, {"_id": 0, "cli_code": 1}):
+        try:
+            max_seq = max(max_seq, int(c["cli_code"].split("-")[1]))
+        except (IndexError, ValueError):
+            pass
+    counter = await db.counters.find_one({"_id": "cli_client"})
+    if not counter or counter.get("seq", 0) < max_seq:
+        await db.counters.update_one({"_id": "cli_client"}, {"$set": {"seq": max_seq}}, upsert=True)
+    missing = await db.clients.find({"$or": [{"cli_code": {"$exists": False}}, {"cli_code": None}]}, {"_id": 0, "id": 1}).sort("created_at", 1).to_list(2000)
+    for c in missing:
+        code = await next_cli_code()
+        await db.clients.update_one({"id": c["id"]}, {"$set": {"cli_code": code}})
 
 def build_structure_response(structure: dict, client_name: Optional[str], unit_count: int, current_user: dict) -> StructureResponse:
     stype = structure.get("structure_type", StructureType.APARTMENT)
@@ -1311,6 +1418,12 @@ async def get_structures(
     search: Optional[str] = None,
     current_user: dict = Depends(get_current_user)
 ):
+    # Scoping: ops completo; account portale vede SOLO le strutture del proprio cliente
+    if not is_ops_user(current_user):
+        if current_user.get("role") == UserRole.CLIENT and current_user.get("client_id"):
+            client_id = current_user["client_id"]
+        else:
+            raise HTTPException(status_code=403, detail="Non autorizzato")
     query = {}
     if client_id:
         query["client_id"] = client_id
@@ -1369,6 +1482,10 @@ async def get_structure(structure_id: str, current_user: dict = Depends(get_curr
     structure = await db.structures.find_one({"id": structure_id}, {"_id": 0})
     if not structure:
         raise HTTPException(status_code=404, detail="Struttura non trovata")
+    if not is_ops_user(current_user) and not (
+        current_user.get("role") == UserRole.CLIENT and structure.get("client_id") == current_user.get("client_id")
+    ):
+        raise HTTPException(status_code=403, detail="Non autorizzato")
     
     client = await db.clients.find_one({"id": structure["client_id"]}, {"_id": 0})
     unit_count = await db.units.count_documents({"structure_id": structure_id})
@@ -1412,7 +1529,31 @@ async def delete_structure(structure_id: str, current_user: dict = Depends(get_c
     if unit_count > 0:
         raise HTTPException(status_code=400, detail="Impossibile eliminare: la struttura ha unità associate")
     
+    # Fase 4: hard delete consentito SOLO senza storico operativo; altrimenti usare Disattiva
+    checks = [
+        (db.events, {"structure_id": structure_id}, "Prenotazioni/Eventi"),
+        (db.cleaning_tasks, {"structure_id": structure_id}, "Pulizie"),
+        (db.logistics_tasks, {"structure_id": structure_id}, "Consegne"),
+        (db.maintenance_issues, {"structure_id": structure_id}, "Manutenzioni"),
+        (db.segnalazioni, {"structure_id": structure_id}, "Segnalazioni"),
+        (db.warehouse_movements, {"structure_id": structure_id}, "Movimenti magazzino"),
+        (db.stock_levels, {"structure_id": structure_id}, "Giacenze"),
+        (db.fabbisogni, {"structure_id": structure_id}, "Richieste/Fabbisogni"),
+        (db.laundry_jobs, {"structure_id": structure_id}, "Lavanderia Privata"),
+        (db.documents, {"structure_id": structure_id}, "Documenti/DDT"),
+    ]
+    refs = []
+    for coll, q, label in checks:
+        n = await coll.count_documents(q)
+        if n:
+            refs.append(f"{label} ({n})")
+    if refs:
+        raise HTTPException(status_code=400, detail=f"Impossibile eliminare: la struttura fa parte dello storico operativo — {', '.join(refs)}. Usa Disattiva.")
+    
     await db.structures.delete_one({"id": structure_id})
+    # Configurazioni collegate (non sono storico operativo)
+    await db.structure_media.delete_many({"structure_id": structure_id})
+    await db.structure_cleaning_kits.delete_many({"structure_id": structure_id})
     return {"message": "Struttura eliminata"}
 
 # ============== RIONI / ZONE OPERATIVE ==============
@@ -1743,6 +1884,7 @@ async def get_units(
     unit_type: Optional[str] = None,
     current_user: dict = Depends(get_current_user)
 ):
+    require_ops(current_user)
     query = {}
     if structure_id:
         query["structure_id"] = structure_id
@@ -1805,6 +1947,7 @@ async def get_units(
 
 @api_router.get("/units/{unit_id}", response_model=UnitResponse)
 async def get_unit(unit_id: str, current_user: dict = Depends(get_current_user)):
+    require_ops(current_user)
     unit = await db.units.find_one({"id": unit_id}, {"_id": 0})
     if not unit:
         raise HTTPException(status_code=404, detail="Unità non trovata")
@@ -1894,6 +2037,19 @@ async def delete_unit(unit_id: str, current_user: dict = Depends(get_current_use
     if not unit:
         raise HTTPException(status_code=404, detail="Unità non trovata")
     
+    # Fase 4: hard delete consentito SOLO senza storico; altrimenti usare Disattiva
+    checks = [
+        (db.events, {"unit_id": unit_id}, "Prenotazioni/Eventi"),
+        (db.structure_media, {"unit_id": unit_id}, "Foto/Video/Istruzioni"),
+    ]
+    refs = []
+    for coll, q, label in checks:
+        n = await coll.count_documents(q)
+        if n:
+            refs.append(f"{label} ({n})")
+    if refs:
+        raise HTTPException(status_code=400, detail=f"Impossibile eliminare: l'unità fa parte dello storico — {', '.join(refs)}. Usa Disattiva.")
+    
     await db.units.delete_one({"id": unit_id})
     return {"message": "Unità eliminata"}
 
@@ -1901,6 +2057,7 @@ async def delete_unit(unit_id: str, current_user: dict = Depends(get_current_use
 
 @api_router.get("/dashboard/stats")
 async def get_dashboard_stats(current_user: dict = Depends(get_current_user)):
+    require_ops(current_user)
     total_clients = await db.clients.count_documents({"is_active": True})
     total_structures = await db.structures.count_documents({"is_active": True})
     total_units = await db.units.count_documents({"is_active": True})
@@ -1998,6 +2155,7 @@ async def get_events(
     unassigned_only: bool = False,
     current_user: dict = Depends(get_current_user)
 ):
+    require_ops(current_user)
     query = {}
     if date_from and date_to:
         range_start = f"{date_from}T00:00:00"
@@ -2073,6 +2231,7 @@ async def create_event(
     event_data: EventCreate,
     current_user: dict = Depends(get_current_user)
 ):
+    require_ops(current_user)
     structure = await db.structures.find_one({"id": event_data.structure_id}, {"_id": 0, "id": 1, "name": 1})
     if not structure:
         raise HTTPException(status_code=404, detail="Struttura non trovata")
@@ -2123,6 +2282,7 @@ async def create_event(
 
 @api_router.get("/events/{event_id}", response_model=EventResponse)
 async def get_event(event_id: str, current_user: dict = Depends(get_current_user)):
+    require_ops(current_user)
     ev = await db.events.find_one({"id": event_id}, {"_id": 0})
     if not ev:
         raise HTTPException(status_code=404, detail="Evento non trovato")
@@ -2165,6 +2325,7 @@ async def update_event(
     event_data: EventUpdate,
     current_user: dict = Depends(get_current_user)
 ):
+    require_ops(current_user)
     ev = await db.events.find_one({"id": event_id}, {"_id": 0})
     if not ev:
         raise HTTPException(status_code=404, detail="Evento non trovato")
@@ -2225,6 +2386,7 @@ async def update_event(
 
 @api_router.delete("/events/{event_id}")
 async def delete_event(event_id: str, current_user: dict = Depends(get_current_user)):
+    require_ops(current_user)
     result = await db.events.delete_one({"id": event_id})
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Evento non trovato")
@@ -2236,6 +2398,7 @@ async def get_day_stats(
     date: str,
     current_user: dict = Depends(get_current_user)
 ):
+    require_ops(current_user)
     day_start = f"{date}T00:00:00"
     day_end = f"{date}T23:59:59"
     date_query = {
@@ -2366,6 +2529,7 @@ async def calendar_indicators(
     date_to: str,
     current_user: dict = Depends(get_current_user)
 ):
+    require_ops(current_user)
     """Indicatori operativi per soggiorno: pulizia, fabbisogni, manutenzioni. Solo azionabili."""
     range_start = f"{date_from}T00:00:00"
     range_end = f"{date_to}T23:59:59"
@@ -2559,6 +2723,7 @@ async def list_articles(
     below_threshold: Optional[bool] = None,
     current_user: dict = Depends(get_current_user)
 ):
+    require_ops(current_user)
     query = {}
     if category:
         query["category"] = category
@@ -2588,6 +2753,7 @@ async def list_articles(
 
 @api_router.post("/inventory/articles", response_model=ArticleResponse)
 async def create_article(data: ArticleCreate, current_user: dict = Depends(get_current_user)):
+    require_ops(current_user)
     now = now_iso()
     doc = {
         "id": str(uuid.uuid4()), **data.model_dump(),
@@ -2600,6 +2766,7 @@ async def create_article(data: ArticleCreate, current_user: dict = Depends(get_c
 
 @api_router.put("/inventory/articles/{article_id}", response_model=ArticleResponse)
 async def update_article(article_id: str, data: ArticleUpdate, current_user: dict = Depends(get_current_user)):
+    require_ops(current_user)
     existing = await db.articles.find_one({"id": article_id}, {"_id": 0})
     if not existing:
         raise HTTPException(status_code=404, detail="Articolo non trovato")
@@ -2615,6 +2782,7 @@ async def update_article(article_id: str, data: ArticleUpdate, current_user: dic
 
 @api_router.delete("/inventory/articles/{article_id}")
 async def delete_article(article_id: str, current_user: dict = Depends(get_current_user)):
+    require_ops(current_user)
     r = await db.articles.delete_one({"id": article_id})
     if r.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Articolo non trovato")
@@ -2635,6 +2803,7 @@ async def list_movements(
     limit: int = 100,
     current_user: dict = Depends(get_current_user)
 ):
+    require_ops(current_user)
     query = {}
     if movement_type:
         query["movement_type"] = movement_type
@@ -2701,6 +2870,7 @@ async def list_movements(
 
 @api_router.post("/inventory/movements", response_model=MovementResponse)
 async def create_movement(data: MovementCreate, current_user: dict = Depends(get_current_user)):
+    require_ops(current_user)
     now = now_iso()
     mov_id = str(uuid.uuid4())
     items_raw = [it.model_dump() for it in data.items]
@@ -2753,6 +2923,7 @@ async def create_movement(data: MovementCreate, current_user: dict = Depends(get
 
 @api_router.delete("/inventory/movements/{movement_id}")
 async def delete_movement(movement_id: str, current_user: dict = Depends(get_current_user)):
+    require_ops(current_user)
     mov = await db.movements.find_one({"id": movement_id}, {"_id": 0})
     if not mov:
         raise HTTPException(status_code=404, detail="Movimento non trovato")
@@ -2776,6 +2947,7 @@ async def monthly_register(
     movement_type: Optional[str] = None,
     current_user: dict = Depends(get_current_user)
 ):
+    require_ops(current_user)
     # month format: "2026-03"
     date_from = f"{month}-01"
     parts = month.split("-")
@@ -2837,6 +3009,7 @@ async def monthly_register(
 
 @api_router.get("/inventory/kit-calc/{unit_id}")
 async def calculate_kit(unit_id: str, current_user: dict = Depends(get_current_user)):
+    require_ops(current_user)
     unit = await db.units.find_one({"id": unit_id}, {"_id": 0})
     if not unit:
         raise HTTPException(status_code=404, detail="Unità non trovata")
@@ -2880,6 +3053,7 @@ async def calculate_kit(unit_id: str, current_user: dict = Depends(get_current_u
 
 @api_router.get("/inventory/pricing")
 async def list_pricing(client_id: Optional[str] = None, current_user: dict = Depends(get_current_user)):
+    require_ops(current_user)
     query = {}
     if client_id:
         query["client_id"] = client_id
@@ -2908,6 +3082,7 @@ async def list_pricing(client_id: Optional[str] = None, current_user: dict = Dep
 
 @api_router.post("/inventory/pricing", response_model=ClientPricingResponse)
 async def create_pricing(data: ClientPricingCreate, current_user: dict = Depends(get_current_user)):
+    require_ops(current_user)
     # Upsert
     existing = await db.pricing.find_one({"client_id": data.client_id, "article_id": data.article_id}, {"_id": 0})
     now = now_iso()
@@ -2930,6 +3105,7 @@ async def create_pricing(data: ClientPricingCreate, current_user: dict = Depends
 
 @api_router.delete("/inventory/pricing/{pricing_id}")
 async def delete_pricing(pricing_id: str, current_user: dict = Depends(get_current_user)):
+    require_ops(current_user)
     r = await db.pricing.delete_one({"id": pricing_id})
     if r.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Pricing non trovato")
@@ -3192,6 +3368,7 @@ async def list_logistics_tasks(
     task_type: Optional[str] = None,
     current_user: dict = Depends(get_current_user),
 ):
+    require_ops(current_user)
     query = {}
     if date:
         query["date"] = date
@@ -3213,6 +3390,7 @@ async def create_logistics_task(
     data: LogisticsTaskCreate,
     current_user: dict = Depends(get_current_user),
 ):
+    require_ops(current_user)
     now = now_iso()
     # Auto-fill address from structure if not provided
     address = data.address
@@ -3268,6 +3446,7 @@ async def create_logistics_task(
 
 @api_router.get("/logistics/tasks/{task_id}")
 async def get_logistics_task(task_id: str, current_user: dict = Depends(get_current_user)):
+    require_ops(current_user)
     doc = await db.logistics_tasks.find_one({"id": task_id}, {"_id": 0})
     if not doc:
         raise HTTPException(status_code=404, detail="Stop non trovato")
@@ -3302,6 +3481,7 @@ async def delete_logistics_task(
     task_id: str,
     current_user: dict = Depends(get_current_user),
 ):
+    require_ops(current_user)
     result = await db.logistics_tasks.delete_one({"id": task_id})
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Task non trovato")
@@ -3350,6 +3530,9 @@ async def update_task_status(
     task = await db.logistics_tasks.find_one({"id": task_id}, {"_id": 0})
     if not task:
         raise HTTPException(status_code=404, detail="Task non trovato")
+    # Ops oppure il rider assegnato alla fermata
+    if not is_ops_user(current_user) and task.get("rider_id") != current_user["id"]:
+        raise HTTPException(status_code=403, detail="Non autorizzato")
 
     update = {"status": status_update.status, "updated_at": now_iso()}
     if status_update.status == TaskStatus.IN_PROGRESS:
@@ -3375,6 +3558,8 @@ async def upload_task_photo(
     task = await db.logistics_tasks.find_one({"id": task_id}, {"_id": 0})
     if not task:
         raise HTTPException(status_code=404, detail="Task non trovato")
+    if not is_ops_user(current_user) and task.get("rider_id") != current_user["id"]:
+        raise HTTPException(status_code=403, detail="Non autorizzato")
 
     ext = file.filename.split(".")[-1] if "." in file.filename else "jpg"
     path = f"{APP_NAME}/photos/{task_id}/{uuid.uuid4()}.{ext}"
@@ -3419,6 +3604,7 @@ async def logistics_day_summary(
     date: str,
     current_user: dict = Depends(get_current_user),
 ):
+    require_ops(current_user)
     tasks = await db.logistics_tasks.find({"date": date}, {"_id": 0}).to_list(500)
     total = len(tasks)
     by_status = {}
@@ -3447,6 +3633,7 @@ async def logistics_day_summary(
 
 @api_router.get("/logistics/riders")
 async def list_riders(current_user: dict = Depends(get_current_user)):
+    require_ops(current_user)
     riders = await db.users.find({"$or": [{"role": UserRole.RIDER}, {"extra_roles": UserRole.RIDER}],
                                   "is_active": {"$ne": False}, "standard_available": {"$ne": False},
                                   "excluded_from_planning": {"$ne": True}},
@@ -3571,6 +3758,7 @@ class BulkReorder(BaseModel):
 
 @api_router.put("/logistics/reorder")
 async def reorder_tasks(data: BulkReorder, current_user: dict = Depends(get_current_user)):
+    require_ops(current_user)
     for item in data.items:
         await db.logistics_tasks.update_one(
             {"id": item.task_id},
@@ -8366,6 +8554,7 @@ async def startup_event():
     # Assign KLV codes to structures missing one (idempotent)
     try:
         await ensure_klv_codes()
+        await ensure_cli_codes()
     except Exception as e:
         logger.error(f"KLV code migration failed: {e}")
     # Seed rioni / zone operative (idempotente)

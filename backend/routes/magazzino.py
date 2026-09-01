@@ -596,6 +596,30 @@ def create_magazzino_router(get_current_user, is_ops_user):
             await db.kits.update_one({"id": kit_id}, {"$set": upd})
         return await db.kits.find_one({"id": kit_id}, {"_id": 0})
 
+    @router.delete("/kits/{kit_id}")
+    async def delete_kit(kit_id: str, current_user: dict = Depends(get_current_user)):
+        require_ops(current_user)
+        kit = await db.kits.find_one({"id": kit_id}, {"_id": 0})
+        if not kit:
+            raise HTTPException(status_code=404, detail="Kit non trovato")
+        # Fase 4: hard delete consentito SOLO se il Kit non è mai stato utilizzato
+        checks = [
+            (db.zaini, {"kit_id": kit_id}, "Zaini"),
+            (db.structure_cleaning_kits, {"kit_id": kit_id}, "Kit Pulizie Strutture"),
+            (db.fabbisogni, {"$or": [{"kit_id": kit_id}, {"items.kit_id": kit_id}]}, "Fabbisogni/Richieste"),
+            (db.logistics_tasks, {"items.kit_id": kit_id}, "Consegne"),
+        ]
+        refs = []
+        for coll, q, label in checks:
+            if await coll.count_documents(q) > 0:
+                refs.append(label)
+        if refs:
+            raise HTTPException(status_code=409,
+                                detail=f"Questo Kit è già stato utilizzato e non può essere eliminato perché fa parte dello storico di Kilolava ({', '.join(refs)}). Puoi disattivarlo.")
+        await db.kits.delete_one({"id": kit_id})
+        await db.kit_versions.delete_many({"kit_id": kit_id})
+        return {"ok": True, "deleted": True, "code": kit.get("code")}
+
     @router.get("/kits/{kit_id}/versions")
     async def kit_versions(kit_id: str, current_user: dict = Depends(get_current_user)):
         require_ops(current_user)
