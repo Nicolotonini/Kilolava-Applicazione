@@ -462,6 +462,7 @@ const ClientsPage = () => {
                   <Label className="text-sm">{t('clients.companyName')} *</Label>
                   <Input
                     value={formData.company_info.company_name}
+                    data-testid="nc-company-name"
                     onChange={(e) => updateCompanyInfo('company_name', e.target.value)}
                     data-testid="company-name-input"
                     className="h-9"

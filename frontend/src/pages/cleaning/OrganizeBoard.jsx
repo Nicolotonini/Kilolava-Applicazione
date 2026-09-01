@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import api from '../../lib/api';
 import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
-import { X, MapPin, GripVertical, UserPlus, Sparkles, Search, Settings, Users, Loader2, Plus } from 'lucide-react';
+import { X, MapPin, GripVertical, UserPlus, Sparkles, Search, Settings, Users, Loader2, Plus, CalendarClock } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { toast } from 'sonner';
 import { isUnassigned, bedsLabel, fmtMinutes, CONF_LABEL } from './shared';
@@ -281,6 +281,19 @@ export function OrganizeBoard({ date, setDate, onDetail, onAssignDialog, refresh
   };
 
   // ---- proposta ----
+  const [generating, setGenerating] = useState(false);
+  const generateFromBookings = async () => {
+    setGenerating(true);
+    try {
+      const res = await api.post('/cleaning-tasks/genera-da-soggiorni', { date });
+      const d = res.data;
+      if (d.bookings_analizzati === 0) toast.info('Nessun checkout dai soggiorni per questa data');
+      else toast.success(`Pulizie dai soggiorni: ${d.created} create, ${d.linked} collegate su ${d.bookings_analizzati} checkout`);
+      load();
+    } catch (e) { toast.error(e.response?.data?.detail || 'Errore'); }
+    finally { setGenerating(false); }
+  };
+
   const propose = async () => {
     setProposing(true);
     try {
@@ -341,6 +354,9 @@ export function OrganizeBoard({ date, setDate, onDetail, onAssignDialog, refresh
       <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:justify-between">
         <h1 className="text-xl lg:text-2xl font-heading font-semibold">Organizzazione Pulizie</h1>
         <div className="flex items-center gap-2 flex-wrap">
+          <Button variant="outline" onClick={generateFromBookings} disabled={generating} data-testid="generate-from-bookings-btn">
+            {generating ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> : <CalendarClock className="h-4 w-4 mr-1.5" />}Genera da soggiorni
+          </Button>
           <Button onClick={propose} disabled={proposing} className="bg-primary hover:bg-primary/90 text-primary-foreground" data-testid="propose-btn">
             {proposing ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> : <Sparkles className="h-4 w-4 mr-1.5" />}Proponi organizzazione
           </Button>

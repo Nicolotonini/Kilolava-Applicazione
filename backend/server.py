@@ -4469,8 +4469,8 @@ async def set_client_noleggio_config(client_id: str, data: ClientNoleggioConfig,
         raise HTTPException(status_code=400, detail="Linea non valida (living|dream)")
     if data.stagione is not None and data.stagione not in ("estivo", "invernale"):
         raise HTTPException(status_code=400, detail="Stagione non valida (estivo|invernale)")
-    existing_client = await db.clients.find_one({"id": client_id}, {"_id": 0, "noleggio_config": 1})
-    if not existing_client:
+    existing_client = await db.clients.find_one({"id": client_id}, {"_id": 0, "id": 1, "noleggio_config": 1})
+    if existing_client is None:
         raise HTTPException(status_code=404, detail="Cliente non trovato")
     existing_cfg = existing_client.get("noleggio_config") or {}
     cfg = {"linea": existing_cfg.get("linea"), "stagione": existing_cfg.get("stagione"),
@@ -5666,6 +5666,70 @@ async def create_cleaning_task(data: CleaningTaskCreate, current_user: dict = De
             "cleaning_assigned", "normal", "cleaning_task", task["id"]
         )
     return enriched
+
+
+class GeneraDaSoggiorniPayload(BaseModel):
+    date: str
+
+
+@api_router.post("/cleaning-tasks/genera-da-soggiorni")
+async def genera_pulizie_da_soggiorni(data: GeneraDaSoggiorniPayload, current_user: dict = Depends(get_current_user)):
+    """Fase 8 — Prenotazioni→Pulizie: genera (idempotente) le pulizie dai checkout dei soggiorni."""
+    if not is_ops_user(current_user):
+        raise HTTPException(status_code=403, detail="Non autorizzato")
+    date = data.date
+    bookings = await db.events.find({
+        "event_type": "booking",
+        "end_time": {"$gte": f"{date}T00:00:00", "$lte": f"{date}T23:59:59"},
+        "feed_cancelled": {"$ne": True},
+    }, {"_id": 0}).to_list(500)
+    checkins_today = set()
+    async for b in db.events.find({
+        "event_type": "booking",
+        "start_time": {"$gte": f"{date}T00:00:00", "$lte": f"{date}T23:59:59"},
+        "feed_cancelled": {"$ne": True},
+    }, {"_id": 0, "structure_id": 1}):
+        if b.get("structure_id"):
+            checkins_today.add(b["structure_id"])
+
+    created, linked, skipped = 0, 0, 0
+    now = now_iso()
+    for b in bookings:
+        sid = b.get("structure_id")
+        if not sid:
+            skipped += 1
+            continue
+        if b.get("cleaning_task_id"):
+            t = await db.cleaning_tasks.find_one({"id": b["cleaning_task_id"], "status": {"$ne": "cancelled"}}, {"_id": 0, "id": 1})
+            if t:
+                skipped += 1
+                continue
+        existing = await db.cleaning_tasks.find_one({"structure_id": sid, "date": date, "status": {"$ne": "cancelled"}}, {"_id": 0, "id": 1})
+        if existing:
+            await db.events.update_one({"id": b["id"]}, {"$set": {"cleaning_task_id": existing["id"], "updated_at": now}})
+            linked += 1
+            continue
+        s = await db.structures.find_one({"id": sid}, {"_id": 0, "bed_config": 1, "check_in_time": 1, "check_out_time": 1})
+        if not s:
+            skipped += 1
+            continue
+        bc = s.get("bed_config") or {}
+        payload = CleaningTaskCreate(
+            structure_id=sid,
+            date=date,
+            booking_event_id=b["id"],
+            scheduled_time=s.get("check_out_time"),
+            guests_count=b.get("guests_count"),
+            beds_double=bc.get("beds_double"),
+            beds_single=bc.get("beds_single"),
+            beds_sofa=bc.get("sofa_beds"),
+            checkin_today=sid in checkins_today,
+            checkin_time=s.get("check_in_time") if sid in checkins_today else None,
+            notes="Generata automaticamente dal soggiorno (checkout)",
+        )
+        await create_cleaning_task(payload, current_user)
+        created += 1
+    return {"created": created, "linked": linked, "skipped": skipped, "bookings_analizzati": len(bookings), "date": date}
 
 
 class AssignCleanerRequest(BaseModel):
