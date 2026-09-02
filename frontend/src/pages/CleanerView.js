@@ -172,15 +172,41 @@ function TaskWorkScreen({ taskId, onBack }) {
       </div>
 
       {completed ? (
-        <div className="text-center py-10 space-y-3" data-testid="cleaning-completed-banner">
-          <CheckCircle2 className="h-14 w-14 mx-auto text-emerald-500" />
-          <p className="text-lg font-semibold">Pulizia completata!</p>
-          <p className="text-sm text-muted-foreground">Grazie, tutto è stato registrato.</p>
-        </div>
+        <>
+          <div className="text-center py-10 space-y-3" data-testid="cleaning-completed-banner">
+            <CheckCircle2 className="h-14 w-14 mx-auto text-emerald-500" />
+            <p className="text-lg font-semibold">Pulizia completata!</p>
+            <p className="text-sm text-muted-foreground">Grazie, tutto è stato registrato.</p>
+          </div>
+          {/* Chiave ancora detenuta dopo il completamento: solo riconsegna (nessun avviso se non detiene nulla) */}
+          <KeysPanel
+            heldOnly
+            allowedCopies={['A']}
+            structureId={task.structure_id}
+            klvCode={s?.klv_code}
+            boxes={s?.key_boxes}
+            hasKeys={!!s?.kilolava_has_keys}
+            linkedTaskId={task.id}
+            linkedTaskType="cleaning"
+            onChanged={reloadOps}
+          />
+        </>
       ) : (
         <>
           {/* Preparazione — sempre visibile */}
           <PrepCard task={task} />
+
+          {/* Chiavi (Copia A): disponibile prima, durante e dopo l'avvio della Pulizia */}
+          <KeysPanel
+            allowedCopies={['A']}
+            structureId={task.structure_id}
+            klvCode={s?.klv_code}
+            boxes={s?.key_boxes}
+            hasKeys={!!s?.kilolava_has_keys}
+            linkedTaskId={task.id}
+            linkedTaskType="cleaning"
+            onChanged={reloadOps}
+          />
 
           {!started && (
             <>
@@ -212,16 +238,6 @@ function TaskWorkScreen({ taskId, onBack }) {
                 </div>
                 <MediaGallery items={ops?.media?.enter || []} empty="Nessuna istruzione caricata" />
               </Section>
-
-              <KeysPanel
-                structureId={task.structure_id}
-                klvCode={s?.klv_code}
-                boxes={s?.key_boxes}
-                hasKeys={!!s?.kilolava_has_keys}
-                linkedTaskId={task.id}
-                linkedTaskType="cleaning"
-                onChanged={reloadOps}
-              />
             </>
           )}
 

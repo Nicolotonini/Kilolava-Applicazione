@@ -444,7 +444,7 @@ try:
     check("F10: Rider ritira per altra persona = ignorato (solo sé stesso)",
           (mdb.structures.find_one({"id": sA["id"]}, {"_id": 0, "access_info": 1})["access_info"]["key_boxes"]["B"].get("holder_user_id") == rider["id"]))
     check("F10: altra persona NON può riconsegnare la chiave A = 403", requests.post(f"{API}/keys/{sA['id']}/A/riconsegna", headers=C2 if False else CR, json={}).status_code == 403)
-    check("F10: tipo attività collegata non valido = 400", requests.post(f"{API}/keys/{sA['id']}/A/ritiro", headers=C, json={"linked_task_type": "boh"}).status_code == 400)
+    check("F10: tipo attività collegata non valido = 4xx", requests.post(f"{API}/keys/{sA['id']}/A/ritiro", headers=C, json={"linked_task_type": "boh"}).status_code in (400, 403))
     kout = requests.get(f"{API}/keys/out", headers=A).json()
     ka = next((k for k in kout if k["structure_id"] == sA["id"] and k["copy"] == "A"), None)
     kb = next((k for k in kout if k["structure_id"] == sA["id"] and k["copy"] == "B"), None)

@@ -602,6 +602,9 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
         user = await db.users.find_one({"id": user_id}, {"_id": 0})
         if user is None:
             raise HTTPException(status_code=401, detail="Utente non trovato")
+        if not user.get("is_active", True):
+            # defense in depth: anche con una sessione non ancora revocata l'account disattivato è rifiutato
+            raise HTTPException(status_code=401, detail="Account disattivato")
         return user
     except jwt.ExpiredSignatureError:
         raise HTTPException(status_code=401, detail="Token scaduto")
@@ -618,11 +621,9 @@ def serialize_config(config):
 
 
 def has_permission(user: dict, permission: str) -> bool:
-    role = user.get("role", "")
-    perms = ROLE_PERMISSIONS.get(role, [])
-    if "*" in perms:
-        return True
-    return permission in perms
+    """Compat: delega alla matrice unica effective_permissions() (ruolo + extra_roles)."""
+    perms = effective_permissions(user)
+    return "*" in perms or permission in perms
 
 
 def is_ops_user(user: dict) -> bool:
@@ -1129,6 +1130,36 @@ class KeyActionPayload(BaseModel):
     linked_task_type: Optional[str] = None  # cleaning | delivery
 
 KEY_COPIES = ("A", "B", "C")
+# Regola definitiva: A = Pulizie (cleaning), B = Rider (delivery), C = emergenza/Ops (mai Cleaner/Rider)
+KEY_COPY_TASK_TYPE = {"A": "cleaning", "B": "delivery"}
+
+
+async def _validate_linked_task(structure_id: str, task_type: Optional[str], task_id: Optional[str], holder_id: str, strict: bool):
+    """Valida l'attività collegata al ritiro: esistente, stessa struttura, assegnata al detentore (strict = ruoli operativi)."""
+    if task_type not in ("cleaning", "delivery"):
+        raise HTTPException(status_code=400, detail="Tipo attività collegata non valido")
+    if not task_id:
+        raise HTTPException(status_code=400, detail="Attività collegata obbligatoria (linked_task_id)")
+    if task_type == "cleaning":
+        t = await db.cleaning_tasks.find_one({"id": task_id}, {"_id": 0, "structure_id": 1, "status": 1, "assigned_cleaner_id": 1, "assigned_cleaner_ids": 1})
+        if not t:
+            raise HTTPException(status_code=404, detail="Pulizia collegata non trovata")
+        if t.get("structure_id") != structure_id:
+            raise HTTPException(status_code=403, detail="La Pulizia collegata appartiene a un'altra struttura")
+        if t.get("status") == CleaningTaskStatus.CANCELLED:
+            raise HTTPException(status_code=400, detail="La Pulizia collegata è annullata")
+        if strict and holder_id not in _cleaner_ids_of(t):
+            raise HTTPException(status_code=403, detail="La Pulizia collegata non è assegnata a te")
+    else:
+        f = await db.logistics_tasks.find_one({"id": task_id}, {"_id": 0, "structure_id": 1, "rider_id": 1, "status": 1})
+        if not f:
+            raise HTTPException(status_code=404, detail="Consegna collegata non trovata")
+        if f.get("structure_id") != structure_id:
+            raise HTTPException(status_code=403, detail="La Consegna collegata appartiene a un'altra struttura")
+        if f.get("status") == "cancelled":
+            raise HTTPException(status_code=400, detail="La Consegna collegata è annullata")
+        if strict and f.get("rider_id") != holder_id:
+            raise HTTPException(status_code=403, detail="La Consegna collegata non è assegnata a te")
 
 async def _key_copy_state(structure_id: str, copy: str):
     s = await db.structures.find_one({"id": structure_id}, {"_id": 0, "id": 1, "name": 1, "klv_code": 1, "access_info": 1})
@@ -1165,16 +1196,29 @@ async def key_ritiro(structure_id: str, copy: str, data: KeyActionPayload, curre
     if copy not in KEY_COPIES:
         raise HTTPException(status_code=400, detail="Copia non valida (A, B o C)")
     s, kb = await _key_copy_state(structure_id, copy)
-    if not kb.get("present", False):
-        raise HTTPException(status_code=400, detail=f"Chiave già fuori sede{(' — ' + kb['holder_name']) if kb.get('holder_name') else ''}")
     if is_ops_user(current_user):
+        # gestione manuale Ops/Admin: copia C consentita, attività collegata opzionale (se indicata, validata)
         holder_id = data.holder_user_id or current_user["id"]
+        if data.linked_task_id or data.linked_task_type:
+            await _validate_linked_task(structure_id, data.linked_task_type, data.linked_task_id, holder_id, strict=False)
     elif "keys.own.write" in effective_permissions(current_user):
         holder_id = current_user["id"]  # keys.own (cleaner/rider anche come extra_roles): solo per sé stessi
+        expected = KEY_COPY_TASK_TYPE.get(copy)
+        if not expected:
+            raise HTTPException(status_code=403, detail="Copia C riservata a Ops/Admin")
+        # copia A solo chi opera come Cleaner, copia B solo chi opera come Rider (anche via extra_roles)
+        if expected == "cleaning" and not user_has_role(current_user, UserRole.CLEANER):
+            raise HTTPException(status_code=403, detail="Copia A riservata alle Pulizie")
+        if expected == "delivery" and not user_has_role(current_user, UserRole.RIDER):
+            raise HTTPException(status_code=403, detail="Copia B riservata ai Rider")
+        if data.linked_task_type and data.linked_task_type != expected:
+            raise HTTPException(status_code=403, detail=f"La copia {copy} può essere collegata solo a un'attività '{expected}'")
+        await _validate_linked_task(structure_id, expected, data.linked_task_id, holder_id, strict=True)
+        data.linked_task_type = expected
     else:
         raise HTTPException(status_code=403, detail="Non autorizzato")
-    if data.linked_task_type and data.linked_task_type not in ("cleaning", "delivery"):
-        raise HTTPException(status_code=400, detail="Tipo attività collegata non valido")
+    if not kb.get("present", False):
+        raise HTTPException(status_code=400, detail=f"Chiave già fuori sede{(' — ' + kb['holder_name']) if kb.get('holder_name') else ''}")
     hu = await db.users.find_one({"id": holder_id}, {"_id": 0, "id": 1, "first_name": 1, "last_name": 1})
     if not hu:
         raise HTTPException(status_code=404, detail="Utente detentore non trovato")
@@ -1185,6 +1229,8 @@ async def key_ritiro(structure_id: str, copy: str, data: KeyActionPayload, curre
         f"access_info.key_boxes.{copy}.holder_user_id": holder["id"],
         f"access_info.key_boxes.{copy}.holder_name": holder["name"],
         f"access_info.key_boxes.{copy}.out_since": now,
+        f"access_info.key_boxes.{copy}.linked_task_id": data.linked_task_id,
+        f"access_info.key_boxes.{copy}.linked_task_type": data.linked_task_type,
         "updated_at": now}})
     return await _log_key_movement(s, copy, "ritiro", holder, data.note, current_user,
                                    data.linked_task_id, data.linked_task_type)
@@ -1195,21 +1241,25 @@ async def key_riconsegna(structure_id: str, copy: str, data: KeyActionPayload, c
     if copy not in KEY_COPIES:
         raise HTTPException(status_code=400, detail="Copia non valida (A, B o C)")
     s, kb = await _key_copy_state(structure_id, copy)
-    if kb.get("present", False):
-        raise HTTPException(status_code=400, detail="Chiave già in sede")
     if not is_ops_user(current_user):
         if "keys.own.write" not in effective_permissions(current_user) or kb.get("holder_user_id") != current_user["id"]:
             raise HTTPException(status_code=403, detail="Puoi riconsegnare solo le chiavi che hai ritirato")
+    if kb.get("present", False):
+        raise HTTPException(status_code=400, detail="Chiave già in sede")
     holder = {"id": kb.get("holder_user_id"), "name": kb.get("holder_name")}
+    # attività collegata: quella del ritiro (memorizzata sulla copia) salvo indicazione esplicita
+    linked_id = data.linked_task_id or kb.get("linked_task_id")
+    linked_type = data.linked_task_type or kb.get("linked_task_type")
     now = now_iso()
     await db.structures.update_one({"id": structure_id}, {"$set": {
         f"access_info.key_boxes.{copy}.present": True,
         f"access_info.key_boxes.{copy}.holder_user_id": None,
         f"access_info.key_boxes.{copy}.holder_name": None,
         f"access_info.key_boxes.{copy}.out_since": None,
+        f"access_info.key_boxes.{copy}.linked_task_id": None,
+        f"access_info.key_boxes.{copy}.linked_task_type": None,
         "updated_at": now}})
-    return await _log_key_movement(s, copy, "riconsegna", holder, data.note, current_user,
-                                   data.linked_task_id, data.linked_task_type)
+    return await _log_key_movement(s, copy, "riconsegna", holder, data.note, current_user, linked_id, linked_type)
 
 @api_router.get("/keys/out")
 async def keys_out_dashboard(current_user: dict = Depends(get_current_user)):
@@ -1228,9 +1278,11 @@ async def keys_out_dashboard(current_user: dict = Depends(get_current_user)):
                     "holder_name": kb.get("holder_name"), "out_since": kb.get("out_since"),
                     "linked_task_id": None, "linked_task_type": None, "linked_task_label": None, "linked_task_link": None,
                 }
-                # arricchimento: attività collegata all'ultimo ritiro registrato
-                mov = await db.key_movements.find_one({"structure_id": s["id"], "copy": copy, "action": "ritiro"},
-                                                      {"_id": 0, "linked_task_id": 1, "linked_task_type": 1}, sort=[("at", -1)])
+                # arricchimento: attività collegata (memorizzata sulla copia al ritiro; fallback ultimo movimento di ritiro)
+                mov = {"linked_task_id": kb.get("linked_task_id"), "linked_task_type": kb.get("linked_task_type")}
+                if not mov["linked_task_id"]:
+                    mov = await db.key_movements.find_one({"structure_id": s["id"], "copy": copy, "action": "ritiro"},
+                                                          {"_id": 0, "linked_task_id": 1, "linked_task_type": 1}, sort=[("at", -1)])
                 if mov and mov.get("linked_task_id"):
                     row["linked_task_id"], row["linked_task_type"] = mov["linked_task_id"], mov.get("linked_task_type")
                     if mov.get("linked_task_type") == "cleaning":
@@ -1495,6 +1547,34 @@ async def update_client_admin_data(client_id: str, data: ClientAdminData, curren
     await db.clients.update_one({"id": client_id}, {"$set": update})
     updated = await db.clients.find_one({"id": client_id}, {"_id": 0})
     return _client_admin_view(updated)
+
+
+@api_router.get("/clients/{client_id}/activity")
+async def get_client_activity(client_id: str, current_user: dict = Depends(get_current_user)):
+    """Timeline Cliente canonica: Pulizie (cleaning_tasks), Consegne (logistics_tasks), Manutenzioni, Ordini (client_orders).
+    Mai db.orders legacy."""
+    require_permission(current_user, "clients.read")
+    if not await db.clients.find_one({"id": client_id}, {"_id": 0, "id": 1}):
+        raise HTTPException(status_code=404, detail="Cliente non trovato")
+    struct_names = {s["id"]: s.get("name", "") async for s in db.structures.find({"client_id": client_id}, {"_id": 0, "id": 1, "name": 1})}
+    items = []
+    async for t in db.cleaning_tasks.find({"client_id": client_id}, {"_id": 0, "id": 1, "date": 1, "status": 1, "structure_id": 1, "scheduled_time": 1, "created_at": 1}).sort("date", -1).limit(500):
+        items.append({"id": t["id"], "type": "cleaning", "label": "Pulizia", "date": t.get("date") or t.get("created_at"),
+                      "status": t.get("status"), "detail": struct_names.get(t.get("structure_id"), "") + (f" · {t['scheduled_time']}" if t.get("scheduled_time") else ""),
+                      "link": f"/cleaning/task/{t['id']}"})
+    async for f in db.logistics_tasks.find({"client_id": client_id}, {"_id": 0, "id": 1, "date": 1, "status": 1, "structure_id": 1, "task_type": 1, "destination": 1, "created_at": 1}).sort("date", -1).limit(500):
+        items.append({"id": f["id"], "type": "logistics", "label": "Ritiro" if f.get("task_type") == "pickup" else "Consegna",
+                      "date": f.get("date") or f.get("created_at"), "status": f.get("status"),
+                      "detail": f.get("destination") or struct_names.get(f.get("structure_id"), ""), "link": f"/consegne/fermata/{f['id']}"})
+    async for m in db.maintenance_issues.find({"client_id": client_id}, {"_id": 0, "id": 1, "title": 1, "status": 1, "reported_date": 1, "created_at": 1}).sort("created_at", -1).limit(500):
+        items.append({"id": m["id"], "type": "maintenance", "label": "Manutenzione", "date": m.get("reported_date") or m.get("created_at"),
+                      "status": m.get("status"), "detail": m.get("title", ""), "link": f"/maintenance/{m['id']}"})
+    for o in await _client_orders_with_status({"client_id": client_id}, limit=500):
+        items.append({"id": o["id"], "type": "order", "label": "Ordine", "date": o.get("created_at"), "status": o["status"],
+                      "detail": f"{o.get('order_number', '')} · {o.get('structure_name', '')} · {len(o.get('items') or [])} articoli",
+                      "link": "/consegne/definizione"})
+    items.sort(key=lambda x: x.get("date") or "", reverse=True)
+    return items
 
 
 @api_router.delete("/clients/{client_id}")

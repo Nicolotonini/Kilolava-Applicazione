@@ -156,8 +156,8 @@ export const operationsApi = {
   updateDeliveryConfig: (data) => api.put('/operations/delivery-config', data),
   getClientCatalog: (clientId) => api.get(`/operations/client-catalog/${clientId}`),
   setClientCatalog: (data) => api.post('/operations/client-catalog', data),
-  getOrders: (params = {}) => api.get('/operations/orders', { params }),
-  updateOrderStatus: (id, data) => api.put(`/operations/orders/${id}/status`, data),
+  // LEGACY / READ-ONLY / STORICO (db.orders): non usare nelle UI moderne — fonte canonica = client_orders + fabbisogni + Consegne
+  getLegacyOrders: (params = {}) => api.get('/operations/orders', { params }),
 };
 
 export const integrationsApi = {

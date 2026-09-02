@@ -865,20 +865,9 @@ const ClientDetailPage = () => {
   const fetchHistory = useCallback(async () => {
     setHistoryLoading(true);
     try {
-      const [cleanRes, logRes, maintRes, ordRes] = await Promise.all([
-        api.get('/cleaning-tasks', { params: { client_id: clientId } }).catch(() => ({ data: [] })),
-        api.get('/logistics/tasks', { params: { client_id: clientId } }).catch(() => ({ data: [] })),
-        api.get('/maintenance/issues', { params: { client_id: clientId } }).catch(() => ({ data: [] })),
-        api.get('/operations/orders', { params: { client_id: clientId } }).catch(() => ({ data: [] })),
-      ]);
-      const all = [
-        ...(cleanRes.data || []).map(e => ({ ...e, _type: 'cleaning', _label: 'Pulizia', _date: e.scheduled_date || e.created_at })),
-        ...(logRes.data || []).map(e => ({ ...e, _type: 'logistics', _label: e.task_type === 'delivery' ? 'Consegna' : 'Ritiro', _date: e.date || e.created_at })),
-        ...(maintRes.data || []).map(e => ({ ...e, _type: 'maintenance', _label: 'Manutenzione', _date: e.reported_date || e.created_at })),
-        ...(ordRes.data || []).map(e => ({ ...e, _type: 'order', _label: 'Ordine', _date: e.created_at })),
-      ];
-      all.sort((a, b) => (b._date || '').localeCompare(a._date || ''));
-      setHistory(all);
+      // Timeline canonica (Pulizie, Consegne, Manutenzioni, Ordini client_orders): mai db.orders legacy
+      const res = await api.get(`/clients/${clientId}/activity`);
+      setHistory((res.data || []).map(e => ({ ...e, _type: e.type, _label: e.label, _date: e.date, title: e.detail })));
     } catch (e) { console.error(e); }
     finally { setHistoryLoading(false); }
   }, [clientId]);
@@ -1500,7 +1489,7 @@ const ClientDetailPage = () => {
                       order: 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300',
                     };
                     return (
-                      <tr key={i} className="hover:bg-accent/30">
+                      <tr key={i} className="hover:bg-accent/30" data-testid={`client-activity-${item._type}-${item.id}`}>
                         <td className="px-4 py-2.5 text-xs text-muted-foreground whitespace-nowrap">
                           {item._date ? new Date(item._date).toLocaleDateString('it-IT') : '-'}
                         </td>

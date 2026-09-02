@@ -22,6 +22,7 @@ admin_tok = requests.post(f"{API}/auth/login", json={
     "username": TEST_ADMIN_USERNAME, "password": TEST_ADMIN_PASSWORD}).json()["access_token"]
 A = {"Authorization": f"Bearer {admin_tok}"}
 
+_pre_notif_ids = set(x.get("id") for x in mdb.notifications.find({}, {"_id": 0, "id": 1}))
 C = {"clients": [], "structures": [], "users": []}
 
 
@@ -77,8 +78,15 @@ try:
     check("Movimento 'riconsegna' registrato",
           mdb.key_movements.count_documents({"structure_id": s["id"], "copy": "A", "action": "riconsegna"}) == 1)
 
-    # 4. Self-service keys.own: il rider ritira per sé (holder forzato a sé stesso)
-    r = requests.post(f"{API}/keys/{s['id']}/B/ritiro", headers=RD, json={"holder_user_id": cl["id"]})
+    # 4. Self-service keys.own: il rider ritira per sé (holder forzato a sé stesso) — regola finale:
+    #    copia B solo con la PROPRIA Fermata (linked_task obbligatorio) sulla stessa struttura
+    check("Rider ritiro copia B senza attività collegata = 400",
+          requests.post(f"{API}/keys/{s['id']}/B/ritiro", headers=RD, json={}).status_code == 400)
+    prod7 = mdb.supply_catalog.find_one({}, {"_id": 0, "id": 1})
+    ric7 = requests.post(f"{API}/consegne/richieste", headers=A, json={"structure_id": s["id"], "kind": "forniture",
+                                                                        "items": [{"product_id": prod7["id"], "qty": 1}], "date_needed": "2027-09-01"}).json()
+    fer7 = requests.post(f"{API}/consegne/fermate", headers=A, json={"richiesta_ids": [ric7["id"]], "date": "2027-09-01", "rider_id": rd["id"]}).json()
+    r = requests.post(f"{API}/keys/{s['id']}/B/ritiro", headers=RD, json={"holder_user_id": cl["id"], "linked_task_id": fer7["id"], "linked_task_type": "delivery"})
     check("Rider ritiro copia B = 200 (self)", r.status_code == 200, r.text[:120])
     check("Holder forzato al rider (ignora holder_user_id altrui)", kb(s["id"], "B").get("holder_user_id") == rd["id"])
     r = requests.post(f"{API}/keys/{s['id']}/B/riconsegna", headers=A, json={"note": "rientro ops"})
@@ -101,12 +109,16 @@ try:
 finally:
     for sid in C["structures"]:
         mdb.key_movements.delete_many({"structure_id": sid})
+        mdb.logistics_tasks.delete_many({"structure_id": sid})
+        mdb.fabbisogni.delete_many({"structure_id": sid})
     for uid in C["users"]:
         requests.delete(f"{API}/users/{uid}", headers=A)
     for sid in C["structures"]:
         requests.delete(f"{API}/structures/{sid}", headers=A)
     for cid in C["clients"]:
-        requests.delete(f"{API}/clients/{cid}", headers=A)
+        if requests.delete(f"{API}/clients/{cid}", headers=A).status_code != 200:
+            mdb.clients.delete_one({"id": cid})  # fixture TEST_GATE7: rimozione fisica
+    mdb.notifications.delete_many({"id": {"$nin": list(_pre_notif_ids)}})
     print("cleanup done")
 
 fails = [n for n, ok, _ in results if not ok]

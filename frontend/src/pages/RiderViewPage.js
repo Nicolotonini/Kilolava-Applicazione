@@ -430,9 +430,10 @@ const RiderViewPage = () => {
                             </p>
                           </div>
                         )}
-                        {f.keys?.has_keys && f.structure_id && (
+                        {f.status !== 'completed' && f.keys?.has_keys && f.structure_id && (
                           <KeysPanel
                             compact
+                            allowedCopies={['B']}
                             structureId={f.structure_id}
                             klvCode={f.klv_code}
                             boxes={f.keys.boxes}
@@ -507,9 +508,11 @@ const RiderViewPage = () => {
                   <span className="text-xs text-muted-foreground">Completate ({done.length})</span>
                   <div className="h-px flex-1 bg-border" />
                 </div>
-                {done.map((f) => (
-                  <Card key={f.id} className={cn('border-l-4 opacity-60', STATUS_BORDER.completed)} data-testid={`rider-fermata-${f.id}`}>
-                    <CardContent className="p-3">
+                {done.map((f) => {
+                  const heldB = f.keys?.has_keys && f.structure_id && f.keys.boxes?.B && !f.keys.boxes.B.present && f.keys.boxes.B.holder_user_id === user?.id;
+                  return (
+                  <Card key={f.id} className={cn('border-l-4', heldB ? 'border-l-amber-400' : cn('opacity-60', STATUS_BORDER.completed))} data-testid={`rider-fermata-${f.id}`}>
+                    <CardContent className="p-3 space-y-2">
                       <div className="flex items-center gap-2 flex-wrap">
                         <Check className="h-4 w-4 text-emerald-600" />
                         <span className="text-sm font-semibold">{f.destination}</span>
@@ -517,9 +520,25 @@ const RiderViewPage = () => {
                           <StatusBadge key={i} tone={KIND_TONES[l.category] || 'cancelled'} className="!py-0.5">{l.category_label}</StatusBadge>
                         ))}
                       </div>
+                      {/* Fermata completata ma chiave B ancora in custodia: solo riconsegna (la consegna resta chiusa) */}
+                      {heldB && (
+                        <KeysPanel
+                          compact
+                          heldOnly
+                          allowedCopies={['B']}
+                          structureId={f.structure_id}
+                          klvCode={f.klv_code}
+                          boxes={f.keys.boxes}
+                          hasKeys
+                          linkedTaskId={f.id}
+                          linkedTaskType="delivery"
+                          onChanged={fetchFermate}
+                        />
+                      )}
                     </CardContent>
                   </Card>
-                ))}
+                  );
+                })}
               </>
             )}
           </div>

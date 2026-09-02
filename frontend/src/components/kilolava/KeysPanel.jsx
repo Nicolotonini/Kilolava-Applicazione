@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { KeyRound, ArrowUpRight, Undo2 } from 'lucide-react';
+import { KeyRound, ArrowUpRight, Undo2, AlertTriangle } from 'lucide-react';
 import { toast } from 'sonner';
 import api from '../../lib/api';
 import { useAuth } from '../../contexts/AuthContext';
@@ -25,12 +25,18 @@ const copyState = (kb, userId) => {
 /**
  * Sezione "Chiavi" nelle viste operative (Pulizia / Fermata). Usa gli endpoint esistenti
  * POST /keys/{structure}/{copy}/ritiro|riconsegna con linked_task_id/type; l'operatore agisce solo per sé.
+ * - allowedCopies: copie mostrate operativamente (Cleaner = ['A'], Rider = ['B']); il backend resta la barriera reale.
+ * - heldOnly: mostra solo le copie detenute dall'utente (es. dopo il completamento) con avviso "Chiave ancora da riconsegnare".
  */
-export const KeysPanel = ({ structureId, klvCode, boxes, hasKeys, linkedTaskId, linkedTaskType, onChanged, compact = false }) => {
+export const KeysPanel = ({ structureId, klvCode, boxes, hasKeys, linkedTaskId, linkedTaskType, onChanged, compact = false,
+  allowedCopies = ['A', 'B', 'C'], heldOnly = false }) => {
   const { user } = useAuth();
   const [busy, setBusy] = useState(null);
   if (!hasKeys || !structureId) return null;
-  const copies = ['A', 'B', 'C'].map((c) => ({ letter: c, kb: (boxes || {})[c], st: copyState((boxes || {})[c], user?.id) })).filter((x) => x.st);
+  let copies = allowedCopies
+    .map((c) => ({ letter: c, kb: (boxes || {})[c], st: copyState((boxes || {})[c], user?.id) }))
+    .filter((x) => x.st);
+  if (heldOnly) copies = copies.filter((x) => x.st.code === 'mia');
   if (copies.length === 0) return null;
 
   const act = async (letter, action) => {
@@ -44,10 +50,15 @@ export const KeysPanel = ({ structureId, klvCode, boxes, hasKeys, linkedTaskId, 
   };
 
   return (
-    <div className={cn('rounded-xl border border-border bg-card', compact ? 'p-2.5 space-y-2' : 'p-4 space-y-3')} data-testid="keys-panel">
+    <div className={cn('rounded-xl border bg-card', heldOnly ? 'border-amber-300' : 'border-border', compact ? 'p-2.5 space-y-2' : 'p-4 space-y-3')} data-testid="keys-panel">
       <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
         <KeyRound className="h-3.5 w-3.5" />Chiavi{klvCode ? ` · ${klvCode}` : ''}
       </p>
+      {heldOnly && (
+        <p className="text-sm font-medium text-amber-700 flex items-center gap-1.5" data-testid="keys-held-warning">
+          <AlertTriangle className="h-4 w-4" />Chiave ancora da riconsegnare
+        </p>
+      )}
       {copies.map(({ letter, st }) => (
         <div key={letter} className="flex items-center gap-2 flex-wrap" data-testid={`keys-copy-${letter}`}>
           <span className="text-sm font-semibold w-14">Copia {letter}</span>
