@@ -41,6 +41,8 @@ try:
         "contacts": [{"name": "TESTFIX Referente", "role": "Amministrazione", "phone": "+39 333 1234567",
                       "email": "testfix.ref@example.com", "notes": "nota referente"}]}).json()
     cleanup["clients"].append(cl["id"])
+    # Hardening finale: NESSUN fallback (no Living/stagione impliciti) → configurazione Noleggio esplicita del Cliente
+    requests.put(f"{API}/clients/{cl['id']}/noleggio-config", headers=A, json={"linea": "living", "stagione": "estivo"})
 
     s_rl = requests.post(f"{API}/structures", headers=A, json={
         "client_id": cl["id"], "name": "TESTFIX_CI Noleggio OK", "structure_type": "apartment",

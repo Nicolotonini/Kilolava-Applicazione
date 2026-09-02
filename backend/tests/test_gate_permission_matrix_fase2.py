@@ -77,12 +77,15 @@ try:
         ("cataloghi", "/magazzino/catalog/noleggio"),
         ("kit", "/magazzino/kits"),
         ("activity", "/activity"),
-        ("settings", "/settings/keys"),
-        ("integrations", "/integrations/google-sheets/status"),
+        ("keys settings (read, operativo)", "/settings/keys"),
     ]
     for label, ep in om_endpoints:
         rc = requests.get(f"{API}{ep}", headers=OM).status_code
         check(f"OM nav '{label}' -> GET {ep} = 200", rc == 200, f"got {rc}")
+    # Hardening finale: OM NON è Super Admin tecnico → integrazioni/impostazioni tecniche = 403
+    check("OM integrazioni (google-sheets status) = 403",
+          requests.get(f"{API}/integrations/google-sheets/status", headers=OM).status_code == 403)
+    check("OM PUT /settings/keys = 403", requests.put(f"{API}/settings/keys", headers=OM, json={"box_capacity": 60}).status_code == 403)
     check("OM POST /users = 403 (mutazioni utenti solo admin)",
           requests.post(f"{API}/users", headers=OM, json={"first_name": "X", "role": "cleaner"}).status_code == 403)
 

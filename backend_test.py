@@ -84,7 +84,7 @@ class KilolavaAPITester:
         timestamp = datetime.now().strftime('%H%M%S')
         register_data = {
             "email": f"test_manager_{timestamp}@kilolava.com",
-            "password": "TestPassword123!",
+            "password": TEST_FIXTURE_PASSWORD,
             "name": f"Test Manager {timestamp}",
             "role": "manager",
             "language": "it"

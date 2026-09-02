@@ -15,7 +15,7 @@ BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', '').rstrip('/')
 MANAGER_EMAIL = "test_user@kilolava.com"
 MANAGER_PASSWORD = TEST_ADMIN_PASSWORD
 RIDER_EMAIL = "rider1@kilolava.com"
-RIDER_PASSWORD = "Rider123!"
+RIDER_PASSWORD = TEST_FIXTURE_PASSWORD
 
 # Test date for logistics tasks
 TEST_DATE = "2026-03-24"
@@ -48,12 +48,12 @@ class TestLogisticsSetup:
     def test_manager_login(self, manager_token):
         """Test manager can login"""
         assert manager_token is not None
-        print(f"Manager token obtained: {manager_token[:20]}...")
+        print("Manager token obtained")
     
     def test_rider_login(self, rider_token):
         """Test rider can login"""
         assert rider_token is not None
-        print(f"Rider token obtained: {rider_token[:20]}...")
+        print("Rider token obtained")
 
 
 class TestLogisticsTasks:
@@ -480,7 +480,7 @@ class TestRiders:
         rider_data = {
             "name": "TEST Rider",
             "email": unique_email,
-            "password": "TestRider123!",
+            "password": TEST_FIXTURE_PASSWORD,
             "phone": "+39 333 1234567",
             "vehicle_type": "Scooter"
         }
@@ -502,7 +502,7 @@ class TestRiders:
         rider_data = {
             "name": "Duplicate Rider",
             "email": RIDER_EMAIL,  # Already exists
-            "password": "TestRider123!"
+            "password": TEST_FIXTURE_PASSWORD
         }
         response = requests.post(f"{BASE_URL}/api/logistics/riders", json=rider_data, headers=auth_headers)
         assert response.status_code == 400
@@ -516,7 +516,7 @@ class TestRiders:
         create_response = requests.post(f"{BASE_URL}/api/logistics/riders", json={
             "name": "Update Test",
             "email": unique_email,
-            "password": "TestRider123!"
+            "password": TEST_FIXTURE_PASSWORD
         }, headers=auth_headers)
         assert create_response.status_code == 200
         rider_id = create_response.json()["id"]
@@ -544,7 +544,7 @@ class TestRiders:
         create_response = requests.post(f"{BASE_URL}/api/logistics/riders", json={
             "name": "Delete Test",
             "email": unique_email,
-            "password": "TestRider123!"
+            "password": TEST_FIXTURE_PASSWORD
         }, headers=auth_headers)
         assert create_response.status_code == 200
         rider_id = create_response.json()["id"]

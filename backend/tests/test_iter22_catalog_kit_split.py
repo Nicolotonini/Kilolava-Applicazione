@@ -221,11 +221,7 @@ def test_zzz_cleanup_counters():
         # remove any TEST_ residuals
         for coll in ("supply_catalog", "cleaning_catalog", "rental_catalog", "kits"):
             await d[coll].delete_many({"name": {"$regex": "^TEST_"}})
-        # restore counters
-        await d.counters.update_one({"_id": "for_code"}, {"$set": {"seq": 8}}, upsert=True)
-        await d.counters.update_one({"_id": "pul_code"}, {"$set": {"seq": 23}}, upsert=True)
-        await d.counters.update_one({"_id": "nol_code"}, {"$set": {"seq": 23}}, upsert=True)
-        await d.counters.update_one({"_id": "kit_nol_code"}, {"$set": {"seq": 8}}, upsert=True)
+        # I contatori NON si azzerano MAI: codici FOR/PUL/NOL/KIT-NOL permanenti e mai riutilizzabili
         # verify counts
         rc = await d.rental_catalog.count_documents({})
         sc = await d.supply_catalog.count_documents({})

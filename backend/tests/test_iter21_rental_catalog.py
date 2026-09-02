@@ -207,9 +207,7 @@ class TestAutoCodeAndCleanup:
         # Delete test kit
         if TestAutoCodeAndCleanup._kit_test_id:
             mdb.kits.delete_one({"code": "KIT-NOL-0009"})
-        # Reset counters
-        mdb.counters.update_one({"_id": "nol_code"}, {"$set": {"seq": 23}})
-        mdb.counters.update_one({"_id": "kit_nol_code"}, {"$set": {"seq": 8}})
+        # I contatori NON si azzerano MAI: i codici NOL/KIT-NOL sono permanenti e mai riutilizzabili
         # Verify final counts
         assert mdb.rental_catalog.count_documents({}) == 23
         assert mdb.kits.count_documents({"domain": "noleggio"}) == 8

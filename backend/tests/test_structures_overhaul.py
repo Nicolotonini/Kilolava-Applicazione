@@ -362,7 +362,7 @@ class TestClientRoleSecurity:
 
         # create portal account
         email = f"portal_{suffix}@example.com"
-        password = "ClientPass123!"
+        password = TEST_FIXTURE_PASSWORD
         ra = requests.post(f"{API}/clients/{cid}/create-account", headers=admin_headers,
                           json={"email": email, "password": password, "name": "Portal Test"}, timeout=15)
         if ra.status_code not in (200, 201):

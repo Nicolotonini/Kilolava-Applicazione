@@ -109,8 +109,11 @@ async def sync_structure_ical(structure_id: str, ical_url: str, user_id: str) ->
                 skipped_manual += 1
                 continue
             dates_changed = ex.get("start_time") != fe["start"] or ex.get("end_time") != fe["end"]
-            if dates_changed or ex.get("title") != title:
+            reappeared = bool(ex.get("feed_cancelled")) and not ex.get("manual_cancelled")
+            if dates_changed or ex.get("title") != title or reappeared:
                 upd = {"start_time": fe["start"], "end_time": fe["end"], "title": title, "updated_at": now}
+                if reappeared:  # la prenotazione è tornata nel feed: riattiva il soggiorno
+                    upd.update({"status": "pending", "feed_cancelled": None, "hidden_cancelled": None})
                 # Alert per il Manager: date modificate su un soggiorno con dati operativi Kilolava
                 if dates_changed and _has_kilolava_data(ex):
                     upd["dates_changed"] = {
@@ -170,8 +173,12 @@ async def sync_structure_ical(structure_id: str, ical_url: str, user_id: str) ->
                     removed += 1
                     await _reconcile(ex["id"])
             else:
-                await _reconcile({**ex, "_deleted": True})
-                await db.events.delete_one({"id": ex["id"]})
+                # Uniforme al flusso manuale: MAI hard delete dello storico soggiorno
+                if ex.get("status") == "cancelled":
+                    continue
+                await db.events.update_one({"id": ex["id"]}, {"$set": {
+                    "status": "cancelled", "feed_cancelled": True, "hidden_cancelled": True, "updated_at": now}})
+                await _reconcile(ex["id"])
                 removed += 1
 
     sync_record = {

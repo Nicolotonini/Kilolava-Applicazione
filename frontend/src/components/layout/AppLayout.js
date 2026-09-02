@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { useSegnalazioniBadge } from '../../hooks/useSegnalazioniBadge';
 import { QuickActions } from '../kilolava/QuickActions';
+import { RoleAreaSwitcher } from '../kilolava/RoleAreaSwitcher';
 import { Button } from '../ui/button';
 import { cn } from '../../lib/utils';
 
@@ -156,7 +157,7 @@ function getBreadcrumb(pathname, search) {
 const AppLayout = ({ children }) => {
   const { user, logout } = useAuth();
   const { theme, toggleTheme } = useTheme();
-  const { canAccessNav, role, realRole, isRealAdmin, isImpersonating, setImpersonatedRole } = usePermissions();
+  const { canAccessNav, role, realRole, isRealAdmin, isImpersonating, setImpersonatedRole, isAdmin, allowedBackofficePaths, operativeAreas } = usePermissions();
   const location = useLocation();
   const navigate = useNavigate();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -166,14 +167,15 @@ const AppLayout = ({ children }) => {
   const accountRef = useRef(null);
   const segBadge = useSegnalazioniBadge();
 
-  // L'Addetto Lavanderia vive solo dentro Lavorazioni (history/prezzi restano ops-only)
-  const laundryOnly = role === 'laundry';
+  // Ruoli NON ops dentro il backoffice (es. Lavanderia, anche come extra_role): solo i percorsi delle aree abilitate
+  const restricted = allowedBackofficePaths !== null;
+  const fallbackPath = (allowedBackofficePaths && allowedBackofficePaths[0]) || operativeAreas[0]?.path || '/login';
   useEffect(() => {
-    const allowed = location.pathname.startsWith('/private-laundry/jobs') || location.pathname === '/notifications';
-    if (laundryOnly && !allowed) {
-      navigate('/private-laundry/jobs', { replace: true });
-    }
-  }, [laundryOnly, location.pathname, navigate]);
+    if (!restricted) return;
+    const allowed = location.pathname === '/notifications'
+      || (allowedBackofficePaths || []).some((p) => location.pathname === p || location.pathname.startsWith(p + '/'));
+    if (!allowed) navigate(fallbackPath, { replace: true });
+  }, [restricted, allowedBackofficePaths, fallbackPath, location.pathname, navigate]);
 
   const isPathActive = (path) => {
     const [p] = path.split('?');
@@ -335,14 +337,16 @@ const AppLayout = ({ children }) => {
           <div className="my-1.5 border-t border-border" />
         </>
       )}
-      <Link
-        to="/settings"
-        onClick={() => { setAccountOpen(false); setMobileAccountOpen(false); }}
-        className="flex items-center gap-2.5 px-3.5 py-2 text-xs hover:bg-muted transition-colors"
-        data-testid="account-settings-link"
-      >
-        <Settings className="h-3.5 w-3.5" />Impostazioni
-      </Link>
+      {isAdmin && (
+        <Link
+          to="/settings"
+          onClick={() => { setAccountOpen(false); setMobileAccountOpen(false); }}
+          className="flex items-center gap-2.5 px-3.5 py-2 text-xs hover:bg-muted transition-colors"
+          data-testid="account-settings-link"
+        >
+          <Settings className="h-3.5 w-3.5" />Impostazioni
+        </Link>
+      )}
       <button
         onClick={logout}
         className="w-full flex items-center gap-2.5 px-3.5 py-2 text-xs text-destructive hover:bg-muted transition-colors"
@@ -380,6 +384,7 @@ const AppLayout = ({ children }) => {
           <span className="flex-1 text-3xl font-heading font-bold text-primary tracking-tight">kilolava</span>
         </div>
         <nav className="flex-1 px-3 py-3 space-y-0.5 overflow-y-auto scrollbar-hide" data-testid="sidebar-nav">
+          <RoleAreaSwitcher className="px-1 pb-2" />
           {visibleNav.map((entry) => renderNavEntry(entry))}
         </nav>
 
@@ -397,6 +402,7 @@ const AppLayout = ({ children }) => {
             >
               {theme === 'dark' ? <Sun className="h-[18px] w-[18px]" /> : <Moon className="h-[18px] w-[18px]" />}
             </Button>
+            {isAdmin && (
             <NavLink
               to="/settings"
               data-testid="sidebar-settings-btn"
@@ -408,6 +414,7 @@ const AppLayout = ({ children }) => {
             >
               <Settings className="h-[18px] w-[18px]" />
             </NavLink>
+            )}
             <Button
               variant="ghost"
               size="icon"
@@ -533,6 +540,7 @@ const AppLayout = ({ children }) => {
           </div>
         )}
         <nav className="flex-1 overflow-y-auto px-3 py-3 space-y-0.5">
+          <RoleAreaSwitcher className="px-1 pb-2" />
           {visibleNav.map((entry) => renderNavEntry(entry, () => setMobileMenuOpen(false)))}
         </nav>
         <div className="px-3 py-3 border-t border-border flex items-center gap-2 flex-shrink-0">

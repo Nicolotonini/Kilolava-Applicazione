@@ -1,4 +1,4 @@
-from fastapi import FastAPI, APIRouter, HTTPException, Depends, File, UploadFile, Query, Header, Form
+from fastapi import FastAPI, APIRouter, HTTPException, Depends, File, UploadFile, Query, Form
 from fastapi import status as http_status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.responses import Response
@@ -9,7 +9,7 @@ from pymongo import ReturnDocument
 import os
 import logging
 from pathlib import Path
-from pydantic import BaseModel, Field, EmailStr, ConfigDict
+from pydantic import BaseModel, Field, EmailStr, ConfigDict, model_validator
 from typing import List, Optional
 import uuid
 import re
@@ -209,7 +209,7 @@ class PrivateClientInfo(BaseModel):
     fiscal_code: Optional[str] = None
     phone: Optional[str] = None
     email: Optional[str] = None
-    sdi: str = "0000000"
+    sdi: Optional[str] = "0000000"
 
 # Company client info
 class CompanyClientInfo(BaseModel):
@@ -218,20 +218,65 @@ class CompanyClientInfo(BaseModel):
     representative_surname: str = ""
     vat_number: Optional[str] = None
     fiscal_code: Optional[str] = None
-    sdi: str = "0000000"
+    sdi: Optional[str] = "0000000"
     address: Optional[str] = None
     phone: Optional[str] = None
     email: Optional[str] = None
     pec: Optional[str] = None
 
+# Dati fiscali/amministrativi: MAI nel ClientResponse operativo, solo via /clients/{id}/admin-data (Super Admin)
+CLIENT_FISCAL_FIELDS = ("fiscal_code", "vat_number", "sdi", "pec")
+
+
+def _strip_fiscal(info: Optional[dict]) -> Optional[dict]:
+    if not info:
+        return info
+    return {k: (None if k in CLIENT_FISCAL_FIELDS else v) for k, v in info.items()}
+
+
 class ClientContact(BaseModel):
-    """Referente del Cliente (persona di contatto)."""
+    """Referente del Cliente (persona di contatto). Compatibile con i contatti legacy che hanno solo `name`."""
     id: Optional[str] = None
-    name: str
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
+    name: Optional[str] = None  # legacy / nome completo
+    display_name: Optional[str] = None
     role: Optional[str] = None
     phone: Optional[str] = None
     email: Optional[str] = None
     notes: Optional[str] = None
+    is_primary: bool = False
+    active: bool = True
+
+    @model_validator(mode="after")
+    def _sync_names(self):
+        full = f"{(self.first_name or '').strip()} {(self.last_name or '').strip()}".strip()
+        if full:
+            self.name = full
+        elif self.name and self.name.strip():
+            parts = self.name.strip().split(" ", 1)
+            self.first_name, self.last_name = parts[0], (parts[1] if len(parts) > 1 else "")
+        else:
+            raise ValueError("Nome del referente obbligatorio")
+        if not (self.display_name or "").strip():
+            self.display_name = self.name
+        return self
+
+
+def _normalize_contacts(contacts: list, previous: Optional[list] = None) -> list:
+    """id garantiti; al massimo UN referente principale: se ne arrivano due, vince quello nuovo (il precedente perde il flag)."""
+    prev_primary = next((c.get("id") for c in (previous or []) if c.get("is_primary")), None)
+    out = []
+    for c in contacts or []:
+        cd = c.model_dump() if hasattr(c, "model_dump") else dict(c)
+        cd["id"] = cd.get("id") or str(uuid.uuid4())
+        out.append(cd)
+    primaries = [c for c in out if c.get("is_primary")]
+    if len(primaries) > 1:
+        keep = next((c for c in reversed(primaries) if c["id"] != prev_primary), primaries[-1])
+        for c in primaries:
+            c["is_primary"] = c is keep
+    return out
 
 class ClientCreate(BaseModel):
     client_type: str = ClientType.PRIVATE
@@ -920,18 +965,19 @@ async def create_client(client_data: ClientCreate, current_user: dict = Depends(
     client_id = str(uuid.uuid4())
     now = now_iso()
     cli_code = await next_cli_code()
-    contacts = []
-    for c in client_data.contacts or []:
-        cd = c.model_dump()
-        cd["id"] = cd.get("id") or str(uuid.uuid4())
-        contacts.append(cd)
+    contacts = _normalize_contacts(client_data.contacts or [])
+    # Dati fiscali in creazione: solo Super Admin (il Responsabile Generale li gestisce via richiesta all'Admin)
+    private_info = serialize_config(client_data.private_info) if client_data.private_info else None
+    company_info = serialize_config(client_data.company_info) if client_data.company_info else None
+    if current_user.get("role") != UserRole.ADMIN:
+        private_info, company_info = _strip_fiscal(private_info), _strip_fiscal(company_info)
 
     client_doc = {
         "id": client_id,
         "cli_code": cli_code,
         "client_type": client_data.client_type,
-        "private_info": serialize_config(client_data.private_info) if client_data.private_info else None,
-        "company_info": serialize_config(client_data.company_info) if client_data.company_info else None,
+        "private_info": private_info,
+        "company_info": company_info,
         "contacts": contacts,
         "notes": client_data.notes,
         "is_active": client_data.is_active,
@@ -950,8 +996,8 @@ async def create_client(client_data: ClientCreate, current_user: dict = Depends(
         id=client_id,
         cli_code=cli_code,
         client_type=client_data.client_type,
-        private_info=client_data.private_info,
-        company_info=client_data.company_info,
+        private_info=PrivateClientInfo(**_strip_fiscal(private_info)) if private_info else None,
+        company_info=CompanyClientInfo(**_strip_fiscal(company_info)) if company_info else None,
         contacts=contacts,
         display_name=display_name,
         phone=phone,
@@ -970,8 +1016,7 @@ async def upload_client_logo(
     file: UploadFile = File(...),
     current_user: dict = Depends(get_current_user)
 ):
-    if current_user["role"] not in [UserRole.MANAGER, UserRole.OPS_MANAGER]:
-        raise HTTPException(status_code=403, detail="Non autorizzato")
+    require_permission(current_user, "clients.write")
     client = await db.clients.find_one({"id": client_id}, {"_id": 0, "id": 1})
     if not client:
         raise HTTPException(status_code=404, detail="Cliente non trovato")
@@ -987,8 +1032,7 @@ async def upload_client_logo(
 
 @api_router.delete("/clients/{client_id}/logo")
 async def delete_client_logo(client_id: str, current_user: dict = Depends(get_current_user)):
-    if current_user["role"] not in [UserRole.MANAGER, UserRole.OPS_MANAGER]:
-        raise HTTPException(status_code=403, detail="Non autorizzato")
+    require_permission(current_user, "clients.write")
     await db.clients.update_one({"id": client_id}, {"$set": {"logo_path": None, "updated_at": now_iso()}})
     return {"message": "Logo rimosso"}
 
@@ -1031,10 +1075,10 @@ async def get_clients(
     for client_doc in clients:
         private_info = None
         if client_doc.get("private_info"):
-            private_info = PrivateClientInfo(**client_doc["private_info"])
+            private_info = PrivateClientInfo(**_strip_fiscal(client_doc["private_info"]))
         company_info = None
         if client_doc.get("company_info"):
-            company_info = CompanyClientInfo(**client_doc["company_info"])
+            company_info = CompanyClientInfo(**_strip_fiscal(client_doc["company_info"]))
         
         result.append(ClientResponse(
             id=client_doc["id"],
@@ -1071,8 +1115,7 @@ async def get_keys_settings(current_user: dict = Depends(get_current_user)):
 
 @api_router.put("/settings/keys")
 async def update_keys_settings(data: KeysSettingsUpdate, current_user: dict = Depends(get_current_user)):
-    if current_user["role"] not in [UserRole.MANAGER, UserRole.OPS_MANAGER]:
-        raise HTTPException(status_code=403, detail="Non autorizzato")
+    require_admin(current_user)  # Impostazioni tecniche: Super Admin
     capacity = max(1, data.box_capacity)
     await db.app_settings.update_one({"_id": "keys"}, {"$set": {"box_capacity": capacity}}, upsert=True)
     return {"box_capacity": capacity}
@@ -1126,10 +1169,12 @@ async def key_ritiro(structure_id: str, copy: str, data: KeyActionPayload, curre
         raise HTTPException(status_code=400, detail=f"Chiave già fuori sede{(' — ' + kb['holder_name']) if kb.get('holder_name') else ''}")
     if is_ops_user(current_user):
         holder_id = data.holder_user_id or current_user["id"]
-    elif current_user["role"] in (UserRole.CLEANER, UserRole.RIDER):
-        holder_id = current_user["id"]  # keys.own: solo per sé stessi
+    elif "keys.own.write" in effective_permissions(current_user):
+        holder_id = current_user["id"]  # keys.own (cleaner/rider anche come extra_roles): solo per sé stessi
     else:
         raise HTTPException(status_code=403, detail="Non autorizzato")
+    if data.linked_task_type and data.linked_task_type not in ("cleaning", "delivery"):
+        raise HTTPException(status_code=400, detail="Tipo attività collegata non valido")
     hu = await db.users.find_one({"id": holder_id}, {"_id": 0, "id": 1, "first_name": 1, "last_name": 1})
     if not hu:
         raise HTTPException(status_code=404, detail="Utente detentore non trovato")
@@ -1153,7 +1198,7 @@ async def key_riconsegna(structure_id: str, copy: str, data: KeyActionPayload, c
     if kb.get("present", False):
         raise HTTPException(status_code=400, detail="Chiave già in sede")
     if not is_ops_user(current_user):
-        if current_user["role"] not in (UserRole.CLEANER, UserRole.RIDER) or kb.get("holder_user_id") != current_user["id"]:
+        if "keys.own.write" not in effective_permissions(current_user) or kb.get("holder_user_id") != current_user["id"]:
             raise HTTPException(status_code=403, detail="Puoi riconsegnare solo le chiavi che hai ritirato")
     holder = {"id": kb.get("holder_user_id"), "name": kb.get("holder_name")}
     now = now_iso()
@@ -1172,15 +1217,31 @@ async def keys_out_dashboard(current_user: dict = Depends(get_current_user)):
     require_permission(current_user, "keys.read")
     out = []
     async for s in db.structures.find({"access_info.key_boxes": {"$exists": True}},
-                                      {"_id": 0, "id": 1, "name": 1, "klv_code": 1, "access_info.key_boxes": 1}):
+                                      {"_id": 0, "id": 1, "name": 1, "klv_code": 1, "address": 1, "access_info.key_boxes": 1}):
         boxes = (s.get("access_info") or {}).get("key_boxes") or {}
         for copy, kb in boxes.items():
             if isinstance(kb, dict) and kb.get("enabled", True) and not kb.get("present", True):
-                out.append({
+                row = {
                     "structure_id": s["id"], "structure_name": s.get("name"), "klv_code": s.get("klv_code"),
+                    "address": s.get("address"),
                     "copy": copy, "holder_user_id": kb.get("holder_user_id"),
                     "holder_name": kb.get("holder_name"), "out_since": kb.get("out_since"),
-                })
+                    "linked_task_id": None, "linked_task_type": None, "linked_task_label": None, "linked_task_link": None,
+                }
+                # arricchimento: attività collegata all'ultimo ritiro registrato
+                mov = await db.key_movements.find_one({"structure_id": s["id"], "copy": copy, "action": "ritiro"},
+                                                      {"_id": 0, "linked_task_id": 1, "linked_task_type": 1}, sort=[("at", -1)])
+                if mov and mov.get("linked_task_id"):
+                    row["linked_task_id"], row["linked_task_type"] = mov["linked_task_id"], mov.get("linked_task_type")
+                    if mov.get("linked_task_type") == "cleaning":
+                        t = await db.cleaning_tasks.find_one({"id": mov["linked_task_id"]}, {"_id": 0, "date": 1, "scheduled_time": 1})
+                        row["linked_task_label"] = "Pulizia" + (f" · {t['date']}" if t and t.get("date") else "")
+                        row["linked_task_link"] = f"/cleaning/task/{mov['linked_task_id']}"
+                    elif mov.get("linked_task_type") == "delivery":
+                        f = await db.logistics_tasks.find_one({"id": mov["linked_task_id"]}, {"_id": 0, "date": 1})
+                        row["linked_task_label"] = "Consegna" + (f" · {f['date']}" if f and f.get("date") else "")
+                        row["linked_task_link"] = f"/consegne/fermata/{mov['linked_task_id']}"
+                out.append(row)
     out.sort(key=lambda x: x.get("out_since") or "")
     return out
 
@@ -1199,15 +1260,13 @@ async def key_movements_log(structure_id: Optional[str] = None, copy: Optional[s
 
 @api_router.get("/integrations/google-sheets/status")
 async def google_sheets_status(current_user: dict = Depends(get_current_user)):
-    if not is_ops_user(current_user):
-        raise HTTPException(status_code=403, detail="Non autorizzato")
+    require_admin(current_user)  # integrazione: Super Admin
     from services.sheets_sync import get_status
     return await get_status()
 
 @api_router.post("/integrations/google-sheets/sync")
 async def google_sheets_sync(current_user: dict = Depends(get_current_user)):
-    if current_user["role"] not in [UserRole.MANAGER, UserRole.OPS_MANAGER]:
-        raise HTTPException(status_code=403, detail="Non autorizzato")
+    require_admin(current_user)  # integrazione: Super Admin
     from services.sheets_sync import run_sync
     return await run_sync()
 
@@ -1227,14 +1286,14 @@ async def clients_overview(current_user: dict = Depends(get_current_user)):
     stats = {}
 
     def entry(cid):
-        return stats.setdefault(cid, {"revenue_month": 0, "today_activities": 0, "alerts": 0})
+        return stats.setdefault(cid, {"revenue_month": 0, "orders_month": 0, "today_activities": 0, "alerts": 0})
 
-    # Revenue this month (orders, not cancelled)
-    async for doc in db.orders.aggregate([
-        {"$match": {"created_at": {"$gte": month_start, "$lt": month_end}, "status": {"$nin": ["cancelled"]}, "client_id": {"$nin": [None, ""]}}},
-        {"$group": {"_id": "$client_id", "total": {"$sum": "$total"}}},
+    # Ordini del mese: fonte canonica client_orders (db.orders legacy = solo storico; nessun dato economico nel modello canonico)
+    async for doc in db.client_orders.aggregate([
+        {"$match": {"created_at": {"$gte": month_start, "$lt": month_end}, "client_id": {"$nin": [None, ""]}}},
+        {"$group": {"_id": "$client_id", "n": {"$sum": 1}}},
     ]):
-        entry(doc["_id"])["revenue_month"] = doc.get("total", 0) or 0
+        entry(doc["_id"])["orders_month"] = doc.get("n", 0) or 0
 
     # Today's activities: cleaning + deliveries scheduled today, maintenance opened today
     for coll, match in [
@@ -1289,10 +1348,10 @@ async def get_client(client_id: str, current_user: dict = Depends(get_current_us
     
     private_info = None
     if client.get("private_info"):
-        private_info = PrivateClientInfo(**client["private_info"])
+        private_info = PrivateClientInfo(**_strip_fiscal(client["private_info"]))
     company_info = None
     if client.get("company_info"):
-        company_info = CompanyClientInfo(**client["company_info"])
+        company_info = CompanyClientInfo(**_strip_fiscal(client["company_info"]))
     
     return ClientResponse(
         id=client["id"],
@@ -1331,9 +1390,11 @@ async def update_client(
     for key, value in client_data.model_dump(exclude_unset=True).items():
         if value is not None:
             if key in ["private_info", "company_info"]:
-                update_data[key] = serialize_config(value)
+                # i dati fiscali NON si modificano dall'endpoint operativo: conservati dal documento esistente
+                existing_info = client.get(key) or {}
+                update_data[key] = {**serialize_config(value), **{f: existing_info.get(f) for f in CLIENT_FISCAL_FIELDS}}
             elif key == "contacts":
-                update_data[key] = [{**c, "id": c.get("id") or str(uuid.uuid4())} for c in value]
+                update_data[key] = _normalize_contacts(value, client.get("contacts") or [])
             else:
                 update_data[key] = value
     
@@ -1344,10 +1405,10 @@ async def update_client(
     
     private_info = None
     if updated_client.get("private_info"):
-        private_info = PrivateClientInfo(**updated_client["private_info"])
+        private_info = PrivateClientInfo(**_strip_fiscal(updated_client["private_info"]))
     company_info = None
     if updated_client.get("company_info"):
-        company_info = CompanyClientInfo(**updated_client["company_info"])
+        company_info = CompanyClientInfo(**_strip_fiscal(updated_client["company_info"]))
     
     return ClientResponse(
         id=updated_client["id"],
@@ -1368,6 +1429,73 @@ async def update_client(
         created_at=updated_client["created_at"],
         updated_at=updated_client["updated_at"]
     )
+
+
+# ============== DATI AMMINISTRATIVI CLIENTE (separati dai dati operativi) ==============
+
+class ClientAdminData(BaseModel):
+    company_name: Optional[str] = None
+    fiscal_code: Optional[str] = None
+    vat_number: Optional[str] = None
+    pec: Optional[str] = None
+    sdi: Optional[str] = None
+    billing_address: Optional[str] = None
+    billing_email: Optional[str] = None
+    payment_terms: Optional[str] = None
+    admin_notes: Optional[str] = None
+
+
+CLIENT_ADMIN_FIELDS = ("company_name", "fiscal_code", "vat_number", "pec", "sdi",
+                       "billing_address", "billing_email", "payment_terms", "admin_notes")
+
+
+def _client_admin_view(client: dict) -> dict:
+    """admin_data con fallback sui campi fiscali legacy dentro private_info/company_info."""
+    info = (client.get("company_info") if client.get("client_type") == "company" else client.get("private_info")) or {}
+    ad = client.get("admin_data") or {}
+    out = {f: ad.get(f) for f in CLIENT_ADMIN_FIELDS}
+    for f in CLIENT_FISCAL_FIELDS:
+        if out.get(f) is None:
+            out[f] = info.get(f)
+    if out.get("company_name") is None:
+        out["company_name"] = info.get("company_name")
+    if out.get("billing_address") is None:
+        out["billing_address"] = info.get("address")
+    if out.get("billing_email") is None:
+        out["billing_email"] = info.get("email")
+    return {**out, "client_type": client.get("client_type", "private"), "can_edit": True}
+
+
+@api_router.get("/clients/{client_id}/admin-data")
+async def get_client_admin_data(client_id: str, current_user: dict = Depends(get_current_user)):
+    """Dati fiscali/amministrativi del Cliente: SOLO Super Admin (mai nel ClientResponse operativo, mai portale)."""
+    require_admin(current_user)
+    client = await db.clients.find_one({"id": client_id}, {"_id": 0})
+    if not client:
+        raise HTTPException(status_code=404, detail="Cliente non trovato")
+    return _client_admin_view(client)
+
+
+@api_router.put("/clients/{client_id}/admin-data")
+async def update_client_admin_data(client_id: str, data: ClientAdminData, current_user: dict = Depends(get_current_user)):
+    require_admin(current_user)
+    client = await db.clients.find_one({"id": client_id}, {"_id": 0})
+    if not client:
+        raise HTTPException(status_code=404, detail="Cliente non trovato")
+    payload = data.model_dump(exclude_unset=True)
+    now = now_iso()
+    update = {f"admin_data.{k}": (v.strip() if isinstance(v, str) else v) for k, v in payload.items()}
+    # specchio dei campi fiscali sui dati legacy (billing PDF / export usano ancora private_info/company_info)
+    info_key = "company_info" if client.get("client_type") == "company" else "private_info"
+    if client.get(info_key) is not None:
+        for f in CLIENT_FISCAL_FIELDS:
+            if f in payload and (f != "pec" or info_key == "company_info"):
+                update[f"{info_key}.{f}"] = payload[f]
+    update["updated_at"] = now
+    await db.clients.update_one({"id": client_id}, {"$set": update})
+    updated = await db.clients.find_one({"id": client_id}, {"_id": 0})
+    return _client_admin_view(updated)
+
 
 @api_router.delete("/clients/{client_id}")
 async def delete_client(client_id: str, current_user: dict = Depends(get_current_user)):
@@ -1510,8 +1638,7 @@ def build_structure_response(structure: dict, client_name: Optional[str], unit_c
 
 @api_router.post("/structures", response_model=StructureResponse)
 async def create_structure(structure_data: StructureCreate, current_user: dict = Depends(get_current_user)):
-    if current_user["role"] not in [UserRole.MANAGER, UserRole.OPS_MANAGER]:
-        raise HTTPException(status_code=403, detail="Non autorizzato")
+    require_permission(current_user, "structures.write")
     
     client = await db.clients.find_one({"id": structure_data.client_id}, {"_id": 0})
     if not client:
@@ -1618,9 +1745,8 @@ async def update_structure(
     structure_data: StructureUpdate,
     current_user: dict = Depends(get_current_user)
 ):
-    if current_user["role"] not in [UserRole.MANAGER, UserRole.OPS_MANAGER]:
-        raise HTTPException(status_code=403, detail="Non autorizzato")
-    
+    require_permission(current_user, "structures.write")
+
     structure = await db.structures.find_one({"id": structure_id}, {"_id": 0})
     if not structure:
         raise HTTPException(status_code=404, detail="Struttura non trovata")
@@ -1730,8 +1856,7 @@ async def list_zones(include_inactive: bool = False, current_user: dict = Depend
 
 @api_router.post("/zones")
 async def create_zone(data: ZoneCreate, current_user: dict = Depends(get_current_user)):
-    if not is_ops_user(current_user):
-        raise HTTPException(status_code=403, detail="Non autorizzato")
+    require_admin(current_user)  # Impostazioni: Super Admin
     if not data.name.strip():
         raise HTTPException(status_code=400, detail="Inserisci il nome del rione")
     last = await db.operational_zones.find({}, {"_id": 0, "order": 1}).sort("order", -1).to_list(1)
@@ -1744,8 +1869,7 @@ async def create_zone(data: ZoneCreate, current_user: dict = Depends(get_current
 
 @api_router.put("/zones/reorder")
 async def reorder_zones(data: ZoneReorder, current_user: dict = Depends(get_current_user)):
-    if not is_ops_user(current_user):
-        raise HTTPException(status_code=403, detail="Non autorizzato")
+    require_admin(current_user)
     for i, zid in enumerate(data.ids):
         await db.operational_zones.update_one({"id": zid}, {"$set": {"order": i}})
     return {"updated": len(data.ids)}
@@ -1753,8 +1877,7 @@ async def reorder_zones(data: ZoneReorder, current_user: dict = Depends(get_curr
 
 @api_router.put("/zones/{zone_id}")
 async def update_zone(zone_id: str, data: ZoneUpdate, current_user: dict = Depends(get_current_user)):
-    if not is_ops_user(current_user):
-        raise HTTPException(status_code=403, detail="Non autorizzato")
+    require_admin(current_user)
     zone = await db.operational_zones.find_one({"id": zone_id}, {"_id": 0})
     if not zone:
         raise HTTPException(status_code=404, detail="Rione non trovato")
@@ -1790,8 +1913,7 @@ class MediaReorder(BaseModel):
     ids: List[str]
 
 def _require_ops(current_user: dict):
-    if current_user["role"] not in [UserRole.MANAGER, UserRole.OPS_MANAGER]:
-        raise HTTPException(status_code=403, detail="Non autorizzato")
+    require_permission(current_user, "structures.write")
 
 @api_router.get("/structures/{structure_id}/media")
 async def list_structure_media(
@@ -1941,8 +2063,7 @@ def parse_unit_configs(unit: dict) -> dict:
 
 @api_router.post("/units", response_model=UnitResponse)
 async def create_unit(unit_data: UnitCreate, current_user: dict = Depends(get_current_user)):
-    if current_user["role"] not in [UserRole.MANAGER]:
-        raise HTTPException(status_code=403, detail="Non autorizzato")
+    require_permission(current_user, "units.write")
     
     structure = await db.structures.find_one({"id": unit_data.structure_id}, {"_id": 0})
     if not structure:
@@ -2106,9 +2227,8 @@ async def update_unit(
     unit_data: UnitUpdate,
     current_user: dict = Depends(get_current_user)
 ):
-    if current_user["role"] not in [UserRole.MANAGER]:
-        raise HTTPException(status_code=403, detail="Non autorizzato")
-    
+    require_permission(current_user, "units.write")  # Responsabile Generale: crea/modifica/disattiva Unit
+
     unit = await db.units.find_one({"id": unit_id}, {"_id": 0})
     if not unit:
         raise HTTPException(status_code=404, detail="Unità non trovata")
@@ -2152,17 +2272,24 @@ async def update_unit(
 
 @api_router.delete("/units/{unit_id}")
 async def delete_unit(unit_id: str, current_user: dict = Depends(get_current_user)):
-    if current_user["role"] not in [UserRole.MANAGER]:
-        raise HTTPException(status_code=403, detail="Non autorizzato")
+    require_admin(current_user)  # hard delete: solo Super Admin (Fase 4); OM disattiva via PUT is_active
     
     unit = await db.units.find_one({"id": unit_id})
     if not unit:
         raise HTTPException(status_code=404, detail="Unità non trovata")
     
-    # Fase 4: hard delete consentito SOLO senza storico; altrimenti usare Disattiva
+    # Hard delete consentito SOLO senza alcuno storico operativo; altrimenti usare Disattiva
     checks = [
         (db.events, {"unit_id": unit_id}, "Prenotazioni/Eventi"),
+        (db.cleaning_tasks, {"unit_id": unit_id}, "Pulizie"),
         (db.structure_media, {"unit_id": unit_id}, "Foto/Video/Istruzioni"),
+        (db.segnalazioni, {"unit_id": unit_id}, "Segnalazioni"),
+        (db.cleaning_issues, {"unit_id": unit_id}, "Segnalazioni pulizia"),
+        (db.maintenance_issues, {"unit_id": unit_id}, "Manutenzioni"),
+        (db.logistics_tasks, {"unit_id": unit_id}, "Consegne"),
+        (db.fabbisogni, {"unit_id": unit_id}, "Richieste/Fabbisogni"),
+        (db.laundry_jobs, {"unit_id": unit_id}, "Lavanderia Privata"),
+        (db.checklist_templates, {"unit_id": unit_id}, "Checklist"),
     ]
     refs = []
     for coll, q, label in checks:
@@ -2258,12 +2385,15 @@ class EventResponse(BaseModel):
     cleaning_task_id: Optional[str] = None
     dates_changed: Optional[dict] = None
     feed_cancelled: Optional[bool] = None
+    manual_cancelled: Optional[bool] = None
+    cancelled_at: Optional[str] = None
     created_at: str
     updated_at: str
 
 
 EVENT_KILOLAVA_KEYS = ["guests_count", "beds_double", "beds_single", "beds_sofa",
-                       "checkin_time", "checkout_time", "cleaning_task_id", "dates_changed", "feed_cancelled"]
+                       "checkin_time", "checkout_time", "cleaning_task_id", "dates_changed", "feed_cancelled",
+                       "manual_cancelled", "cancelled_at"]
 
 
 def _event_extra(ev: dict) -> dict:
@@ -2281,10 +2411,13 @@ async def get_events(
     event_type: Optional[str] = None,
     status: Optional[str] = None,
     unassigned_only: bool = False,
+    include_cancelled: bool = False,
     current_user: dict = Depends(get_current_user)
 ):
     require_ops(current_user)
     query = {}
+    if not include_cancelled:
+        query["hidden_cancelled"] = {"$ne": True}  # soggiorni annullati manualmente/dal feed senza dati: storico non mostrato
     if date_from and date_to:
         range_start = f"{date_from}T00:00:00"
         range_end = f"{date_to}T23:59:59"
@@ -2541,12 +2674,18 @@ async def delete_event(event_id: str, current_user: dict = Depends(get_current_u
     ev = await db.events.find_one({"id": event_id}, {"_id": 0})
     if not ev:
         raise HTTPException(status_code=404, detail="Evento non trovato")
-    # Fase 3 hardening: cancellazione manuale soggiorno -> pulizia collegata cancelled (mai hard delete della pulizia)
     if ev.get("event_type") == "booking":
+        # Soggiorno: MAI hard delete dello storico → status cancelled + manual_cancelled; pulizia collegata riconciliata
+        now = now_iso()
+        await db.events.update_one({"id": event_id}, {"$set": {
+            "status": "cancelled", "manual_cancelled": True, "hidden_cancelled": True,
+            "cancelled_at": now, "cancelled_by": current_user["id"], "updated_at": now}})
         try:
-            await reconcile_cleaning_for_stay({**ev, "_deleted": True}, current_user)
+            await reconcile_cleaning_for_stay({**ev, "status": "cancelled", "manual_cancelled": True}, current_user)
+            await reconcile_cleaning_neighbors(ev, current_user)
         except Exception as e:
             logger.error(f"Reconcile pulizia su cancellazione soggiorno fallita: {e}")
+        return {"message": "Soggiorno annullato (storico conservato)", "cancelled": True}
     await db.events.delete_one({"id": event_id})
     return {"message": "Evento eliminato"}
 
@@ -3680,23 +3819,83 @@ async def upload_task_photo(
     return {"path": storage_path}
 
 
+async def _file_owner_access(file_path: str, user: dict) -> bool:
+    """Autorizzazione media per risorsa proprietaria ricostruita dal path storage
+    (kilolava/<kind>/<owner_id>/...). Ops pieno; ruoli operativi solo attività proprie; Cliente solo proprio client_id."""
+    parts = file_path.split("/")
+    if len(parts) < 3 or parts[0] != APP_NAME:
+        return is_ops_user(user)
+    kind, oid = parts[1], parts[2]
+    if kind == "magazzino":  # foto catalogo prodotti: ogni utente autenticato (portale ordini incluso)
+        return True
+    if is_ops_user(user):
+        return True
+    uid = user["id"]
+    is_client = user.get("role") == UserRole.CLIENT
+    cid = user.get("client_id")
+    if kind == "clients":
+        return is_client and bool(cid) and cid == oid
+    if kind == "structures":  # istruzioni accesso: solo addetta con pulizia assegnata su quella struttura
+        if not _acts_as_cleaner(user):
+            return False
+        return await db.cleaning_tasks.count_documents({
+            "structure_id": oid, "status": {"$ne": CleaningTaskStatus.CANCELLED},
+            "$or": [{"assigned_cleaner_ids": uid}, {"assigned_cleaner_id": uid}]}) > 0
+    if kind == "cleaning":
+        t = await db.cleaning_tasks.find_one({"id": oid}, {"_id": 0, "assigned_cleaner_ids": 1, "assigned_cleaner_id": 1})
+        return bool(t) and _acts_as_cleaner(user) and uid in _cleaner_ids_of(t)
+    if kind == "issues":
+        i = await db.cleaning_issues.find_one({"id": oid}, {"_id": 0, "client_id": 1, "published_to_client": 1,
+                                                          "reported_by": 1, "cleaning_task_id": 1})
+        if not i:
+            return False
+        if is_client:
+            return bool(i.get("published_to_client")) and bool(cid) and i.get("client_id") == cid
+        if i.get("reported_by") == uid:
+            return True
+        t = await db.cleaning_tasks.find_one({"id": i.get("cleaning_task_id")}, {"_id": 0, "assigned_cleaner_ids": 1, "assigned_cleaner_id": 1}) if i.get("cleaning_task_id") else None
+        return bool(t) and uid in _cleaner_ids_of(t)
+    if kind == "maintenance":
+        m = await db.maintenance_issues.find_one({"id": oid}, {"_id": 0, "client_id": 1, "assigned_to": 1, "reported_by": 1})
+        if not m:
+            return False
+        if is_client:
+            return bool(cid) and m.get("client_id") == cid
+        return uid in (m.get("assigned_to"), m.get("reported_by"))
+    if kind == "lavanderia":
+        j = await db.laundry_jobs.find_one({"id": oid}, {"_id": 0, "client_id": 1})
+        if not j:
+            return False
+        if is_client:
+            return bool(cid) and j.get("client_id") == cid
+        return user_has_role(user, UserRole.LAUNDRY)
+    if kind == "segnalazioni":
+        seg = await db.segnalazioni.find_one({"id": oid}, {"_id": 0, "client_id": 1, "published_to_client": 1, "created_by": 1})
+        if not seg:
+            return False
+        if is_client:
+            return bool(seg.get("published_to_client")) and bool(cid) and seg.get("client_id") == cid
+        if seg.get("created_by") == uid:
+            return True
+        return await db.segnalazione_tasks.count_documents({"segnalazione_id": oid, "assignee_id": uid}) > 0
+    if kind in ("consegne", "photos"):
+        t = await db.logistics_tasks.find_one({"id": oid}, {"_id": 0, "client_id": 1, "rider_id": 1})
+        if not t:
+            return False
+        if is_client:
+            return bool(cid) and t.get("client_id") == cid
+        return t.get("rider_id") == uid
+    return False
+
+
 @api_router.get("/files/{file_path:path}")
-async def serve_file(
-    file_path: str,
-    authorization: Optional[str] = Header(None),
-):
-    # Fase 18 hardening: token SOLO nell'header Authorization (mai in query string)
-    token = None
-    if authorization and authorization.startswith("Bearer "):
-        token = authorization.split(" ", 1)[1]
-    if not token:
+async def serve_file(file_path: str, credentials: Optional[HTTPAuthorizationCredentials] = Depends(HTTPBearer(auto_error=False))):
+    # Token SOLO nell'header Authorization (mai in query/path/log); stessa autenticazione dell'app: firma + sessione revocabile
+    if credentials is None or not credentials.credentials:
         raise HTTPException(status_code=401, detail="Non autenticato")
-    try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        if not payload.get("sub"):
-            raise HTTPException(status_code=401, detail="Token non valido")
-    except jwt.InvalidTokenError:
-        raise HTTPException(status_code=401, detail="Token non valido")
+    current_user = await get_current_user(credentials)
+    if not await _file_owner_access(file_path, current_user):
+        raise HTTPException(status_code=403, detail="Non autorizzato a visualizzare questo file")
     try:
         data, content_type = get_object(file_path)
     except Exception:
@@ -4092,6 +4291,7 @@ async def set_client_catalog(data: ClientCatalogBulk, current_user: dict = Depen
 
 @api_router.get("/operations/orders")
 async def list_all_orders(
+    # LEGACY / READ-ONLY / STORICO: vecchio db.orders. Il flusso canonico è client_orders + fabbisogni + Consegne.
     status: Optional[str] = None,
     client_id: Optional[str] = None,
     date_from: Optional[str] = None,
@@ -4157,6 +4357,33 @@ def _require_client(user: dict):
     return user["client_id"]
 
 
+def _derive_order_status(richieste: list) -> str:
+    if not richieste:
+        return "annullato"
+    stati = [(r.get("status"), r.get("stage") or "confermata") for r in richieste]
+    if all(s == "annullata" for s, _ in stati):
+        return "annullato"
+    active = [x for x in stati if x[0] != "annullata"]
+    if any(s == "parzialmente_evasa" for s, _ in stati):
+        return "parziale"
+    if active and all(s == "evasa" for s, _ in active):
+        return "consegnato"
+    if any(s == "in_consegna" for s, _ in stati):
+        return "pianificato"
+    if any(st == "confermata" and s == "aperta" for s, st in stati):
+        return "confermato"
+    return "in_revisione"
+
+
+async def _client_orders_with_status(query: dict, limit: int = 200) -> list:
+    """Fonte canonica ordini: client_orders + stato derivato dalle richieste (fabbisogni) collegate."""
+    orders = await db.client_orders.find(query, {"_id": 0}).sort("created_at", -1).to_list(limit)
+    for o in orders:
+        richieste = await db.fabbisogni.find({"id": {"$in": o.get("richiesta_ids", [])}}, {"_id": 0, "status": 1, "stage": 1}).to_list(10)
+        o["status"] = _derive_order_status(richieste)
+    return orders
+
+
 @api_router.get("/portal/dashboard")
 async def portal_dashboard(current_user: dict = Depends(get_current_user)):
     cid = _require_client(current_user)
@@ -4172,20 +4399,17 @@ async def portal_dashboard(current_user: dict = Depends(get_current_user)):
     structures = await db.structures.find({"client_id": cid}, {"_id": 0}).to_list(100)
     structure_ids = [s["id"] for s in structures]
 
-    # Upcoming cleanings (events with type cleaning, date >= today)
-    upcoming_cleanings = await db.events.find({
+    # Fonte canonica Pulizie = cleaning_tasks (mai events cleaning/checkin/checkout)
+    upcoming_cleanings = await db.cleaning_tasks.find({
         "structure_id": {"$in": structure_ids},
-        "event_type": "cleaning",
-        "start_time": {"$gte": today},
-        "status": {"$ne": "cancelled"},
-    }, {"_id": 0}).sort("start_time", 1).limit(5).to_list(5)
+        "date": {"$gte": today},
+        "status": {"$ne": CleaningTaskStatus.CANCELLED},
+    }, {"_id": 0, "id": 1, "date": 1, "structure_id": 1, "status": 1}).sort("date", 1).limit(5).to_list(5)
 
-    # Completed cleanings this month
-    completed_cleanings = await db.events.count_documents({
+    completed_cleanings = await db.cleaning_tasks.count_documents({
         "structure_id": {"$in": structure_ids},
-        "event_type": "cleaning",
-        "status": "completed",
-        "start_time": {"$gte": month_start, "$lte": today},
+        "status": CleaningTaskStatus.COMPLETED,
+        "date": {"$gte": month_start, "$lte": today},
     })
 
     # Upcoming deliveries
@@ -4201,23 +4425,16 @@ async def portal_dashboard(current_user: dict = Depends(get_current_user)):
         "status": "completed",
     }, {"_id": 0}).sort("completed_at", -1).limit(5).to_list(5)
 
-    # Recent orders
-    recent_orders = await db.orders.find({"client_id": cid}, {"_id": 0}).sort("created_at", -1).limit(5).to_list(5)
-
-    # Month total from orders
-    month_orders = await db.orders.find({
-        "client_id": cid,
-        "delivery_date": {"$gte": month_start},
-        "status": {"$nin": ["cancelled", "draft"]},
-    }, {"_id": 0}).to_list(500)
-    month_total = sum(o.get("total", 0) for o in month_orders)
+    # Fonte canonica Ordini = client_orders + fabbisogni (db.orders legacy: solo storico, mai letto qui)
+    recent_orders = await _client_orders_with_status({"client_id": cid}, limit=5)
+    month_orders_count = await db.client_orders.count_documents({"client_id": cid, "created_at": {"$gte": month_start}})
 
     return {
         "client_name": client_name,
         "ordering_enabled": ordering_enabled,
         "upcoming_cleanings": [{
-            "id": e["id"], "title": e.get("title", "Pulizia"),
-            "date": e.get("start_time", "")[:10],
+            "id": e["id"], "title": "Pulizia",
+            "date": e.get("date", ""),
             "structure_name": next((s["name"] for s in structures if s["id"] == e.get("structure_id")), ""),
             "status": e.get("status", ""),
         } for e in upcoming_cleanings],
@@ -4234,8 +4451,8 @@ async def portal_dashboard(current_user: dict = Depends(get_current_user)):
             "date": d.get("date"), "completed_at": d.get("completed_at"),
             "items_count": len(d.get("items", [])),
         } for d in recent_deliveries],
-        "recent_orders": [await _build_order_response(o) for o in recent_orders],
-        "month_total": month_total,
+        "recent_orders": recent_orders,
+        "month_orders_count": month_orders_count,
         "structures_count": len(structures),
     }
 
@@ -4280,21 +4497,20 @@ async def portal_services(
         m_start = now.strftime("%Y-%m-01")
         m_end = (now.replace(day=28) + timedelta(days=4)).replace(day=1).strftime("%Y-%m-%d")
 
-    # Cleanings
-    cleanings = await db.events.find({
+    # Pulizie: fonte canonica cleaning_tasks (events = solo soggiorni)
+    cleanings = await db.cleaning_tasks.find({
         "structure_id": {"$in": structure_ids},
-        "event_type": {"$in": ["cleaning", "checkin", "checkout"]},
-        "start_time": {"$gte": m_start, "$lt": m_end},
-    }, {"_id": 0}).sort("start_time", 1).to_list(500)
+        "date": {"$gte": m_start, "$lt": m_end},
+    }, {"_id": 0, "id": 1, "date": 1, "structure_id": 1, "status": 1, "scheduled_time": 1, "guests_count": 1}).sort("date", 1).to_list(500)
 
     struct_map = {s["id"]: s["name"] for s in structures}
 
     services = []
     for e in cleanings:
         services.append({
-            "id": e["id"], "type": e.get("event_type", "cleaning"),
-            "title": e.get("title", ""),
-            "date": e.get("start_time", "")[:10],
+            "id": e["id"], "type": "cleaning",
+            "title": "Pulizia" + (f" · {e['scheduled_time']}" if e.get("scheduled_time") else ""),
+            "date": e.get("date", ""),
             "structure_id": e.get("structure_id"),
             "structure_name": struct_map.get(e.get("structure_id"), ""),
             "status": e.get("status", ""),
@@ -4402,10 +4618,8 @@ async def portal_delivery_slots(
         # Check capacity per slot
         day_slots = []
         for slot in slots:
-            count = await db.orders.count_documents({
-                "delivery_date": ds, "delivery_slot": slot,
-                "status": {"$nin": ["cancelled", "draft"]},
-            })
+            # capacità slot dalla fonte canonica (client_orders: date_preferred + time_window)
+            count = await db.client_orders.count_documents({"date_preferred": ds, "time_window": slot})
             if count < max_per_slot:
                 day_slots.append({"slot": slot, "available": max_per_slot - count})
         if day_slots:
@@ -4482,32 +4696,16 @@ async def portal_orders(
     status: Optional[str] = None,
     current_user: dict = Depends(get_current_user),
 ):
+    """Alias compat del flusso canonico (/portal/ordini): mai db.orders legacy."""
     cid = _require_client(current_user)
-    query = {"client_id": cid}
-    if status:
-        query["status"] = status
-    orders = await db.orders.find(query, {"_id": 0}).sort("created_at", -1).to_list(500)
-    return [await _build_order_response(o) for o in orders]
+    orders = await _client_orders_with_status({"client_id": cid})
+    return [o for o in orders if not status or o["status"] == status]
 
 
 @api_router.get("/portal/orders/{order_id}")
 async def portal_order_detail(order_id: str, current_user: dict = Depends(get_current_user)):
-    cid = _require_client(current_user)
-    order = await db.orders.find_one({"id": order_id, "client_id": cid}, {"_id": 0})
-    if not order:
-        raise HTTPException(status_code=404, detail="Ordine non trovato")
-    result = await _build_order_response(order)
-    # Add delivery task info if linked
-    delivery_info = None
-    if order.get("logistics_task_id"):
-        task = await db.logistics_tasks.find_one({"id": order["logistics_task_id"]}, {"_id": 0})
-        if task:
-            delivery_info = {"status": task.get("status"), "rider_name": None}
-            if task.get("rider_id"):
-                r = await db.users.find_one({"id": task["rider_id"]}, {"_id": 0})
-                if r:
-                    delivery_info["rider_name"] = r.get("name")
-    return {"order": result, "delivery_info": delivery_info}
+    """Alias compat del dettaglio canonico (/portal/ordini/{id})."""
+    return await portal_dettaglio_ordine(order_id, current_user)
 
 
 @api_router.put("/portal/orders/{order_id}/cancel")
@@ -4657,7 +4855,7 @@ async def portal_crea_ordine(data: PortalOrdineCreate, current_user: dict = Depe
     order_doc = {"id": order_id, "order_number": order_number, "client_id": cid,
                  "structure_id": s["id"], "structure_name": s.get("name"), "klv_code": s.get("klv_code"),
                  "date_preferred": data.date_preferred, "time_window": data.time_window,
-                 "items": [i for its in per_domain.values() for i in its], "kits_used": kits_used,
+                 "items": [{**i, "domain": dom} for dom, its in per_domain.items() for i in its], "kits_used": kits_used,
                  "note": data.note or "", "richiesta_ids": richiesta_ids,
                  "created_at": now, "updated_at": now}
     await db.client_orders.insert_one(order_doc)
@@ -4667,33 +4865,30 @@ async def portal_crea_ordine(data: PortalOrdineCreate, current_user: dict = Depe
     return {**order_doc, "status": "da_confermare"}
 
 
-def _derive_order_status(richieste: list) -> str:
-    if not richieste:
-        return "annullato"
-    stati = [(r.get("status"), r.get("stage") or "confermata") for r in richieste]
-    if all(s == "annullata" for s, _ in stati):
-        return "annullato"
-    active = [x for x in stati if x[0] != "annullata"]
-    if any(s == "parzialmente_evasa" for s, _ in stati):
-        return "parziale"
-    if active and all(s == "evasa" for s, _ in active):
-        return "consegnato"
-    if any(s == "in_consegna" for s, _ in stati):
-        return "pianificato"
-    if any(st == "confermata" and s == "aperta" for s, st in stati):
-        return "confermato"
-    return "in_revisione"
-
-
 @api_router.get("/portal/ordini")
 async def portal_lista_ordini(current_user: dict = Depends(get_current_user)):
     cid = _require_client(current_user)
-    orders = await db.client_orders.find({"client_id": cid}, {"_id": 0}).sort("created_at", -1).to_list(200)
-    out = []
-    for o in orders:
-        richieste = await db.fabbisogni.find({"id": {"$in": o.get("richiesta_ids", [])}}, {"_id": 0, "status": 1, "stage": 1}).to_list(10)
-        out.append({**o, "status": _derive_order_status(richieste)})
-    return out
+    return await _client_orders_with_status({"client_id": cid})
+
+
+@api_router.get("/portal/ordini/{order_id}")
+async def portal_dettaglio_ordine(order_id: str, current_user: dict = Depends(get_current_user)):
+    """Dettaglio ordine canonico: ordine + richieste (fabbisogni) + fermate Consegne collegate."""
+    cid = _require_client(current_user)
+    o = await db.client_orders.find_one({"id": order_id, "client_id": cid}, {"_id": 0})
+    if not o:
+        raise HTTPException(status_code=404, detail="Ordine non trovato")
+    richieste = await db.fabbisogni.find({"id": {"$in": o.get("richiesta_ids", [])}},
+                                         {"_id": 0, "id": 1, "kind": 1, "status": 1, "stage": 1, "items": 1,
+                                          "date_needed": 1, "time_window": 1, "fermata_id": 1, "residual_of": 1}).to_list(20)
+    fermata_ids = [r["fermata_id"] for r in richieste if r.get("fermata_id")]
+    consegne = []
+    if fermata_ids:
+        async for f in db.logistics_tasks.find({"id": {"$in": fermata_ids}}, {"_id": 0, "id": 1, "date": 1, "status": 1, "rider_id": 1, "completed_at": 1}):
+            rider = await db.users.find_one({"id": f["rider_id"]}, {"_id": 0, "name": 1}) if f.get("rider_id") else None
+            consegne.append({"id": f["id"], "date": f.get("date"), "status": f.get("status"),
+                             "rider_name": (rider or {}).get("name"), "completed_at": f.get("completed_at")})
+    return {**o, "status": _derive_order_status(richieste), "richieste": richieste, "consegne": consegne}
 
 
 @api_router.get("/portal/report")
@@ -4719,37 +4914,33 @@ async def portal_report(
     structures = await db.structures.find({"client_id": cid}, {"_id": 0}).to_list(100)
     structure_ids = [s["id"] for s in structures]
 
-    # Count cleanings
-    cleaning_count = await db.events.count_documents({
+    # Pulizie: fonte canonica cleaning_tasks
+    cleaning_count = await db.cleaning_tasks.count_documents({
         "structure_id": {"$in": structure_ids},
-        "event_type": "cleaning",
-        "start_time": {"$gte": m_start, "$lt": m_end},
-        "status": {"$ne": "cancelled"},
+        "date": {"$gte": m_start, "$lt": m_end},
+        "status": {"$ne": CleaningTaskStatus.CANCELLED},
     })
 
-    # Orders this month
-    orders = await db.orders.find({
-        "client_id": cid,
-        "delivery_date": {"$gte": m_start, "$lt": m_end},
-        "status": {"$nin": ["cancelled", "draft"]},
-    }, {"_id": 0}).to_list(500)
+    # Ordini: fonte canonica client_orders (nessun dato economico nel modello canonico → conteggi)
+    def _month_q(a, b):  # mese di riferimento = data consegna richiesta (fallback: data ordine)
+        return {"$or": [{"date_preferred": {"$gte": a, "$lt": b}},
+                        {"date_preferred": {"$in": [None, ""]}, "created_at": {"$gte": a, "$lt": b}}]}
+    orders = await _client_orders_with_status({"client_id": cid, **_month_q(m_start, m_end)}, limit=500)
+    orders = [o for o in orders if o["status"] != "annullato"]
 
-    # Breakdown by article category
     breakdown = {}
     for o in orders:
+        for kit in o.get("kits_used") or []:
+            b = breakdown.setdefault("linen_rental", {"count": 0, "total": 0.0})
+            b["count"] += int(kit.get("qty") or 0)
         for item in o.get("items", []):
-            art = await db.articles.find_one({"id": item["article_id"]}, {"_id": 0})
-            cat = art.get("category", "other") if art else "other"
-            cat_label = {
-                "rental_linen": "linen_rental", "consumable": "consumables",
-                "kit_component": "linen_rental",
-            }.get(cat, cat)
-            if cat_label not in breakdown:
-                breakdown[cat_label] = {"count": 0, "total": 0.0}
-            breakdown[cat_label]["count"] += item.get("quantity", 1)
-            breakdown[cat_label]["total"] += item.get("total", 0)
+            dom = item.get("domain") or ("linen_rental" if o.get("kits_used") else "consumables")
+            cat_label = {"noleggio": "linen_rental", "forniture": "consumables", "pulizie": "cleaning_products"}.get(dom, dom)
+            b = breakdown.setdefault(cat_label, {"count": 0, "total": 0.0})
+            b["count"] += int(item.get("qty") or 0)
 
-    total = sum(o.get("total", 0) for o in orders)
+    deliveries_count = await db.logistics_tasks.count_documents({
+        "client_id": cid, "date": {"$gte": m_start, "$lt": m_end}, "status": "completed"})
 
     # Previous months (last 6)
     history = []
@@ -4764,20 +4955,19 @@ async def portal_report(
             hm_end = f"{hy+1}-01-01"
         else:
             hm_end = f"{hy}-{hm+1:02d}-01"
-        h_orders = await db.orders.find({
-            "client_id": cid,
-            "delivery_date": {"$gte": hm_start, "$lt": hm_end},
-            "status": {"$nin": ["cancelled", "draft"]},
-        }, {"_id": 0, "total": 1}).to_list(500)
-        h_total = sum(o.get("total", 0) for o in h_orders)
-        h_count = len(h_orders)
-        history.append({"month": f"{hy}-{hm:02d}", "total": h_total, "orders": h_count})
+        h_count = await db.client_orders.count_documents({"client_id": cid, **_month_q(hm_start, hm_end)})
+        h_clean = await db.cleaning_tasks.count_documents({
+            "structure_id": {"$in": structure_ids}, "date": {"$gte": hm_start, "$lt": hm_end},
+            "status": {"$ne": CleaningTaskStatus.CANCELLED}})
+        history.append({"month": f"{hy}-{hm:02d}", "total": 0.0, "orders": h_count, "cleanings": h_clean})
 
     return {
         "month": f"{y}-{m_num:02d}",
         "cleaning_count": cleaning_count,
         "orders_count": len(orders),
-        "total": total,
+        "deliveries_count": deliveries_count,
+        "total": 0.0,
+        "has_pricing": False,
         "breakdown": breakdown,
         "history": history,
     }
@@ -5533,12 +5723,19 @@ def ensure_cleaning_access(task: dict, user: dict, write: bool = False):
     raise HTTPException(status_code=403, detail="Non autorizzato")
 
 
-async def _validate_beds(structure_id: Optional[str], beds: dict):
-    """Enforce structure bed capacity (max) and configured minimum."""
+async def _validate_beds(structure_id: Optional[str], beds: dict, unit_id: Optional[str] = None):
+    """Enforce bed capacity (max) and configured minimum: configurazione Unit se presente, altrimenti Struttura."""
     if not structure_id:
         return
-    s = await db.structures.find_one({"id": structure_id}, {"_id": 0, "name": 1, "bed_config": 1})
-    bc = (s or {}).get("bed_config") or {}
+    bc = {}
+    if unit_id:
+        u = await db.units.find_one({"id": unit_id}, {"_id": 0, "bed_config": 1})
+        ubc = (u or {}).get("bed_config") or {}
+        if any(ubc.get(k) for k in ("beds_double", "beds_single", "sofa_beds")):
+            bc = ubc
+    if not bc:
+        s = await db.structures.find_one({"id": structure_id}, {"_id": 0, "name": 1, "bed_config": 1})
+        bc = (s or {}).get("bed_config") or {}
     if not bc:
         return
     rules = [
@@ -5648,6 +5845,8 @@ async def my_cleaning_tasks(
     current_user: dict = Depends(get_current_user),
 ):
     """Get cleaning tasks assigned to current cleaner."""
+    if not is_ops_user(current_user) and "tasks.own.read" not in effective_permissions(current_user):
+        raise HTTPException(status_code=403, detail="Non autorizzato")
     query = {"$or": [{"assigned_cleaner_id": current_user["id"]}, {"assigned_cleaner_ids": current_user["id"]}]}
     if date:
         query["date"] = date
@@ -5692,7 +5891,7 @@ async def create_cleaning_task(data: CleaningTaskCreate, current_user: dict = De
     now = now_iso()
     cleaner_ids = list(dict.fromkeys((data.assigned_cleaner_ids or []) + ([data.assigned_cleaner_id] if data.assigned_cleaner_id else [])))
     status = CleaningTaskStatus.ASSIGNED if cleaner_ids else CleaningTaskStatus.UNASSIGNED
-    await _validate_beds(data.structure_id, {"beds_double": data.beds_double, "beds_single": data.beds_single, "beds_sofa": data.beds_sofa})
+    await _validate_beds(data.structure_id, {"beds_double": data.beds_double, "beds_single": data.beds_single, "beds_sofa": data.beds_sofa}, data.unit_id)
 
     # Checklist: template esplicito → template della struttura → template standard Kilolava
     template_id = data.checklist_template_id
@@ -5816,7 +6015,7 @@ async def reconcile_cleaning_for_stay(event: dict, actor: dict) -> dict:
 
     # check-in stesso giorno sulla STESSA unità (o struttura se senza unità)
     ci_q = {"event_type": "booking", "structure_id": sid, "id": {"$ne": event["id"]},
-            "feed_cancelled": {"$ne": True},
+            "feed_cancelled": {"$ne": True}, "status": {"$ne": "cancelled"},
             "start_time": {"$gte": checkout_date, "$lte": f"{checkout_date}T23:59:59"}}
     if event.get("unit_id"):
         ci_q["unit_id"] = event["unit_id"]
@@ -5827,50 +6026,77 @@ async def reconcile_cleaning_for_stay(event: dict, actor: dict) -> dict:
         st = next_stay.get("start_time") or ""
         checkin_time = st[11:16] if len(st) >= 16 and st[11:16] != "00:00" else (s.get("check_in_time") or None)
 
-    if task:
-        if task["status"] in (CleaningTaskStatus.IN_PROGRESS, CleaningTaskStatus.COMPLETED):
-            if task.get("date") != checkout_date:
-                await notify_ops_users("Pulizia da verificare",
-                                       f"Checkout spostato al {checkout_date} ma la pulizia di {s['name']} è già {task['status']} (data {task.get('date')}): verificare.",
-                                       "warning", priority="high", entity_type="cleaning_task", entity_id=task["id"])
-                return {"action": "warning_started", "task_id": task["id"]}
-            return {"action": "ok", "task_id": task["id"]}
-        updates = {}
-        if task.get("date") != checkout_date:
-            updates["date"] = checkout_date
-        if bool(task.get("checkin_today")) != checkin_today:
-            updates["checkin_today"] = checkin_today
-        if (task.get("checkin_time") or None) != checkin_time:
-            updates["checkin_time"] = checkin_time
-        if event.get("guests_count") is not None and task.get("guests_count") != event.get("guests_count"):
-            updates["guests_count"] = event["guests_count"]
-        if updates:
-            updates["updated_at"] = now
-            await db.cleaning_tasks.update_one({"id": task["id"]}, {"$set": updates})
-        if event.get("cleaning_task_id") != task["id"]:
-            await db.events.update_one({"id": event["id"]}, {"$set": {"cleaning_task_id": task["id"], "updated_at": now}})
-        return {"action": "updated" if updates else "ok", "task_id": task["id"]}
-
-    # nuova pulizia — letti: override soggiorno > Unit > Struttura
+    # letti: gerarchia override esplicito soggiorno > configurazione Unit > configurazione Struttura
     bc = {}
     if event.get("unit_id"):
         unit_doc = await db.units.find_one({"id": event["unit_id"]}, {"_id": 0})
         if unit_doc:
             bc = parse_unit_configs(unit_doc).get("bed_config") or {}
+            if hasattr(bc, "model_dump"):
+                bc = bc.model_dump()
+            if not any(bc.get(k) for k in ("beds_double", "beds_single", "sofa_beds")):
+                bc = {}  # Unit senza letti configurati → configurazione Struttura
     if not bc:
         bc = s.get("bed_config") or {}
     if hasattr(bc, "model_dump"):
         bc = bc.model_dump()
+
+    def _bed(field, cfg_key):
+        return event.get(field) if event.get(field) is not None else bc.get(cfg_key)
+
+    desired = {
+        "date": checkout_date,
+        "unit_id": event.get("unit_id"),
+        "scheduled_time": event.get("checkout_time") or s.get("check_out_time"),
+        "guests_count": event.get("guests_count"),
+        "beds_double": _bed("beds_double", "beds_double"),
+        "beds_single": _bed("beds_single", "beds_single"),
+        "beds_sofa": _bed("beds_sofa", "sofa_beds"),
+        "checkin_today": checkin_today,
+        "checkin_time": checkin_time,
+    }
+    LABELS = {"date": "data", "unit_id": "unità", "scheduled_time": "orario", "guests_count": "ospiti",
+              "beds_double": "matrimoniali", "beds_single": "singoli", "beds_sofa": "divani letto",
+              "checkin_today": "check-in stesso giorno", "checkin_time": "orario check-in"}
+
+    if task:
+        changes = {}
+        for k, v in desired.items():
+            if v is None and k in ("guests_count", "beds_double", "beds_single", "beds_sofa", "scheduled_time"):
+                continue  # nessun dato nel soggiorno/config: non sovrascrivere con vuoto
+            cur = bool(task.get(k)) if k == "checkin_today" else task.get(k)
+            if cur != v:
+                changes[k] = v
+        if task["status"] in (CleaningTaskStatus.IN_PROGRESS, CleaningTaskStatus.COMPLETED):
+            relevant = [LABELS[k] for k in changes if k in ("date", "unit_id", "scheduled_time", "guests_count", "beds_double", "beds_single", "beds_sofa")]
+            if relevant:
+                await notify_ops_users("Pulizia da verificare",
+                                       f"Il soggiorno di {s['name']} è cambiato ({', '.join(relevant)}) ma la pulizia del {task.get('date')} "
+                                       f"risulta già {task['status']}: i dati operativi NON sono stati modificati, verificare.",
+                                       "warning", priority="high", entity_type="cleaning_task", entity_id=task["id"])
+                return {"action": "warning_started", "task_id": task["id"], "changes": relevant}
+            return {"action": "ok", "task_id": task["id"]}
+        if changes:
+            if any(k in changes for k in ("beds_double", "beds_single", "beds_sofa")):
+                await _validate_beds(sid, {k: changes.get(k, task.get(k)) for k in ("beds_double", "beds_single", "beds_sofa")},
+                                     changes.get("unit_id", task.get("unit_id")))
+            changes["updated_at"] = now
+            await db.cleaning_tasks.update_one({"id": task["id"]}, {"$set": changes})
+        if event.get("cleaning_task_id") != task["id"]:
+            await db.events.update_one({"id": event["id"]}, {"$set": {"cleaning_task_id": task["id"], "updated_at": now}})
+        return {"action": "updated" if changes else "ok", "task_id": task["id"], "changes": [LABELS[k] for k in changes if k in LABELS]}
+
+    # nuova pulizia
     payload = CleaningTaskCreate(
         structure_id=sid,
-        unit_id=event.get("unit_id"),
+        unit_id=desired["unit_id"],
         date=checkout_date,
         booking_event_id=event["id"],
-        scheduled_time=(event.get("checkout_time") or s.get("check_out_time")),
-        guests_count=event.get("guests_count"),
-        beds_double=event.get("beds_double") if event.get("beds_double") is not None else bc.get("beds_double"),
-        beds_single=event.get("beds_single") if event.get("beds_single") is not None else bc.get("beds_single"),
-        beds_sofa=event.get("beds_sofa") if event.get("beds_sofa") is not None else bc.get("sofa_beds"),
+        scheduled_time=desired["scheduled_time"],
+        guests_count=desired["guests_count"],
+        beds_double=desired["beds_double"],
+        beds_single=desired["beds_single"],
+        beds_sofa=desired["beds_sofa"],
         checkin_today=checkin_today,
         checkin_time=checkin_time,
         notes="Generata automaticamente dal soggiorno (checkout)",
@@ -5890,7 +6116,7 @@ async def reconcile_cleaning_neighbors(event: dict, actor: dict):
     if not ci_date or not sid:
         return
     q = {"event_type": "booking", "structure_id": sid, "id": {"$ne": event.get("id")},
-         "feed_cancelled": {"$ne": True},
+         "feed_cancelled": {"$ne": True}, "status": {"$ne": "cancelled"},
          "end_time": {"$gte": ci_date, "$lte": f"{ci_date}T23:59:59"}}
     if event.get("unit_id"):
         q["unit_id"] = event["unit_id"]
@@ -6012,7 +6238,7 @@ async def update_cleaning_task(task_id: str, data: CleaningTaskUpdate, current_u
         "beds_sofa": data.beds_sofa if data.beds_sofa is not None else existing.get("beds_sofa"),
     }
     if any(getattr(data, f) is not None for f in ("beds_double", "beds_single", "beds_sofa", "structure_id")):
-        await _validate_beds(target_structure, beds_check)
+        await _validate_beds(target_structure, beds_check, existing.get("unit_id"))
     for field in ["structure_id", "assigned_cleaner_id", "date", "scheduled_time", "estimated_duration_minutes",
                   "guests_count", "beds_double", "beds_single", "beds_sofa", "checkin_today", "checkin_time",
                   "access_notes", "notes", "status"]:
@@ -7895,11 +8121,8 @@ async def dashboard_overview(
         raise HTTPException(status_code=403, detail="Non autorizzato")
     start, end = _date_range(None, date_from, date_to)
 
-    # Revenue (per-service economics arrive in a later phase; orders = consumables catalog)
-    order_q = {"created_at": {"$gte": start, "$lt": end}, "status": {"$nin": ["cancelled"]}}
+    # Revenue: i dati economici reali arrivano in una fase successiva; db.orders legacy NON alimenta più la dashboard
     order_revenue = 0
-    async for doc in db.orders.aggregate([{"$match": order_q}, {"$group": {"_id": None, "total": {"$sum": "$total"}}}]):
-        order_revenue = doc.get("total", 0) or 0
     revenue = {
         "total": order_revenue,
         "cleaning": 0,
@@ -7967,9 +8190,10 @@ async def dashboard_overview(
     mt_urgent = await db.maintenance_issues.count_documents({"priority": {"$in": ["urgent", "high"]}, "status": {"$in": ["open", "assigned", "in_progress"]}})
     if mt_urgent:
         attention.append({"type": "urgent_maintenance", "severity": "warning", "count": mt_urgent, "detail": None, "link": "/maintenance"})
-    new_orders = await db.orders.count_documents({"status": "submitted"})
+    # Ordini Cliente da confermare: fonte canonica fabbisogni (richieste ordine_cliente in stage da_confermare)
+    new_orders = await db.fabbisogni.count_documents({"source.type": "ordine_cliente", "status": "aperta", "stage": "da_confermare"})
     if new_orders:
-        attention.append({"type": "orders_to_verify", "severity": "info", "count": new_orders, "detail": None, "link": "/logistics"})
+        attention.append({"type": "orders_to_verify", "severity": "info", "count": new_orders, "detail": None, "link": "/consegne/definizione"})
 
     return {"period": {"start": start, "end": end}, "revenue": revenue, "today": today_block, "attention": attention}
 
@@ -7997,14 +8221,8 @@ async def report_dashboard(
     deliveries = await db.logistics_tasks.count_documents({**dq, "task_type": "delivery"})
     pickups = await db.logistics_tasks.count_documents({**dq, "task_type": "pickup"})
 
-    orders_total = await db.orders.count_documents({"created_at": {"$gte": start, "$lt": end}})
-    order_revenue_pipeline = [
-        {"$match": {"created_at": {"$gte": start, "$lt": end}, "status": {"$nin": ["cancelled"]}}},
-        {"$group": {"_id": None, "total": {"$sum": "$total"}}},
-    ]
-    order_revenue = 0
-    async for doc in db.orders.aggregate(order_revenue_pipeline):
-        order_revenue = doc.get("total", 0)
+    orders_total = await db.client_orders.count_documents({"created_at": {"$gte": start, "$lt": end}})
+    order_revenue = 0  # nessun dato economico nel modello canonico (fase futura); db.orders legacy non letto
 
     maint_total = await db.maintenance_issues.count_documents({"created_at": {"$gte": start, "$lt": end}})
     maint_resolved = await db.maintenance_issues.count_documents({"created_at": {"$gte": start, "$lt": end}, "status": "resolved"})
@@ -8053,13 +8271,8 @@ async def report_client(
 
     maint_count = await db.maintenance_issues.count_documents({"created_at": {"$gte": start, "$lt": end}, "client_id": client_id})
 
-    order_pipeline = [
-        {"$match": {"client_id": client_id, "created_at": {"$gte": start, "$lt": end}, "status": {"$nin": ["cancelled"]}}},
-        {"$group": {"_id": None, "total": {"$sum": "$total"}, "count": {"$sum": 1}}},
-    ]
-    order_stats = {"total": 0, "count": 0}
-    async for doc in db.orders.aggregate(order_pipeline):
-        order_stats = {"total": doc.get("total", 0), "count": doc.get("count", 0)}
+    order_stats = {"total": 0, "count": await db.client_orders.count_documents(
+        {"client_id": client_id, "created_at": {"$gte": start, "$lt": end}})}
 
     # Fase 5 — motore unico: consumi dal registro movimenti unificato (via strutture del cliente)
     client_struct_ids = [s["id"] async for s in db.structures.find({"client_id": client_id}, {"_id": 0, "id": 1})]
@@ -8222,15 +8435,8 @@ async def report_clients_summary(
         cleaning = await db.cleaning_tasks.count_documents(dq)
         logistics = await db.logistics_tasks.count_documents(dq)
 
-        order_pipeline = [
-            {"$match": {"client_id": cid, "created_at": {"$gte": start, "$lt": end}, "status": {"$nin": ["cancelled"]}}},
-            {"$group": {"_id": None, "total": {"$sum": "$total"}, "count": {"$sum": 1}}},
-        ]
         order_total = 0
-        order_count = 0
-        async for doc in db.orders.aggregate(order_pipeline):
-            order_total = doc.get("total", 0)
-            order_count = doc.get("count", 0)
+        order_count = await db.client_orders.count_documents({"client_id": cid, "created_at": {"$gte": start, "$lt": end}})
 
         total_services = cleaning + logistics
         if total_services > 0 or order_count > 0:
@@ -8742,7 +8948,8 @@ init_segnalazioni_deps(
 )
 api_router.include_router(create_billing_pdf_router(get_current_user))
 api_router.include_router(create_activity_router(get_current_user))
-api_router.include_router(create_integrations_router(get_current_user, is_ops_user))
+# Integrazioni/credenziali Channel Manager: SOLO Super Admin (mai Responsabile Generale)
+api_router.include_router(create_integrations_router(get_current_user, lambda u: (u or {}).get("role") == UserRole.ADMIN))
 api_router.include_router(create_segnalazioni_router(get_current_user, is_ops_user))
 init_magazzino_deps(
     put_object=put_object,

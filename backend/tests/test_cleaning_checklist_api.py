@@ -14,7 +14,7 @@ BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', '').rstrip('/')
 ADMIN_EMAIL = "test_user@kilolava.com"
 ADMIN_PASSWORD = TEST_ADMIN_PASSWORD
 CLEANER_EMAIL = "maria.bianchi@kilolava.com"
-CLEANER_PASSWORD = "CleanPass123!"
+CLEANER_PASSWORD = TEST_FIXTURE_PASSWORD
 
 
 class TestAuth:

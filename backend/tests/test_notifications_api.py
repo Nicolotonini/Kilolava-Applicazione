@@ -12,10 +12,10 @@ BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', '').rstrip('/')
 
 # Test credentials
 ADMIN_CREDS = {"email": "test_user@kilolava.com", "password": TEST_ADMIN_PASSWORD}
-CLEANER_CREDS = {"email": "maria.bianchi@kilolava.com", "password": "CleanPass123!"}
-MAINTENANCE_CREDS = {"email": "luigi.verdi@kilolava.com", "password": "MaintPass123!"}
-RIDER_CREDS = {"email": "rider1@kilolava.com", "password": "KilolavaPass!2026"}
-CLIENT_CREDS = {"email": "mario.rossi@cliente.it", "password": "KilolavaPass!2026"}
+CLEANER_CREDS = {"email": "maria.bianchi@kilolava.com", "password": TEST_FIXTURE_PASSWORD}
+MAINTENANCE_CREDS = {"email": "luigi.verdi@kilolava.com", "password": TEST_FIXTURE_PASSWORD}
+RIDER_CREDS = {"email": "rider1@kilolava.com", "password": TEST_FIXTURE_PASSWORD}
+CLIENT_CREDS = {"email": "mario.rossi@cliente.it", "password": TEST_FIXTURE_PASSWORD}
 
 
 @pytest.fixture(scope="module")

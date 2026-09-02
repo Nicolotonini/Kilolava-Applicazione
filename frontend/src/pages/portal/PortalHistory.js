@@ -1,27 +1,20 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { portalApi } from '../../lib/api';
+import api from '../../lib/api';
 import { Card, CardContent } from '../../components/ui/card';
 import { Button } from '../../components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../components/ui/select';
 import { ShoppingCart, Package, ChevronRight, Clock } from 'lucide-react';
 import { cn } from '../../lib/utils';
 
-const STATUS_BADGE = {
-  draft: 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300',
-  submitted: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300',
-  confirmed: 'bg-cyan-100 text-cyan-700 dark:bg-cyan-900/30 dark:text-cyan-300',
-  in_preparation: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300',
-  assigned: 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300',
-  delivered: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300',
-  completed: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300',
-  cancelled: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300',
-};
-
-const STATUS_LABELS = {
-  draft: 'Bozza', submitted: 'Inviato', confirmed: 'Confermato',
-  in_preparation: 'In preparazione', assigned: 'Assegnato',
-  delivered: 'Consegnato', completed: 'Completato', cancelled: 'Annullato',
+// Fonte canonica: /portal/ordini (client_orders + richieste + Consegne). Il vecchio db.orders è solo storico legacy.
+export const ORDER_STATUS_META = {
+  in_revisione: { label: 'In revisione', cls: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300' },
+  confermato: { label: 'Confermato', cls: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300' },
+  pianificato: { label: 'In consegna', cls: 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300' },
+  parziale: { label: 'Consegna parziale', cls: 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300' },
+  consegnato: { label: 'Consegnato', cls: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300' },
+  annullato: { label: 'Annullato', cls: 'bg-muted text-muted-foreground' },
 };
 
 const PortalHistory = () => {
@@ -31,68 +24,69 @@ const PortalHistory = () => {
   const [statusFilter, setStatusFilter] = useState('all');
 
   useEffect(() => {
-    const load = async () => {
-      try {
-        const params = {};
-        if (statusFilter !== 'all') params.status = statusFilter;
-        const res = await portalApi.getOrders(params);
-        setOrders(res.data);
-      } catch (e) { console.error(e); }
-      finally { setLoading(false); }
-    };
-    load();
-  }, [statusFilter]);
+    setLoading(true);
+    api.get('/portal/ordini')
+      .then(r => setOrders(r.data || []))
+      .catch(e => console.error(e))
+      .finally(() => setLoading(false));
+  }, []);
+
+  const shown = statusFilter === 'all' ? orders : orders.filter(o => o.status === statusFilter);
 
   return (
-    <div className="space-y-4" data-testid="portal-history">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-xl font-heading font-semibold">Storico Ordini</h1>
+    <div className="p-4 lg:p-8 space-y-6" data-testid="portal-history">
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <h1 className="text-2xl font-heading font-semibold">Storico Ordini</h1>
         <Select value={statusFilter} onValueChange={setStatusFilter}>
-          <SelectTrigger className="w-[160px] h-8"><SelectValue /></SelectTrigger>
+          <SelectTrigger className="w-44 h-9" data-testid="history-status-filter"><SelectValue /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">Tutti gli stati</SelectItem>
-            {Object.entries(STATUS_LABELS).map(([k, v]) => <SelectItem key={k} value={k}>{v}</SelectItem>)}
+            {Object.entries(ORDER_STATUS_META).map(([k, v]) => <SelectItem key={k} value={k}>{v.label}</SelectItem>)}
           </SelectContent>
         </Select>
       </div>
 
       {loading ? (
         <div className="text-center py-12 text-muted-foreground">Caricamento...</div>
-      ) : orders.length === 0 ? (
+      ) : shown.length === 0 ? (
         <div className="text-center py-12">
           <Package className="h-10 w-10 mx-auto mb-3 text-muted-foreground/30" />
           <p className="text-muted-foreground">Nessun ordine trovato</p>
+          <Button onClick={() => navigate('/portal/orders/new')} variant="outline" className="mt-4 gap-2" data-testid="history-new-order">
+            <ShoppingCart className="h-4 w-4" />Nuovo ordine
+          </Button>
         </div>
       ) : (
         <div className="space-y-2">
-          {orders.map(order => (
-            <Card key={order.id} className="border cursor-pointer hover:ring-1 hover:ring-[#F24E75]/30 transition-all"
-              onClick={() => navigate(`/portal/orders/${order.id}`)} data-testid={`order-${order.id}`}>
-              <CardContent className="p-4">
-                <div className="flex items-center justify-between gap-3">
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="text-sm font-bold">{order.order_number}</span>
-                      <span className={cn("text-xs px-2 py-0.5 rounded-full font-medium", STATUS_BADGE[order.status])}>
-                        {STATUS_LABELS[order.status] || order.status}
-                      </span>
+          {shown.map(order => {
+            const meta = ORDER_STATUS_META[order.status] || { label: order.status, cls: 'bg-muted text-muted-foreground' };
+            const pezzi = (order.items || []).reduce((n, i) => n + (i.qty || 0), 0);
+            return (
+              <Card key={order.id} className="border cursor-pointer hover:ring-1 hover:ring-[#F24E75]/30 transition-all"
+                onClick={() => navigate(`/portal/orders/${order.id}`)} data-testid={`order-${order.id}`}>
+                <CardContent className="p-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-sm font-bold">{order.order_number}</span>
+                        <span className={cn('text-xs px-2 py-0.5 rounded-full font-medium', meta.cls)} data-testid={`order-status-${order.id}`}>{meta.label}</span>
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        Ordinato {new Date(order.created_at).toLocaleDateString('it-IT')} · {order.structure_name || 'Struttura'} · {order.items?.length || 0} articoli ({pezzi} pz)
+                      </p>
+                      {order.date_preferred && (
+                        <p className="text-xs text-muted-foreground flex items-center gap-1 mt-0.5">
+                          <Clock className="h-3 w-3" />
+                          Consegna richiesta: {new Date(order.date_preferred + 'T00:00:00').toLocaleDateString('it-IT', { weekday: 'short', day: 'numeric', month: 'short' })} {order.time_window || ''}
+                        </p>
+                      )}
                     </div>
-                    <p className="text-xs text-muted-foreground mt-0.5">
-                      Ordinato {new Date(order.created_at).toLocaleDateString('it-IT')} - {order.items?.length || 0} articoli
-                    </p>
-                    <p className="text-xs text-muted-foreground flex items-center gap-1 mt-0.5">
-                      <Clock className="h-3 w-3" />
-                      Consegna: {new Date(order.delivery_date + 'T00:00:00').toLocaleDateString('it-IT', { weekday: 'short', day: 'numeric', month: 'short' })} {order.delivery_slot}
-                    </p>
+                    <ChevronRight className="h-4 w-4 text-muted-foreground flex-shrink-0" />
                   </div>
-                  <div className="flex items-center gap-2 flex-shrink-0">
-                    <span className="text-lg font-bold">€{(order.total || 0).toFixed(2)}</span>
-                    <ChevronRight className="h-4 w-4 text-muted-foreground" />
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
+                </CardContent>
+              </Card>
+            );
+          })}
         </div>
       )}
     </div>

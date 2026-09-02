@@ -1,184 +1,130 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { portalApi } from '../../lib/api';
+import api from '../../lib/api';
 import { Card, CardContent } from '../../components/ui/card';
 import { Button } from '../../components/ui/button';
-import {
-  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
-  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
-} from '../../components/ui/alert-dialog';
-import { toast } from 'sonner';
-import { ArrowLeft, Package, CalendarDays, Clock, MapPin, Truck, X } from 'lucide-react';
+import { ArrowLeft, Package, Truck, CheckCircle2, Clock, MapPin } from 'lucide-react';
 import { cn } from '../../lib/utils';
+import { ORDER_STATUS_META } from './PortalHistory';
 
-const STATUS_BADGE = {
-  draft: 'bg-slate-100 text-slate-700', submitted: 'bg-blue-100 text-blue-700',
-  confirmed: 'bg-cyan-100 text-cyan-700', in_preparation: 'bg-amber-100 text-amber-700',
-  assigned: 'bg-indigo-100 text-indigo-700', delivered: 'bg-green-100 text-green-700',
-  completed: 'bg-green-100 text-green-700', cancelled: 'bg-red-100 text-red-700',
+// Avanzamento canonico: revisione → confermato → in consegna → consegnato (parziale = consegna in più fermate)
+const STEPS = [
+  { key: 'in_revisione', label: 'In revisione' },
+  { key: 'confermato', label: 'Confermato' },
+  { key: 'pianificato', label: 'In consegna' },
+  { key: 'consegnato', label: 'Consegnato' },
+];
+const STEP_INDEX = { in_revisione: 0, confermato: 1, pianificato: 2, parziale: 2, consegnato: 3 };
+const RICHIESTA_STATUS = {
+  aperta: 'Da evadere', in_consegna: 'In consegna', evasa: 'Consegnata', parzialmente_evasa: 'Consegna parziale', annullata: 'Annullata',
 };
-const STATUS_LABELS = {
-  draft: 'Bozza', submitted: 'Inviato', confirmed: 'Confermato',
-  in_preparation: 'In preparazione', assigned: 'Assegnato',
-  delivered: 'Consegnato', completed: 'Completato', cancelled: 'Annullato',
-};
+const DOMAIN_LABEL = { noleggio: 'Noleggio', forniture: 'Forniture', pulizie: 'Prodotti Pulizie' };
 
 const PortalOrderDetail = () => {
   const { orderId } = useParams();
   const navigate = useNavigate();
-  const [data, setData] = useState(null);
+  const [order, setOrder] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [cancelDialog, setCancelDialog] = useState(false);
 
   useEffect(() => {
-    const load = async () => {
-      try {
-        const res = await portalApi.getOrder(orderId);
-        setData(res.data);
-      } catch (e) { console.error(e); toast.error('Ordine non trovato'); navigate('/portal/history'); }
-      finally { setLoading(false); }
-    };
-    load();
-  }, [orderId, navigate]);
+    api.get(`/portal/ordini/${orderId}`)
+      .then(r => setOrder(r.data))
+      .catch(e => console.error(e))
+      .finally(() => setLoading(false));
+  }, [orderId]);
 
-  const handleCancel = async () => {
-    try {
-      await portalApi.cancelOrder(orderId);
-      toast.success('Ordine annullato');
-      setCancelDialog(false);
-      // Reload
-      const res = await portalApi.getOrder(orderId);
-      setData(res.data);
-    } catch (e) { toast.error(e.response?.data?.detail || 'Errore'); }
-  };
+  if (loading) return <div className="p-8 text-center text-muted-foreground">Caricamento...</div>;
+  if (!order) return <div className="p-8 text-center text-muted-foreground">Ordine non trovato</div>;
 
-  if (loading) return <div className="text-center py-16 text-muted-foreground">Caricamento...</div>;
-  if (!data) return null;
-
-  const order = data.order;
-  const delivery = data.delivery_info;
-  const canCancel = ['draft', 'submitted'].includes(order.status);
+  const meta = ORDER_STATUS_META[order.status] || { label: order.status, cls: 'bg-muted text-muted-foreground' };
+  const stepIdx = STEP_INDEX[order.status];
+  const cancelled = order.status === 'annullato';
 
   return (
-    <div className="max-w-2xl mx-auto space-y-4" data-testid="portal-order-detail">
-      <Button variant="ghost" className="gap-2 -ml-2 text-muted-foreground" onClick={() => navigate('/portal/history')}>
-        <ArrowLeft className="h-4 w-4" />Storico ordini
-      </Button>
-
-      <div className="flex items-center justify-between">
+    <div className="p-4 lg:p-8 space-y-6 max-w-3xl" data-testid="portal-order-detail">
+      <div className="flex items-center gap-3">
+        <Button variant="ghost" size="icon" onClick={() => navigate('/portal/history')} data-testid="order-back"><ArrowLeft className="h-5 w-5" /></Button>
         <div>
-          <h1 className="text-xl font-heading font-semibold">{order.order_number}</h1>
-          <p className="text-xs text-muted-foreground">Ordinato il {new Date(order.created_at).toLocaleDateString('it-IT', { day: 'numeric', month: 'long', year: 'numeric' })}</p>
+          <h1 className="text-2xl font-heading font-semibold">Ordine {order.order_number}</h1>
+          <p className="text-sm text-muted-foreground">
+            Ordinato il {new Date(order.created_at).toLocaleDateString('it-IT')}{order.structure_name ? ` · ${order.structure_name}` : ''}
+          </p>
         </div>
-        <span className={cn("text-xs px-3 py-1 rounded-full font-semibold", STATUS_BADGE[order.status] || 'bg-muted')}>
-          {STATUS_LABELS[order.status] || order.status}
-        </span>
+        <span className={cn('ml-auto text-xs px-2.5 py-1 rounded-full font-medium', meta.cls)} data-testid="order-detail-status">{meta.label}</span>
       </div>
 
-      {/* Status progress */}
-      <Card className="border">
-        <CardContent className="p-4">
-          <div className="flex items-center gap-1 overflow-x-auto">
-            {['submitted', 'confirmed', 'in_preparation', 'delivered', 'completed'].map((s, i, arr) => {
-              const idx = arr.indexOf(order.status);
-              const isActive = arr.indexOf(s) <= idx;
-              const isCurrent = s === order.status;
-              return (
-                <React.Fragment key={s}>
-                  <div className={cn(
-                    "text-xs px-2 py-1 rounded-full font-medium whitespace-nowrap",
-                    isCurrent ? "bg-[#F24E75] text-white" : isActive ? "bg-green-100 text-green-700" : "bg-muted text-muted-foreground"
-                  )}>
-                    {STATUS_LABELS[s]}
-                  </div>
-                  {i < arr.length - 1 && <div className={cn("h-0.5 w-4 flex-shrink-0", isActive ? "bg-green-400" : "bg-muted")} />}
-                </React.Fragment>
-              );
-            })}
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Items */}
-      <Card className="border">
-        <CardContent className="p-4">
-          <h3 className="text-xs font-semibold text-muted-foreground uppercase mb-3">Articoli ordinati</h3>
-          <div className="space-y-2">
-            {order.items?.map((item, i) => (
-              <div key={i} className="flex items-center justify-between py-2 border-b border-border last:border-0">
-                <div>
-                  <p className="text-sm font-medium">{item.article_name || item.article_id}</p>
-                  <p className="text-xs text-muted-foreground">€{(item.unit_price || 0).toFixed(2)} x {item.quantity}</p>
-                </div>
-                <span className="text-sm font-semibold">€{(item.total || 0).toFixed(2)}</span>
-              </div>
-            ))}
-          </div>
-          <div className="flex justify-between text-base font-bold pt-3 mt-3 border-t border-border">
-            <span>Totale</span>
-            <span>€{(order.total || 0).toFixed(2)}</span>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Delivery info */}
-      <Card className="border">
-        <CardContent className="p-4 space-y-2">
-          <h3 className="text-xs font-semibold text-muted-foreground uppercase mb-2">Dettagli consegna</h3>
-          <p className="text-sm flex items-center gap-2">
-            <CalendarDays className="h-4 w-4 text-muted-foreground" />
-            {new Date(order.delivery_date + 'T00:00:00').toLocaleDateString('it-IT', { weekday: 'long', day: 'numeric', month: 'long' })}
-          </p>
-          <p className="text-sm flex items-center gap-2">
-            <Clock className="h-4 w-4 text-muted-foreground" />{order.delivery_slot}
-          </p>
-          {order.structure_name && (
-            <p className="text-sm flex items-center gap-2">
-              <MapPin className="h-4 w-4 text-muted-foreground" />{order.structure_name}
-            </p>
-          )}
-          {order.notes && (
-            <div className="bg-muted/50 rounded-lg p-3 mt-2">
-              <p className="text-xs text-muted-foreground font-medium">Note:</p>
-              <p className="text-sm">{order.notes}</p>
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* Delivery tracking */}
-      {delivery && (
-        <Card className="border border-blue-200 dark:border-blue-800">
+      {!cancelled && (
+        <Card className="border" data-testid="order-progress">
           <CardContent className="p-4">
-            <h3 className="text-xs font-semibold text-muted-foreground uppercase mb-2 flex items-center gap-2">
-              <Truck className="h-4 w-4" />Stato consegna
-            </h3>
-            <p className="text-sm">Stato: <span className="font-medium">{delivery.status}</span></p>
-            {delivery.rider_name && <p className="text-sm">Rider: <span className="font-medium">{delivery.rider_name}</span></p>}
+            <div className="flex items-center justify-between">
+              {STEPS.map((s, i) => {
+                const done = stepIdx >= i;
+                return (
+                  <div key={s.key} className="flex-1 flex flex-col items-center relative">
+                    <div className={cn('w-8 h-8 rounded-full flex items-center justify-center', done ? 'bg-[#F24E75] text-white' : 'bg-muted text-muted-foreground')}>
+                      {done ? <CheckCircle2 className="h-4 w-4" /> : <span className="text-xs font-bold">{i + 1}</span>}
+                    </div>
+                    <span className={cn('text-xs mt-1.5', done ? 'font-medium' : 'text-muted-foreground')}>{s.label}</span>
+                    {i < STEPS.length - 1 && <div className={cn('absolute top-4 left-1/2 w-full h-0.5', stepIdx > i ? 'bg-[#F24E75]' : 'bg-muted')} />}
+                  </div>
+                );
+              })}
+            </div>
+            {order.status === 'parziale' && <p className="text-xs text-orange-600 mt-3 text-center">Consegna parziale: il residuo arriverà con una prossima consegna</p>}
           </CardContent>
         </Card>
       )}
 
-      {/* Cancel button */}
-      {canCancel && (
-        <Button variant="outline" className="w-full text-red-600 border-red-200 hover:bg-red-50 dark:border-red-800 dark:hover:bg-red-950/20 gap-2"
-          onClick={() => setCancelDialog(true)} data-testid="cancel-order-btn">
-          <X className="h-4 w-4" />Annulla ordine
-        </Button>
-      )}
+      <Card className="border">
+        <CardContent className="p-4">
+          <h3 className="text-sm font-semibold mb-3 flex items-center gap-2"><Package className="h-4 w-4 text-[#F24E75]" />Articoli</h3>
+          <div className="space-y-2" data-testid="order-items">
+            {(order.items || []).map((it, i) => (
+              <div key={i} className="flex items-center justify-between text-sm py-1.5 border-b last:border-0">
+                <div>
+                  <span className="font-medium">{it.name}</span>
+                  {it.domain && <span className="ml-2 text-xs text-muted-foreground">{DOMAIN_LABEL[it.domain] || it.domain}</span>}
+                </div>
+                <span className="font-semibold tabular-nums">x{it.qty}</span>
+              </div>
+            ))}
+            {(order.kits_used || []).map((k, i) => (
+              <div key={`kit-${i}`} className="text-xs text-muted-foreground">Kit {k.kit_name || k.kit_id} x{k.qty}</div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
 
-      <AlertDialog open={cancelDialog} onOpenChange={setCancelDialog}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Annullare l'ordine?</AlertDialogTitle>
-            <AlertDialogDescription>L'ordine {order.order_number} verra annullato. L'operazione non e reversibile.</AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Indietro</AlertDialogCancel>
-            <AlertDialogAction onClick={handleCancel} className="bg-destructive text-destructive-foreground">Annulla ordine</AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <Card className="border">
+        <CardContent className="p-4 space-y-3">
+          <h3 className="text-sm font-semibold flex items-center gap-2"><Truck className="h-4 w-4 text-[#F24E75]" />Consegna</h3>
+          {order.date_preferred && (
+            <p className="text-sm flex items-center gap-2"><Clock className="h-4 w-4 text-muted-foreground" />
+              Richiesta per {new Date(order.date_preferred + 'T00:00:00').toLocaleDateString('it-IT', { weekday: 'long', day: 'numeric', month: 'long' })} {order.time_window || ''}
+            </p>
+          )}
+          {order.structure_address && <p className="text-sm flex items-center gap-2"><MapPin className="h-4 w-4 text-muted-foreground" />{order.structure_address}</p>}
+          <div className="space-y-1.5" data-testid="order-richieste">
+            {(order.richieste || []).map(r => (
+              <div key={r.id} className="flex items-center justify-between text-xs bg-muted/40 rounded-md px-2.5 py-1.5">
+                <span>{DOMAIN_LABEL[r.kind] || r.kind}{r.residual_of ? ' · residuo' : ''}</span>
+                <span className="font-medium">{RICHIESTA_STATUS[r.status] || r.status}</span>
+              </div>
+            ))}
+          </div>
+          {(order.consegne || []).length > 0 && (
+            <div className="space-y-1.5" data-testid="order-consegne">
+              {order.consegne.map(c => (
+                <div key={c.id} className="flex items-center justify-between text-sm">
+                  <span>Consegna del {c.date ? new Date(c.date + 'T00:00:00').toLocaleDateString('it-IT') : '—'}{c.rider_name ? ` · ${c.rider_name}` : ''}</span>
+                  <span className="text-xs font-medium text-muted-foreground">{c.status === 'completata' ? 'Completata' : c.status}</span>
+                </div>
+              ))}
+            </div>
+          )}
+          {order.note && <p className="text-xs text-muted-foreground">Note: {order.note}</p>}
+        </CardContent>
+      </Card>
     </div>
   );
 };

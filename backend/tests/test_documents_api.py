@@ -41,7 +41,7 @@ def cleaner_token():
     """Get cleaner auth token for permission tests"""
     response = requests.post(f"{BASE_URL}/api/auth/login", json={
         "email": "maria.bianchi@kilolava.com",
-        "password": "CleanPass123!"
+        "password": TEST_FIXTURE_PASSWORD
     })
     if response.status_code != 200:
         pytest.skip("Cleaner user not available for permission tests")

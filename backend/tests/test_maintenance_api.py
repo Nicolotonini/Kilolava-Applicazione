@@ -14,9 +14,9 @@ BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', '').rstrip('/')
 ADMIN_EMAIL = "test_user@kilolava.com"
 ADMIN_PASSWORD = TEST_ADMIN_PASSWORD
 MAINTENANCE_EMAIL = "luigi.verdi@kilolava.com"
-MAINTENANCE_PASSWORD = "MaintPass123!"
+MAINTENANCE_PASSWORD = TEST_FIXTURE_PASSWORD
 CLEANER_EMAIL = "maria.bianchi@kilolava.com"
-CLEANER_PASSWORD = "CleanPass123!"
+CLEANER_PASSWORD = TEST_FIXTURE_PASSWORD
 
 
 @pytest.fixture(scope="module")

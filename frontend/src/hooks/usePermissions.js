@@ -25,11 +25,14 @@ const ROLE_PERMISSIONS = {
 
 const OPS_ROLES = new Set(['admin', 'operations_manager']);
 
+// Funzioni tecniche riservate al Super Admin (secrets, integrazioni, impostazioni di sistema)
+const ADMIN_ONLY_NAV = ['settings', 'integrations'];
+
 const NAV_KEYS = [
   'dashboard', 'mappa', 'assistant', 'calendar', 'clients', 'structures', 'cleaning', 'cleaning-overview', 'cleaning-organize', 'segnalazioni',
   'structure-inventory', 'keys', 'deliveries',
   'consegne-overview', 'consegne-definizione', 'consegne-giro', 'consegne-storico',
-  'ms-overview', 'ms-noleggio', 'ms-forniture', 'ms-movimenti',
+  'ms-overview', 'ms-noleggio', 'ms-forniture', 'ms-pulizie', 'ms-movimenti',
   'mg-overview', 'mg-noleggio', 'mg-forniture', 'mg-pulizie', 'mg-zaini', 'mg-movimenti', 'cataloghi-prodotti', 'kit',
   'pl-jobs', 'pl-history',
   'maintenance', 'documents', 'reports', 'users', 'activity', 'settings', 'integrations',
@@ -39,12 +42,26 @@ const NAV_KEYS = [
 
 const NAV_VISIBILITY = {
   admin: NAV_KEYS,
-  operations_manager: NAV_KEYS,
+  // Responsabile Generale: operatività completa, MAI funzioni tecniche Admin-only
+  operations_manager: NAV_KEYS.filter((k) => !ADMIN_ONLY_NAV.includes(k)),
   cleaner: [],
   rider: [],
   maintenance: [],
   laundry: ['pl-jobs'],
   client: [],
+};
+
+// Aree operative mobile-first per ruolo (home dedicate): un utente multi-ruolo le vede tutte in unione
+export const ROLE_AREAS = {
+  cleaner: { key: 'cleaner', label: 'Pulizie', path: '/cleaner' },
+  rider: { key: 'rider', label: 'Consegne', path: '/rider' },
+  maintenance: { key: 'maintenance', label: 'Manutenzioni', path: '/maintenance' },
+  laundry: { key: 'laundry', label: 'Lavanderia', path: '/private-laundry/jobs' },
+};
+
+// Percorsi consentiti dentro il backoffice (AppLayout) per i ruoli NON ops, in unione sui ruoli effettivi
+const ROLE_ALLOWED_PATHS = {
+  laundry: ['/private-laundry/jobs'],
 };
 
 const IMPERSONATION_KEY = 'kilolava_impersonate_role';
@@ -61,6 +78,12 @@ export const ROLE_LABELS = {
 
 export const INTERNAL_ROLES = ['admin', 'operations_manager', 'cleaner', 'rider', 'maintenance', 'laundry'];
 export const ALL_ROLES = ['admin', 'operations_manager', 'cleaner', 'rider', 'maintenance', 'laundry', 'client'];
+
+const unionFor = (map, roles) => {
+  const out = [];
+  roles.forEach((r) => (map[r] || []).forEach((k) => { if (!out.includes(k)) out.push(k); }));
+  return out;
+};
 
 export const usePermissions = () => {
   const { user } = useAuth();
@@ -106,16 +129,17 @@ export const usePermissions = () => {
   const isOps = OPS_ROLES.has(effectiveRole);
   const isAdmin = effectiveRole === 'admin';
   const extraRoles = isImpersonating ? [] : (user?.extra_roles || []);
-  const hasRole = (r) => effectiveRole === r || extraRoles.includes(r);
+  // Ruoli effettivi = principale + extra_roles (una persona = un account); l'impersonation NON eredita privilegi
+  const effectiveRoles = [effectiveRole, ...extraRoles.filter((r) => r !== effectiveRole)];
+  const hasRole = (r) => effectiveRoles.includes(r);
 
-  const canAccessNav = (navItem) => {
-    const visible = NAV_VISIBILITY[effectiveRole] || [];
-    return visible.includes(navItem);
-  };
+  const visibleNavKeys = unionFor(NAV_VISIBILITY, effectiveRoles);
+  const canAccessNav = (navItem) => visibleNavKeys.includes(navItem);
+  const getVisibleNavItems = () => visibleNavKeys;
 
-  const getVisibleNavItems = () => {
-    return NAV_VISIBILITY[effectiveRole] || [];
-  };
+  // Aree operative raggiungibili (home mobile-first) in unione sui ruoli effettivi
+  const operativeAreas = effectiveRoles.map((r) => ROLE_AREAS[r]).filter(Boolean);
+  const allowedBackofficePaths = isOps ? null : unionFor(ROLE_ALLOWED_PATHS, effectiveRoles);
 
   const getHomeRoute = () => {
     switch (effectiveRole) {
@@ -141,6 +165,7 @@ export const usePermissions = () => {
     role: effectiveRole,
     realRole,
     extraRoles,
+    effectiveRoles,
     hasRole,
     permissions: perms,
     hasPermission,
@@ -153,5 +178,7 @@ export const usePermissions = () => {
     canAccessNav,
     getVisibleNavItems,
     getHomeRoute,
+    operativeAreas,
+    allowedBackofficePaths,
   };
 };

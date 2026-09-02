@@ -14,9 +14,9 @@ BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', '').rstrip('/')
 ADMIN_EMAIL = "test_user@kilolava.com"
 ADMIN_PASSWORD = TEST_ADMIN_PASSWORD
 RIDER_EMAIL = "rider1@kilolava.com"
-RIDER_PASSWORD = "Rider123!"
+RIDER_PASSWORD = TEST_FIXTURE_PASSWORD
 CLIENT_EMAIL = "mario.rossi@cliente.it"
-CLIENT_PASSWORD = "Client123!"
+CLIENT_PASSWORD = TEST_FIXTURE_PASSWORD
 
 
 class TestUsersRolesAPI:

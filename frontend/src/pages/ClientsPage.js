@@ -39,6 +39,7 @@ import {
   Phone, Mail, User, Briefcase, TrendingUp, CalendarCheck, AlertTriangle
 } from 'lucide-react';
 import { cn } from '../lib/utils';
+import { usePermissions } from '../hooks/usePermissions';
 
 const defaultPrivateInfo = { name: '', surname: '', address: '', fiscal_code: '', phone: '', email: '', sdi: '0000000' };
 const defaultCompanyInfo = { company_name: '', representative_name: '', representative_surname: '', vat_number: '', fiscal_code: '', sdi: '0000000', address: '', phone: '', email: '', pec: '' };
@@ -46,6 +47,8 @@ const defaultCompanyInfo = { company_name: '', representative_name: '', represen
 const getInitials = (name = '') => name.split(' ').filter(Boolean).slice(0, 2).map(w => w[0]).join('').toUpperCase() || '?';
 
 const ClientsPage = () => {
+  // Dati fiscali: solo in creazione e solo Super Admin; in modifica si gestiscono dalla tab Amministrazione (admin-data)
+  const { isAdmin } = usePermissions();
   const { t } = useLanguage();
   const navigate = useNavigate();
   const [clients, setClients] = useState([]);
@@ -440,7 +443,8 @@ const ClientsPage = () => {
                     <Input type="email" value={formData.private_info.email || ''} onChange={(e) => updatePrivateInfo('email', e.target.value)} className="h-9" data-testid="nc-email" />
                   </div>
                 </div>
-                <div className="grid grid-cols-2 gap-3">
+                {isAdmin && !selectedClient && (
+                <div className="grid grid-cols-2 gap-3" data-testid="nc-fiscal-block">
                   <div className="space-y-2">
                     <Label className="text-sm">{t('clients.fiscalCode')}</Label>
                     <Input value={formData.private_info.fiscal_code || ''} onChange={(e) => updatePrivateInfo('fiscal_code', e.target.value)} className="h-9" data-testid="nc-cf" />
@@ -450,6 +454,7 @@ const ClientsPage = () => {
                     <Input value={formData.private_info.sdi || '0000000'} onChange={(e) => updatePrivateInfo('sdi', e.target.value)} className="h-9" data-testid="nc-sdi" />
                   </div>
                 </div>
+                )}
               </div>
             )}
 
@@ -479,7 +484,9 @@ const ClientsPage = () => {
                     <Input value={formData.company_info.representative_surname} onChange={(e) => updateCompanyInfo('representative_surname', e.target.value)} className="h-9" data-testid="nc-rep-surname" />
                   </div>
                 </div>
-                <div className="grid grid-cols-2 gap-3">
+                {isAdmin && !selectedClient && (
+                <>
+                <div className="grid grid-cols-2 gap-3" data-testid="nc-company-fiscal-block">
                   <div className="space-y-2">
                     <Label className="text-sm">{t('clients.vatNumber')}</Label>
                     <Input value={formData.company_info.vat_number || ''} onChange={(e) => updateCompanyInfo('vat_number', e.target.value)} className="h-9" data-testid="nc-vat" />
@@ -499,6 +506,8 @@ const ClientsPage = () => {
                     <Input value={formData.company_info.pec || ''} onChange={(e) => updateCompanyInfo('pec', e.target.value)} className="h-9" placeholder="pec@example.com" data-testid="nc-pec" />
                   </div>
                 </div>
+                </>
+                )}
                 <div className="space-y-2">
                   <Label className="text-sm">{t('clients.address')}</Label>
                   <Input value={formData.company_info.address || ''} onChange={(e) => updateCompanyInfo('address', e.target.value)} className="h-9" data-testid="nc-company-address" />

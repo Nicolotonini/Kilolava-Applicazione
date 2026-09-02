@@ -36,6 +36,7 @@ function NuovoSoggiornoDialog({ open, onClose, structures, units = [], defaultSt
   const [outTime, setOutTime] = useState('10:00');
   const [guests, setGuests] = useState('');
   const [notes, setNotes] = useState('');
+  const [beds, setBeds] = useState({ beds_double: '', beds_single: '', beds_sofa: '' });
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -50,6 +51,18 @@ function NuovoSoggiornoDialog({ open, onClose, structures, units = [], defaultSt
 
   const structUnits = useMemo(() => (units || []).filter((u) => u.structure_id === structureId), [units, structureId]);
 
+  // Letti precompilati dalla configurazione corretta (Unit → Struttura), modificabili per il singolo soggiorno.
+  // Il numero di persone NON decide i letti.
+  useEffect(() => {
+    if (!open) return;
+    const u = (units || []).find((x) => x.id === unitId);
+    const s = (structures || []).find((x) => x.id === structureId);
+    const ubc = u?.bed_config;
+    const hasUnitBeds = ubc && ((ubc.beds_double || 0) + (ubc.beds_single || 0) + (ubc.sofa_beds || 0) > 0);
+    const bc = hasUnitBeds ? ubc : (s?.bed_config || {});
+    setBeds({ beds_double: bc.beds_double ?? '', beds_single: bc.beds_single ?? '', beds_sofa: bc.sofa_beds ?? '' });
+  }, [open, structureId, unitId, units, structures]);
+
   const save = async () => {
     if (!structureId || !inDate || !outDate) { toast.error('Struttura e date IN/OUT obbligatorie'); return; }
     if (outDate < inDate) { toast.error('La data OUT deve essere successiva alla data IN'); return; }
@@ -61,6 +74,9 @@ function NuovoSoggiornoDialog({ open, onClose, structures, units = [], defaultSt
         start_time: `${inDate}T${inTime || '15:00'}:00`, end_time: `${outDate}T${outTime || '10:00'}:00`,
         source: 'direct',
         guests_count: guests ? parseInt(guests) : null,
+        beds_double: beds.beds_double === '' ? null : parseInt(beds.beds_double, 10),
+        beds_single: beds.beds_single === '' ? null : parseInt(beds.beds_single, 10),
+        beds_sofa: beds.beds_sofa === '' ? null : parseInt(beds.beds_sofa, 10),
         checkin_time: inTime || null, checkout_time: outTime || null,
         notes: notes || null,
       });
@@ -112,6 +128,17 @@ function NuovoSoggiornoDialog({ open, onClose, structures, units = [], defaultSt
           <div className="space-y-1.5">
             <Label className="text-xs">Persone</Label>
             <Input type="number" min={0} value={guests} onChange={(e) => setGuests(e.target.value)} data-testid="nuovo-guests" />
+          </div>
+          <div className="space-y-1.5" data-testid="nuovo-beds">
+            <Label className="text-xs">Letti da preparare <span className="text-muted-foreground font-normal">(precompilati dalla configurazione, modificabili)</span></Label>
+            <div className="grid grid-cols-3 gap-2">
+              {[['beds_double', 'Matrimoniali'], ['beds_single', 'Singoli'], ['beds_sofa', 'Divani letto']].map(([k, lbl]) => (
+                <div key={k} className="space-y-1">
+                  <span className="text-[11px] text-muted-foreground">{lbl}</span>
+                  <Input type="number" min={0} value={beds[k]} onChange={(e) => setBeds((b) => ({ ...b, [k]: e.target.value }))} data-testid={`nuovo-${k.replace('_', '-')}`} />
+                </div>
+              ))}
+            </div>
           </div>
           <div className="space-y-1.5">
             <Label className="text-xs">Note</Label>

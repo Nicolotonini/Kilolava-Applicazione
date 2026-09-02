@@ -165,6 +165,14 @@ const CatchAllRedirect = () => {
   return <Navigate to={getHomeRoute(user?.role)} replace />;
 };
 
+// Funzioni tecniche (Impostazioni, Integrazioni): SOLO Super Admin — specchio del backend
+const AdminOnly = ({ children }) => {
+  const { user } = useAuth();
+  const effectiveRole = user?.role === 'manager' ? 'admin' : user?.role;
+  if (effectiveRole !== 'admin') return <Navigate to="/dashboard" replace />;
+  return children;
+};
+
 function AppRoutes() {
   return (
     <Routes>
@@ -194,6 +202,7 @@ function AppRoutes() {
         path="/"
         element={
           <RoleRoute allowedRoles={['admin', 'operations_manager', 'laundry']}>
+            {/* laundry anche come extra_role (es. Pulizie + Lavanderia): RoleRoute accetta extra_roles */}
             <AppLayout />
           </RoleRoute>
         }
@@ -261,7 +270,7 @@ function AppRoutes() {
         <Route path="checklist-templates" element={<ChecklistTemplatesPage />} />
         <Route path="users" element={<UsersPage />} />
         <Route path="users/:userId" element={<UserDetailPage />} />
-        <Route path="integrations" element={<IntegrationsPage />} />
+        <Route path="integrations" element={<AdminOnly><IntegrationsPage /></AdminOnly>} />
         <Route path="activity" element={<ActivityLogPage />} />
         <Route path="notifications" element={<NotificationsPage />} />
         <Route path="reports" element={<ReportsPage />} />
@@ -271,7 +280,7 @@ function AppRoutes() {
         <Route path="structures" element={<StructuresListPage />} />
         <Route path="structures/new" element={<StructureDetailPage />} />
         <Route path="structures/:structureId" element={<StructureDetailPage />} />
-        <Route path="settings" element={<SettingsPage />} />
+        <Route path="settings" element={<AdminOnly><SettingsPage /></AdminOnly>} />
       </Route>
 
       {/* Rider View - standalone mobile-first layout */}

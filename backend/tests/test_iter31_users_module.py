@@ -495,7 +495,7 @@ def test_reset_password_ok_and_last_login(admin_tok, created):
 
     # reset password come admin
     rr = requests.post(f"{API}/users/{uid}/reset-password",
-                       json={"new_password": "NewPass9876!"}, headers=_h(admin_tok), timeout=10)
+                       json={"new_password": TEST_FIXTURE_PASSWORD + "-new"}, headers=_h(admin_tok), timeout=10)
     assert rr.status_code == 200
 
     # login con vecchia password fallisce
@@ -503,7 +503,7 @@ def test_reset_password_ok_and_last_login(admin_tok, created):
     assert old.status_code == 401
 
     # login con nuova → 200 e last_login aggiornato
-    new = requests.post(f"{API}/auth/login", json={"email": email, "password": "NewPass9876!"}, timeout=10)
+    new = requests.post(f"{API}/auth/login", json={"email": email, "password": TEST_FIXTURE_PASSWORD + "-new"}, timeout=10)
     assert new.status_code == 200
 
     ur = requests.get(f"{API}/users/{uid}", headers=_h(admin_tok), timeout=10)
@@ -518,7 +518,7 @@ def test_reset_password_non_admin_403(admin_tok, created):
     tok = _login("test_iter31_cln_reset_403@kilolava.com", TEST_ADMIN_PASSWORD)
     target = created["users"][0]
     rr = requests.post(f"{API}/users/{target}/reset-password",
-                       json={"new_password": "NewPass9876!"}, headers=_h(tok), timeout=10)
+                       json={"new_password": TEST_FIXTURE_PASSWORD + "-new"}, headers=_h(tok), timeout=10)
     assert rr.status_code == 403
 
 

@@ -2,17 +2,18 @@ import React, { useState, useEffect } from 'react';
 import { portalApi } from '../../lib/api';
 import { Card, CardContent } from '../../components/ui/card';
 import { Button } from '../../components/ui/button';
-import { BarChart3, ChevronLeft, ChevronRight, TrendingUp, Package, CalendarDays, Truck } from 'lucide-react';
+import { BarChart3, ChevronLeft, ChevronRight, Package, CalendarDays, Truck } from 'lucide-react';
 import { cn } from '../../lib/utils';
 
+// Report canonico (client_orders + cleaning_tasks + Consegne): conteggi operativi, nessun dato economico legacy
 const CAT_LABELS = {
   cleaning: 'Pulizia', private_laundry: 'Lavanderia privata',
-  linen_rental: 'Noleggio biancheria', consumables: 'Consumabili',
+  linen_rental: 'Noleggio biancheria', consumables: 'Forniture', cleaning_products: 'Prodotti Pulizie',
   maintenance: 'Manutenzione', extras: 'Extra', other: 'Altro',
 };
 const CAT_COLORS = {
   cleaning: 'bg-blue-500', private_laundry: 'bg-purple-500',
-  linen_rental: 'bg-teal-500', consumables: 'bg-amber-500',
+  linen_rental: 'bg-teal-500', consumables: 'bg-amber-500', cleaning_products: 'bg-sky-500',
   maintenance: 'bg-orange-500', extras: 'bg-pink-500', other: 'bg-gray-500',
 };
 
@@ -49,8 +50,8 @@ const PortalReport = () => {
   if (loading) return <div className="text-center py-16 text-muted-foreground">Caricamento...</div>;
 
   const breakdown = report?.breakdown || {};
-  const breakdownEntries = Object.entries(breakdown).sort((a, b) => b[1].total - a[1].total);
-  const maxBreakdown = Math.max(...breakdownEntries.map(([_, v]) => v.total), 1);
+  const breakdownEntries = Object.entries(breakdown).sort((a, b) => b[1].count - a[1].count);
+  const maxBreakdown = Math.max(...breakdownEntries.map(([_, v]) => v.count), 1);
 
   return (
     <div className="space-y-6" data-testid="portal-report">
@@ -81,9 +82,9 @@ const PortalReport = () => {
         </Card>
         <Card className="border col-span-2 lg:col-span-1">
           <CardContent className="p-4">
-            <TrendingUp className="h-5 w-5 text-[#F24E75] mb-2" />
-            <p className="text-2xl font-bold">€{(report?.total || 0).toFixed(2)}</p>
-            <p className="text-xs text-muted-foreground">Totale mese</p>
+            <Truck className="h-5 w-5 text-[#F24E75] mb-2" />
+            <p className="text-2xl font-bold" data-testid="portal-report-deliveries">{report?.deliveries_count || 0}</p>
+            <p className="text-xs text-muted-foreground">Consegne completate</p>
           </CardContent>
         </Card>
       </div>
@@ -98,15 +99,14 @@ const PortalReport = () => {
                 <div key={cat}>
                   <div className="flex items-center justify-between text-sm mb-1">
                     <span className="font-medium">{CAT_LABELS[cat] || cat}</span>
-                    <span className="font-semibold">€{data.total.toFixed(2)}</span>
+                    <span className="font-semibold">{data.count} pz</span>
                   </div>
                   <div className="h-2 bg-muted rounded-full overflow-hidden">
                     <div
                       className={cn("h-full rounded-full transition-all duration-500", CAT_COLORS[cat] || 'bg-gray-500')}
-                      style={{ width: `${(data.total / maxBreakdown) * 100}%` }}
+                      style={{ width: `${(data.count / maxBreakdown) * 100}%` }}
                     />
                   </div>
-                  <p className="text-xs text-muted-foreground mt-0.5">{data.count} unita</p>
                 </div>
               ))}
             </div>
@@ -120,18 +120,18 @@ const PortalReport = () => {
           <CardContent className="p-4">
             <h3 className="text-sm font-semibold mb-3">Mesi precedenti</h3>
             <div className="space-y-2">
-              {report.history.filter(h => h.total > 0 || h.orders > 0).map(h => (
+              {report.history.filter(h => h.orders > 0 || h.cleanings > 0).map(h => (
                 <div key={h.month} className="flex items-center justify-between py-2 border-b border-border last:border-0">
                   <span className="text-sm capitalize">
                     {new Date(h.month + '-01T00:00:00').toLocaleDateString('it-IT', { month: 'long', year: 'numeric' })}
                   </span>
                   <div className="text-right">
-                    <span className="text-sm font-semibold">€{h.total.toFixed(2)}</span>
+                    <span className="text-sm font-semibold">{h.cleanings || 0} pulizie</span>
                     <span className="text-xs text-muted-foreground ml-2">({h.orders} ordini)</span>
                   </div>
                 </div>
               ))}
-              {report.history.every(h => h.total === 0 && h.orders === 0) && (
+              {report.history.every(h => !h.orders && !h.cleanings) && (
                 <p className="text-sm text-muted-foreground text-center py-4">Nessun dato storico</p>
               )}
             </div>

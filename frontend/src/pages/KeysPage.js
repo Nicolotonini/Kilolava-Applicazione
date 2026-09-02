@@ -8,8 +8,44 @@ import { Textarea } from '../components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import { OperationalDrawer } from '../components/kilolava/OperationalDrawer';
 import { toast } from 'sonner';
-import { KeyRound, Search, CheckCircle2, XCircle, MapPin, User, ArrowUpRight, Undo2, History } from 'lucide-react';
+import { KeyRound, Search, CheckCircle2, XCircle, MapPin, User, ArrowUpRight, Undo2, History, ExternalLink } from 'lucide-react';
 import { cn } from '../lib/utils';
+
+const fmtOut = (iso) => iso ? new Date(iso).toLocaleString('it-IT', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—';
+
+// Cruscotto chiavi fuori sede: KLV · copia · detentore · attività collegata (da GET /keys/out)
+const KeysOutList = ({ rows, onOpen }) => {
+  const navigate = useNavigate();
+  if (!rows || rows.length === 0) return null;
+  return (
+    <Card data-testid="keys-out-list">
+      <CardContent className="p-0 divide-y divide-border">
+        <div className="px-4 py-2.5 flex items-center gap-2">
+          <ArrowUpRight className="h-4 w-4 text-amber-600" />
+          <p className="text-sm font-semibold">Chiavi fuori sede <span className="text-muted-foreground font-normal">({rows.length})</span></p>
+        </div>
+        {rows.map((r) => (
+          <div key={`${r.structure_id}-${r.copy}`} className="px-4 py-2.5 flex items-center gap-3 flex-wrap text-sm" data-testid={`keys-out-${r.structure_id}-${r.copy}`}>
+            <button type="button" onClick={() => onOpen(r)} className="font-mono font-bold text-primary hover:underline" data-testid={`keys-out-klv-${r.structure_id}-${r.copy}`}>
+              {r.klv_code || '—'}
+            </button>
+            <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">Copia {r.copy}</span>
+            <span className="font-medium flex items-center gap-1"><User className="h-3.5 w-3.5 text-muted-foreground" />{r.holder_name || '—'}</span>
+            <span className="text-muted-foreground truncate max-w-[260px]">
+              {r.linked_task_label ? `${r.linked_task_label} · ` : ''}{r.structure_name}{r.address ? ` · ${r.address}` : ''}
+            </span>
+            <span className="ml-auto text-xs text-muted-foreground tabular-nums">Fuori dalle {fmtOut(r.out_since)}</span>
+            {r.linked_task_link && (
+              <Button variant="ghost" size="sm" className="h-7 px-2 gap-1 text-xs" onClick={() => navigate(r.linked_task_link)} data-testid={`keys-out-link-${r.structure_id}-${r.copy}`}>
+                <ExternalLink className="h-3.5 w-3.5" />{r.linked_task_type === 'cleaning' ? 'Pulizia' : 'Consegna'}
+              </Button>
+            )}
+          </div>
+        ))}
+      </CardContent>
+    </Card>
+  );
+};
 
 const KEY_DEFS = [
   { letter: 'A', label: 'Addette' },
@@ -32,15 +68,18 @@ const KeysPage = () => {
   const [holderId, setHolderId] = useState('');
   const [actionNote, setActionNote] = useState('');
   const [actionLoading, setActionLoading] = useState(false);
+  const [keysOut, setKeysOut] = useState([]);
 
   const fetchData = useCallback(() => {
     Promise.all([
       structuresApi.getAll(),
       api.get('/settings/keys').catch(() => ({ data: { box_capacity: 60 } })),
+      api.get('/keys/out').catch(() => ({ data: [] })),
     ])
-      .then(([sRes, cRes]) => {
+      .then(([sRes, cRes, oRes]) => {
         setStructures(sRes.data);
         setCapacity(cRes.data.box_capacity || 60);
+        setKeysOut(oRes.data || []);
       })
       .catch(e => console.error(e))
       .finally(() => setLoading(false));
@@ -137,6 +176,11 @@ const KeysPage = () => {
         <OutCard letter="B" label="Rider" count={boxOut('B')} testId="stat-out-b" />
         <OutCard letter="C" label="Emergenza" count={boxOut('C')} testId="stat-out-c" />
       </div>
+
+      <KeysOutList
+        rows={keysOut}
+        onOpen={(r) => { const s = structures.find(x => x.id === r.structure_id); if (s) { const c = copies(s).find(x => x.letter === r.copy); if (c) openDrawer({ stopPropagation() {} }, s, c); } }}
+      />
 
       {/* Search + filters */}
       <div className="flex flex-col sm:flex-row gap-3 sm:items-center">

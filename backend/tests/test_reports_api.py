@@ -230,7 +230,7 @@ class TestReportsPermissions:
         # Try with cleaner credentials (should fail)
         login_resp = requests.post(
             f"{BASE_URL}/api/auth/login",
-            json={"email": "maria.bianchi@kilolava.com", "password": "CleanPass123!"}
+            json={"email": "maria.bianchi@kilolava.com", "password": TEST_FIXTURE_PASSWORD}
         )
         
         if login_resp.status_code != 200:

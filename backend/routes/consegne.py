@@ -363,8 +363,6 @@ def create_consegne_router(get_current_user, is_ops_user):
     async def genera_fabbisogni(data: GenerateFabbisogniPayload, current_user: dict = Depends(get_current_user)):
         """FABBISOGNO PULIZIA - STOCK STRUTTURA = MATERIALE DA CONSEGNARE. Niente consegne inutili."""
         require_ops(current_user)
-        from services.planning import get_operative_settings
-        default_stagione = (await get_operative_settings())["stagione"]
         date = data.date
         tasks = await db.cleaning_tasks.find({"date": date, "status": {"$nin": ["cancelled", "completed"]}}, {"_id": 0}).to_list(300)
         kits = await db.kits.find({"domain": "noleggio", "active": {"$ne": False}}, {"_id": 0}).to_list(50)
@@ -389,6 +387,22 @@ def create_consegne_router(get_current_user, is_ops_user):
         no_service, config_incompleta = 0, 0
         warned_structures = set()
         now = now_iso()
+
+        async def warn_config(sid, s, missing):
+            """Configurazione Noleggio incompleta: warning al Responsabile, MAI kit inventati."""
+            nonlocal config_incompleta
+            if sid in warned_structures:
+                return
+            warned_structures.add(sid)
+            config_incompleta += 1
+            c = await db.clients.find_one({"id": s.get("client_id")}, {"_id": 0}) if s.get("client_id") else None
+            cname = _deps["get_client_display_name"](c) if c else "—"
+            await _deps["notify_ops_users"](
+                "Configurazione Noleggio incompleta",
+                f"Cliente {cname} · Struttura {s.get('klv_code') or ''} {s.get('name', '')}: {missing}. "
+                "Nessun fabbisogno generato: completa la configurazione Noleggio del Cliente.",
+                "warning", priority="high", entity_type="structure", entity_id=sid)
+
         for t in tasks:
             sid = t.get("structure_id")
             if not sid:
@@ -397,13 +411,19 @@ def create_consegne_router(get_current_user, is_ops_user):
                                                            "linea": 1, "services": 1})
             if not s:
                 continue
-            # Fase 5 hardening: fabbisogni noleggio SOLO se il servizio Lavanderia a Noleggio è attivo
+            # Fabbisogni noleggio SOLO se il servizio Lavanderia a Noleggio è attivo
             if "rental_laundry" not in (s.get("services") or []):
                 no_service += 1
                 continue
             cfg = await client_cfg(s.get("client_id"))
-            linea = (s.get("linea") or cfg.get("linea") or "living").lower()
-            stagione = (cfg.get("stagione") or default_stagione).lower()
+            # Regola definitiva: NESSUN fallback (no Living implicito, no stagione globale/calendario)
+            linea = (s.get("linea") or cfg.get("linea") or "").lower()
+            stagione = (cfg.get("stagione") or "").lower()
+            missing_fields = [lbl for lbl, ok in (("linea (living/dream)", linea in ("living", "dream")),
+                                                  ("stagione (estivo/invernale)", stagione in ("estivo", "invernale"))) if not ok]
+            if missing_fields:
+                await warn_config(sid, s, "campo mancante: " + ", ".join(missing_fields))
+                continue
             need_kits = []
             matr = (t.get("beds_double") or 0) + (t.get("beds_sofa") or 0)
             sing = t.get("beds_single") or 0
@@ -414,16 +434,11 @@ def create_consegne_router(get_current_user, is_ops_user):
                 if kit:
                     need_kits.append((kit, count))
                 else:
-                    # Fase 5 hardening: MAI kit inventati — warning "Configurazione Noleggio incompleta"
-                    if sid not in warned_structures:
-                        warned_structures.add(sid)
-                        config_incompleta += 1
-                        await _deps["notify_ops_users"](
-                            "Configurazione Noleggio incompleta",
-                            f"Struttura {s.get('name', '')}: nessun Kit Noleggio corrisponde a "
-                            f"letto '{bed_type}', linea '{linea}', stagione '{stagione}'. "
-                            "Configura i Kit prima di generare i fabbisogni.",
-                            "warning", priority="high", entity_type="structure", entity_id=sid)
+                    await warn_config(sid, s, f"nessun Kit Noleggio per letto '{bed_type}', linea '{linea}', stagione '{stagione}'")
+                    need_kits = None
+                    break
+            if need_kits is None:
+                continue
             if not need_kits:
                 senza += 1
                 continue
@@ -471,7 +486,7 @@ def create_consegne_router(get_current_user, is_ops_user):
                 created += 1
         return {"created": created, "updated": updated, "senza_fabbisogno": senza, "skipped_confermate": skipped,
                 "senza_servizio_noleggio": no_service, "configurazione_incompleta": config_incompleta,
-                "stagione": default_stagione, "pulizie_analizzate": len(tasks)}
+                "pulizie_analizzate": len(tasks)}
 
     # ---------- Organizzazione giro ----------
 
@@ -524,12 +539,15 @@ def create_consegne_router(get_current_user, is_ops_user):
         out = dict(t)
         out.pop("items", None)
         if t.get("structure_id"):
-            s = await db.structures.find_one({"id": t["structure_id"]}, {"_id": 0, "name": 1, "klv_code": 1, "latitude": 1, "longitude": 1})
+            s = await db.structures.find_one({"id": t["structure_id"]}, {"_id": 0, "name": 1, "klv_code": 1, "latitude": 1, "longitude": 1,
+                                                                        "access_info.kilolava_has_keys": 1, "access_info.key_boxes": 1})
             if s:
                 out["structure_name"] = out.get("structure_name") or s.get("name")
                 out["klv_code"] = out.get("klv_code") or s.get("klv_code")
                 if out.get("latitude") is None:
                     out["latitude"], out["longitude"] = s.get("latitude"), s.get("longitude")
+                ai = s.get("access_info") or {}
+                out["keys"] = {"has_keys": bool(ai.get("kilolava_has_keys")), "boxes": ai.get("key_boxes") or {}}
         if t.get("client_id") and not out.get("client_name"):
             c = await db.clients.find_one({"id": t["client_id"]}, {"_id": 0})
             out["client_name"] = _deps["get_client_display_name"](c) if c else None
@@ -923,7 +941,22 @@ def create_consegne_router(get_current_user, is_ops_user):
             "effective_items": data.effective_items or None,
             "ritiri": ritiri_saved or None,
             "movement_ids": (t.get("movement_ids") or []) + movement_ids, "updated_at": now}})
-        return {"ok": True, "movements": len(movement_ids), "richieste_residuali": len(residual_ids)}
+        out = {"ok": True, "movements": len(movement_ids), "richieste_residuali": len(residual_ids)}
+        # Chiavi: warning se il rider ha ancora una copia della struttura al completamento
+        if t.get("structure_id"):
+            s_keys = await db.structures.find_one({"id": t["structure_id"]}, {"_id": 0, "name": 1, "access_info.key_boxes": 1})
+            boxes = ((s_keys or {}).get("access_info") or {}).get("key_boxes") or {}
+            held = sorted([c for c, kb in boxes.items()
+                           if isinstance(kb, dict) and not kb.get("present", True) and kb.get("holder_user_id") == current_user["id"]])
+            if held:
+                out["key_warning"] = (f"Hai ancora la chiave {', '.join(held)} di {(s_keys or {}).get('name', 'questa struttura')}: "
+                                      "ricordati di riconsegnarla")
+                await _deps["notify_ops_users"](
+                    "Chiave non riconsegnata",
+                    f"{current_user.get('name', '')} ha completato la consegna a {(s_keys or {}).get('name', '')} "
+                    f"ma ha ancora la chiave {', '.join(held)}.",
+                    "warning", priority="high", entity_type="logistics_task", entity_id=fermata_id)
+        return out
 
     # ---------- Rider ----------
 

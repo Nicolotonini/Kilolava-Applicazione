@@ -14,6 +14,7 @@ import {
   Package, MoreHorizontal, Image, ChevronRight, MessageSquare, X
 } from 'lucide-react';
 import { cn } from '../lib/utils';
+import { RoleAreaSwitcher } from '../components/kilolava/RoleAreaSwitcher';
 import { QuickActions } from '../components/kilolava/QuickActions';
 import { LocationBanner, useLocationState, LocationRequiredDialog } from '../components/LocationBanner';
 
@@ -336,6 +337,7 @@ const MaintenanceView = () => {
       <LocationBanner sessionType="intervento" startLabel="Inizia attività" stopLabel="Fine attività" />
 
       <div className="px-4 py-3 space-y-4 pb-8">
+        <RoleAreaSwitcher />
         {/* Summary */}
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-semibold">I miei interventi</h2>

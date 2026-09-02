@@ -23,6 +23,7 @@ admin_tok = requests.post(f"{API}/auth/login", json={
     "username": TEST_ADMIN_USERNAME, "password": TEST_ADMIN_PASSWORD}).json()["access_token"]
 A = {"Authorization": f"Bearer {admin_tok}"}
 
+_pre_notif_ids = set(x.get("id") for x in mdb.notifications.find({}, {"_id": 0, "id": 1}))
 C = {"clients": [], "structures": [], "products": [], "users": [], "kits": [], "fermate": [], "fabbisogni": []}
 
 
@@ -107,7 +108,11 @@ try:
     check("Ritiri salvati sulla fermata (tracciati sul giro)",
           task.get("ritiri") and task["ritiri"][0]["qty"] == 2 and task["ritiri"][0].get("movement_id"))
     fab = mdb.fabbisogni.find_one({"id": ric["id"]})
-    check("Fabbisogno evaso", fab["status"] == "evasa")
+    # consegna 3 su 4 pianificati = consegna parziale (regola canonica: residuo in nuova richiesta)
+    check("Fabbisogno parzialmente evaso (3/4) + residuo", fab["status"] == "parzialmente_evasa"
+          and bool(mdb.fabbisogni.find_one({"parent_richiesta_id": ric["id"]})))
+    for r_ in mdb.fabbisogni.find({"parent_richiesta_id": ric["id"]}, {"id": 1}):
+        C["fabbisogni"].append(r_["id"])
 
     # dettaglio fermata (ops) espone i movimenti del giro
     det = requests.get(f"{API}/consegne/fermate/{fer['id']}", headers=A).json()
@@ -126,10 +131,13 @@ finally:
         requests.delete(f"{API}/magazzino/catalog/noleggio/{pid}", headers=A)
     for uid in C["users"]:
         requests.delete(f"{API}/users/{uid}", headers=A)
+    mdb.notifications.delete_many({"id": {"$nin": list(_pre_notif_ids)}})
     for sid in C["structures"]:
-        requests.delete(f"{API}/structures/{sid}", headers=A)
+        if requests.delete(f"{API}/structures/{sid}", headers=A).status_code != 200:
+            mdb.structures.delete_one({"id": sid})  # fixture TESTGATE: rimozione fisica
     for cid in C["clients"]:
-        requests.delete(f"{API}/clients/{cid}", headers=A)
+        if requests.delete(f"{API}/clients/{cid}", headers=A).status_code != 200:
+            mdb.clients.delete_one({"id": cid})
     print("cleanup done")
 
 fails = [n for n, ok, _ in results if not ok]

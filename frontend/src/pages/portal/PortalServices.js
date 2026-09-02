@@ -121,7 +121,7 @@ const PortalServices = () => {
                         <div className="flex items-center gap-2 flex-shrink-0">
                           {svc.items_count && <span className="text-xs text-muted-foreground">{svc.items_count} art.</span>}
                           <span className={cn("text-xs px-2 py-0.5 rounded-full font-medium", STATUS_BADGE[svc.status] || 'bg-muted text-muted-foreground')}>
-                            {svc.status === 'completed' ? 'Completato' : svc.status === 'in_progress' ? 'In corso' : svc.status}
+                            {({ completed: 'Completata', in_progress: 'In corso', assigned: 'Programmata', unassigned: 'Programmata', issue_reported: 'Da verificare', needs_review: 'Da verificare', cancelled: 'Annullata' })[svc.status] || svc.status}
                           </span>
                         </div>
                       </CardContent>

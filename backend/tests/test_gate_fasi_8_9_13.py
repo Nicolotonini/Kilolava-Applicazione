@@ -23,6 +23,7 @@ def check(name, ok, extra=""):
 admin_tok = requests.post(f"{API}/auth/login", json={
     "username": TEST_ADMIN_USERNAME, "password": TEST_ADMIN_PASSWORD}).json()["access_token"]
 A = {"Authorization": f"Bearer {admin_tok}"}
+_pre_notif_ids = set(x.get("id") for x in mdb.notifications.find({}, {"_id": 0, "id": 1}))
 C = {"clients": [], "structures": [], "products": [], "kits": [], "events": [], "tasks": [], "fabb": [], "actions": [], "segn": [], "issues": []}
 
 try:
@@ -33,7 +34,7 @@ try:
     C["clients"].append(c["id"])
     s = requests.post(f"{API}/structures", headers=A, json={
         "client_id": c["id"], "name": "TESTGATE8 Casa", "structure_type": "apartment",
-        "check_in_time": "15:00", "check_out_time": "10:00",
+        "check_in_time": "15:00", "check_out_time": "10:00", "services": ["cleaning", "rental_laundry"],
         "bed_config": {"beds_double": 1, "beds_single": 1, "sofa_beds": 0}}).json()
     C["structures"].append(s["id"])
     # config noleggio CLIENTE: stagione dal config, MAI dal calendario
@@ -58,7 +59,8 @@ try:
     g = requests.post(f"{API}/cleaning-tasks/genera-da-soggiorni", headers=A, json={"date": today})
     check("Genera pulizie da soggiorni = 200", g.status_code == 200, g.text[:140])
     gd = g.json()
-    check("1 pulizia creata dal checkout", gd.get("created") == 1, str(gd))
+    # la pulizia nasce già alla creazione del soggiorno (reconcile automatico): la riconciliazione manuale la trova 'ok'
+    check("1 pulizia creata dal checkout", gd.get("created", 0) + gd.get("ok", 0) + gd.get("updated", 0) == 1, str(gd))
     ev = mdb.events.find_one({"id": b1["id"]})
     task = mdb.cleaning_tasks.find_one({"id": ev.get("cleaning_task_id")}) if ev.get("cleaning_task_id") else None
     check("Evento collegato alla pulizia (cleaning_task_id)", bool(task))
@@ -148,7 +150,11 @@ finally:
     for tid in set(C["tasks"]):
         mdb.cleaning_tasks.delete_one({"id": tid})
     for eid in C["events"]:
-        requests.delete(f"{API}/events/{eid}", headers=A)
+        requests.delete(f"{API}/events/{eid}", headers=A)  # soft cancel (storico conservato)
+    # fixture TESTGATE: rimozione fisica dello storico di test prima di eliminare struttura/cliente
+    mdb.events.delete_many({"structure_id": {"$in": C["structures"]}})
+    mdb.cleaning_tasks.delete_many({"structure_id": {"$in": C["structures"]}})
+    mdb.notifications.delete_many({"id": {"$nin": list(_pre_notif_ids)}})
     for pid in C["products"]:
         mdb.warehouse_movements.delete_many({"product_id": pid})
         mdb.stock_levels.delete_many({"product_id": pid})

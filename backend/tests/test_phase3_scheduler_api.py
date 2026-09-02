@@ -158,7 +158,7 @@ class TestSchedulerPermissions:
         # Create a cleaner user via admin
         uid = uuid.uuid4().hex[:8]
         email = f"test_cleaner_{uid}@kilolava.com"
-        password = "CleanerPass123!"
+        password = TEST_FIXTURE_PASSWORD
         # Try POST /api/users
         payload = {
             "email": email,

@@ -72,7 +72,12 @@ try:
     rd = requests.delete(f"{API}/units/{u['id']}", headers=A)
     check("DELETE unità con evento = 400 'Prenotazioni/Eventi'",
           rd.status_code == 400 and "Eventi" in rd.json()["detail"], rd.text[:160])
-    requests.delete(f"{API}/events/{ev_id}", headers=A)
+    rdev = requests.delete(f"{API}/events/{ev_id}", headers=A)
+    check("DELETE soggiorno = soft cancel (storico conservato)", rdev.status_code == 200
+          and (mdb.events.find_one({"id": ev_id}, {"_id": 0, "status": 1}) or {}).get("status") == "cancelled")
+    rd = requests.delete(f"{API}/units/{u['id']}", headers=A)
+    check("DELETE unità con soggiorno annullato = 400 (lo storico resta)", rd.status_code == 400)
+    mdb.events.delete_one({"id": ev_id})  # cleanup fixture TESTFIX (solo nel test)
     cleanup["events"].remove(ev_id)
     rd = requests.delete(f"{API}/units/{u['id']}", headers=A)
     check("DELETE unità senza storico = 200", rd.status_code == 200)

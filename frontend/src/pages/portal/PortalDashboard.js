@@ -10,6 +10,7 @@ import {
   ArrowRight, Check, Clock, AlertTriangle
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
+import { ORDER_STATUS_META } from './PortalHistory';
 
 const STATUS_COLORS = {
   scheduled: 'text-blue-600', pending: 'text-blue-600', assigned: 'text-blue-600',
@@ -110,7 +111,7 @@ const PortalDashboard = () => {
         <StatCard icon={CalendarDays} label="Pulizie completate" value={data.completed_cleanings_count} sub="questo mese" color="text-green-600" />
         <StatCard icon={Truck} label="Consegne in arrivo" value={data.upcoming_deliveries?.length || 0} sub="prossime" color="text-blue-600" />
         <StatCard icon={ShoppingCart} label="Ordini recenti" value={data.recent_orders?.length || 0} sub="ultimi" color="text-amber-600" />
-        <StatCard icon={BarChart3} label="Totale mese" value={`€${(data.month_total || 0).toFixed(2)}`} sub="stimato" color="text-[#F24E75]" />
+        <StatCard icon={BarChart3} label="Ordini del mese" value={data.month_orders_count || 0} sub="questo mese" color="text-[#F24E75]" testId="portal-month-orders" />
       </div>
 
       {/* Quick Actions */}
@@ -192,12 +193,11 @@ const PortalDashboard = () => {
                     onClick={() => navigate(`/portal/orders/${o.id}`)}>
                     <div>
                       <p className="text-sm font-medium">{o.order_number}</p>
-                      <p className="text-xs text-muted-foreground">{new Date(o.created_at).toLocaleDateString('it-IT')} - {o.items?.length} articoli</p>
+                      <p className="text-xs text-muted-foreground">{new Date(o.created_at).toLocaleDateString('it-IT')} · {o.structure_name || ''} · {o.items?.length || 0} articoli</p>
                     </div>
-                    <div className="text-right">
-                      <p className="text-sm font-semibold">€{(o.total || 0).toFixed(2)}</p>
-                      <span className={cn("text-xs font-medium", STATUS_COLORS[o.status] || 'text-muted-foreground')}>{o.status}</span>
-                    </div>
+                    <span className={cn("text-xs px-2 py-0.5 rounded-full font-medium", (ORDER_STATUS_META[o.status] || {}).cls || 'bg-muted text-muted-foreground')} data-testid={`portal-recent-order-status-${o.id}`}>
+                      {(ORDER_STATUS_META[o.status] || {}).label || o.status}
+                    </span>
                   </div>
                 ))}
               </div>
@@ -209,11 +209,11 @@ const PortalDashboard = () => {
   );
 };
 
-const StatCard = ({ icon: Icon, label, value, sub, color }) => (
-  <Card className="border">
+const StatCard = ({ icon: Icon, label, value, sub, color, testId }) => (
+  <Card className="border" data-testid={testId}>
     <CardContent className="p-4">
       <Icon className={cn("h-5 w-5 mb-2", color)} />
-      <p className="text-2xl font-bold">{value}</p>
+      <p className="text-2xl font-bold" data-testid={testId ? `${testId}-value` : undefined}>{value}</p>
       <p className="text-xs text-muted-foreground">{label}</p>
     </CardContent>
   </Card>

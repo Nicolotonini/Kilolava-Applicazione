@@ -70,6 +70,8 @@ import { useTheme } from '../contexts/ThemeContext';
 import { StatusBadge } from '../components/kilolava/badges';
 import { FERMATA_STATUS, KIND_TONES } from './consegne/shared';
 import { LocationBanner, useLocationState, LocationRequiredDialog } from '../components/LocationBanner';
+import { KeysPanel } from '../components/kilolava/KeysPanel';
+import { RoleAreaSwitcher } from '../components/kilolava/RoleAreaSwitcher';
 
 const STATUS_BORDER = {
   assigned: 'border-sky-400 bg-sky-50 dark:bg-sky-950/30',
@@ -179,12 +181,13 @@ const RiderViewPage = () => {
       });
       const ritiri = Object.entries(ritiriQty).filter(([, q]) => q > 0)
         .map(([product_id, qty]) => ({ product_id, qty, domain: 'noleggio' }));
-      await api.post(`/consegne/fermate/${completing.id}/completa`, {
+      const res = await api.post(`/consegne/fermate/${completing.id}/completa`, {
         note: noteText || null,
         effective_items: effective_items.length ? effective_items : null,
         ritiri: ritiri.length ? ritiri : null,
       });
       toast.success('Fermata completata! Prossima consegna aggiornata');
+      if (res.data?.key_warning) toast.warning(res.data.key_warning, { duration: 8000 });
       setNoteText(''); setExpanded(null); setNavRoute(null); setCompleting(null);
       fetchFermate(); fetchGiro();
     } catch (e) { toast.error(e.response?.data?.detail || 'Errore'); }
@@ -284,6 +287,7 @@ const RiderViewPage = () => {
       <LocationRequiredDialog open={locDialog} onClose={() => setLocDialog(false)} sessionType="giro" />
 
       <div className="px-4 py-3 space-y-4 pb-20">
+        <RoleAreaSwitcher />
         <div className="flex items-center justify-between">
           <Button variant="ghost" size="icon" className="h-9 w-9" onClick={() => shiftDate(-1)} data-testid="rider-day-prev">
             <ChevronLeft className="h-5 w-5" />
@@ -425,6 +429,18 @@ const RiderViewPage = () => {
                               <KeyRound className="h-3.5 w-3.5 mt-0.5 flex-shrink-0 text-muted-foreground" />{f.access_details}
                             </p>
                           </div>
+                        )}
+                        {f.keys?.has_keys && f.structure_id && (
+                          <KeysPanel
+                            compact
+                            structureId={f.structure_id}
+                            klvCode={f.klv_code}
+                            boxes={f.keys.boxes}
+                            hasKeys
+                            linkedTaskId={f.id}
+                            linkedTaskType="delivery"
+                            onChanged={fetchFermate}
+                          />
                         )}
                         {f.notes && (
                           <div>

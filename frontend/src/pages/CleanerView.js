@@ -14,6 +14,8 @@ import {
 import { cn } from '../lib/utils';
 import { toast } from 'sonner';
 import { LocationBanner, useLocationState, LocationRequiredDialog } from '../components/LocationBanner';
+import { KeysPanel } from '../components/kilolava/KeysPanel';
+import { RoleAreaSwitcher } from '../components/kilolava/RoleAreaSwitcher';
 
 const STATUS_META = {
   unassigned: { label: 'Da fare', cls: 'bg-sky-100 text-sky-700' },
@@ -73,6 +75,7 @@ export default function CleanerView() {
         <h1 className="text-xl font-heading font-semibold">Ciao {user?.name?.split(' ')[0] || ''}</h1>
         <p className="text-sm text-muted-foreground">Le mie pulizie di oggi</p>
       </div>
+      <RoleAreaSwitcher />
       {tasks === null ? (
         <p className="text-center py-10 text-muted-foreground">Caricamento...</p>
       ) : today.length === 0 ? (
@@ -133,14 +136,17 @@ function TaskWorkScreen({ taskId, onBack }) {
   const locState = useLocationState();
   const [locDialog, setLocDialog] = useState(false);
 
+  const reloadOps = useCallback(() => {
+    api.get(`/cleaning-tasks/${taskId}/operational`).then(r => setOps(r.data)).catch(() => setOps({}));
+  }, [taskId]);
   const reload = useCallback(() => {
     api.get(`/cleaning-tasks/${taskId}`).then(r => setTask(r.data)).catch(() => {});
   }, [taskId]);
 
   useEffect(() => {
     reload();
-    api.get(`/cleaning-tasks/${taskId}/operational`).then(r => setOps(r.data)).catch(() => setOps({}));
-  }, [taskId, reload]);
+    reloadOps();
+  }, [taskId, reload, reloadOps]);
 
   if (!task) return <p className="text-center py-10 text-muted-foreground">Caricamento...</p>;
 
@@ -206,6 +212,16 @@ function TaskWorkScreen({ taskId, onBack }) {
                 </div>
                 <MediaGallery items={ops?.media?.enter || []} empty="Nessuna istruzione caricata" />
               </Section>
+
+              <KeysPanel
+                structureId={task.structure_id}
+                klvCode={s?.klv_code}
+                boxes={s?.key_boxes}
+                hasKeys={!!s?.kilolava_has_keys}
+                linkedTaskId={task.id}
+                linkedTaskType="cleaning"
+                onChanged={reloadOps}
+              />
             </>
           )}
 
@@ -516,8 +532,9 @@ function CompleteButton({ task, hasInitial, hasFinal, hasWarehouse, onDone }) {
   const complete = async () => {
     setBusy(true);
     try {
-      await api.post(`/cleaning-tasks/${task.id}/complete`);
+      const res = await api.post(`/cleaning-tasks/${task.id}/complete`);
       toast.success('Pulizia completata!');
+      if (res.data?.key_warning) toast.warning(res.data.key_warning, { duration: 8000 });
       onDone && onDone();
     } catch (e) {
       toast.error(e.response?.data?.detail || 'Impossibile completare');

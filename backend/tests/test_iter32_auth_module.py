@@ -121,7 +121,7 @@ class TestLogin:
 
     def test_login_wrong_password(self, s):
         r = s.post(f"{API}/auth/login", json={
-            "username": ADMIN_USER, "password": "WrongPass000!",
+            "username": ADMIN_USER, "password": TEST_FIXTURE_PASSWORD + "-wrong",
             "device_id": ADMIN_DEV})
         assert r.status_code == 401
 
@@ -155,7 +155,7 @@ class TestCreateUser:
 
     def test_create_with_password_active(self, admin_h, s):
         u = _create_user(admin_h, s, suffix=f"Pwd{uuid.uuid4().hex[:6]}",
-                         role="cleaner", password="Test1234!")
+                         role="cleaner", password=TEST_FIXTURE_PASSWORD)
         assert u["activation_status"] == "active"
         assert "activation_code" not in u or not u.get("activation_code")
 
@@ -173,7 +173,7 @@ class TestActivation:
         u = _create_user(admin_h, s, suffix=f"Act{uuid.uuid4().hex[:6]}", role="cleaner")
         r = s.post(f"{API}/auth/activate", json={
             "username": u["login_username"], "code": "WRON-GXXX",
-            "new_password": "NewPassw0rd!", "pin": "123456", "device_id": "dev-act-bad"})
+            "new_password": TEST_FIXTURE_PASSWORD + "-new", "pin": "123456", "device_id": "dev-act-bad"})
         assert r.status_code == 401
 
     def test_activate_success_then_reuse_fails(self, admin_h, s):
@@ -184,7 +184,7 @@ class TestActivation:
 
         r = s.post(f"{API}/auth/activate", json={
             "username": username, "code": code,
-            "new_password": "Activ1234!", "pin": "234567",
+            "new_password": TEST_FIXTURE_PASSWORD, "pin": "234567",
             "device_id": dev, "device_name": "act-device"})
         assert r.status_code == 200, r.text
         data = r.json()
@@ -194,14 +194,14 @@ class TestActivation:
 
         # Login now works with new password
         r2 = s.post(f"{API}/auth/login", json={
-            "username": username, "password": "Activ1234!",
+            "username": username, "password": TEST_FIXTURE_PASSWORD,
             "device_id": dev})
         assert r2.status_code == 200
 
         # Second use of same code must fail (401)
         r3 = s.post(f"{API}/auth/activate", json={
             "username": username, "code": code,
-            "new_password": "Activ1234!", "pin": "234567",
+            "new_password": TEST_FIXTURE_PASSWORD, "pin": "234567",
             "device_id": dev})
         assert r3.status_code == 401
 
@@ -209,7 +209,7 @@ class TestActivation:
         u = _create_user(admin_h, s, suffix=f"ActPin{uuid.uuid4().hex[:6]}", role="cleaner")
         r = s.post(f"{API}/auth/activate", json={
             "username": u["login_username"], "code": u["activation_code"],
-            "new_password": "GoodPass123!", "pin": "12", "device_id": "dev-pin-x"})
+            "new_password": TEST_FIXTURE_PASSWORD, "pin": "12", "device_id": "dev-pin-x"})
         # PIN validated only AFTER code check, so with valid code we hit 400
         assert r.status_code == 400
 
@@ -223,11 +223,11 @@ class TestPinLogin:
         dev = f"dev-pin-{uuid.uuid4().hex[:8]}"
         r = s.post(f"{API}/auth/activate", json={
             "username": u["login_username"], "code": u["activation_code"],
-            "new_password": "PinPass123!", "pin": "654321",
+            "new_password": TEST_FIXTURE_PASSWORD, "pin": "654321",
             "device_id": dev, "device_name": "pin-device"})
         assert r.status_code == 200
         return {"username": u["login_username"], "pin": "654321", "device_id": dev,
-                "password": "PinPass123!", "user_id": u["id"]}
+                "password": TEST_FIXTURE_PASSWORD, "user_id": u["id"]}
 
     def test_pin_login_ok(self, s, activated):
         r = s.post(f"{API}/auth/pin-login", json={
@@ -270,10 +270,10 @@ class TestPinLogin:
 class TestSessionsDevices:
     def test_revoke_sessions_invalidates_token(self, admin_h, s):
         u = _create_user(admin_h, s, suffix=f"Sess{uuid.uuid4().hex[:6]}",
-                         role="cleaner", password="SessPass1!")
+                         role="cleaner", password=TEST_FIXTURE_PASSWORD)
         dev = f"dev-sess-{uuid.uuid4().hex[:8]}"
         r = s.post(f"{API}/auth/login", json={
-            "username": u["login_username"], "password": "SessPass1!",
+            "username": u["login_username"], "password": TEST_FIXTURE_PASSWORD,
             "device_id": dev})
         assert r.status_code == 200
         tok = r.json()["access_token"]
@@ -291,10 +291,10 @@ class TestSessionsDevices:
 
     def test_list_and_delete_devices(self, admin_h, s):
         u = _create_user(admin_h, s, suffix=f"Dev{uuid.uuid4().hex[:6]}",
-                         role="cleaner", password="DevPass1!")
+                         role="cleaner", password=TEST_FIXTURE_PASSWORD)
         dev = f"dev-list-{uuid.uuid4().hex[:8]}"
         r = s.post(f"{API}/auth/login", json={
-            "username": u["login_username"], "password": "DevPass1!",
+            "username": u["login_username"], "password": TEST_FIXTURE_PASSWORD,
             "device_id": dev, "device_name": "list-dev"})
         assert r.status_code == 200
         # GET devices
@@ -318,7 +318,7 @@ class TestSessionsDevices:
 class TestForceReactivation:
     def test_force_reactivation_flow(self, admin_h, s):
         u = _create_user(admin_h, s, suffix=f"FR{uuid.uuid4().hex[:6]}",
-                         role="cleaner", password="ForcePass1!")
+                         role="cleaner", password=TEST_FIXTURE_PASSWORD)
         # Force reactivation
         r = s.post(f"{API}/users/{u['id']}/force-reactivation", headers=admin_h)
         assert r.status_code == 200, r.text
@@ -327,7 +327,7 @@ class TestForceReactivation:
         assert re.fullmatch(r"[A-Z2-9]{4}-[A-Z2-9]{4}", data["activation_code"])
         # Login with old password -> 403 pending activation
         rl = s.post(f"{API}/auth/login", json={
-            "username": u["login_username"], "password": "ForcePass1!",
+            "username": u["login_username"], "password": TEST_FIXTURE_PASSWORD,
             "device_id": "x"})
         assert rl.status_code == 403
         assert "attivar" in rl.json().get("detail", "").lower()
@@ -343,15 +343,15 @@ class TestForceReactivation:
 class TestResetPassword:
     def test_reset_revokes_sessions(self, admin_h, s):
         u = _create_user(admin_h, s, suffix=f"RP{uuid.uuid4().hex[:6]}",
-                         role="cleaner", password="OldPass123!")
+                         role="cleaner", password=TEST_FIXTURE_PASSWORD)
         dev = f"dev-rp-{uuid.uuid4().hex[:8]}"
         r = s.post(f"{API}/auth/login", json={
-            "username": u["login_username"], "password": "OldPass123!",
+            "username": u["login_username"], "password": TEST_FIXTURE_PASSWORD,
             "device_id": dev})
         tok = r.json()["access_token"]
         # Reset password
         rp = s.post(f"{API}/users/{u['id']}/reset-password", headers=admin_h,
-                    json={"new_password": "NewPass456!"})
+                    json={"new_password": TEST_FIXTURE_PASSWORD + "-new"})
         assert rp.status_code == 200
         # Old token invalid
         me = s.get(f"{API}/auth/me", headers={"Authorization": f"Bearer {tok}"})
@@ -363,7 +363,7 @@ class TestResetPassword:
 class TestAdminData:
     def test_admin_full_access_incl_iban(self, admin_h, s):
         u = _create_user(admin_h, s, suffix=f"AD{uuid.uuid4().hex[:6]}",
-                         role="cleaner", password="AdPass123!")
+                         role="cleaner", password=TEST_FIXTURE_PASSWORD)
         # Update
         put = s.put(f"{API}/users/{u['id']}/admin-data", headers=admin_h, json={
             "tax_code": "RSSMRA80A01H501U", "iban": "IT60X0542811101000000123456",
@@ -394,15 +394,15 @@ class TestAdminData:
 
     def test_ops_manager_iban_hidden_and_put_403(self, admin_h, s):
         ops = _create_user(admin_h, s, suffix=f"Ops{uuid.uuid4().hex[:6]}",
-                           role="operations_manager", password="OpsPass1!")
+                           role="operations_manager", password=TEST_FIXTURE_PASSWORD)
         target = _create_user(admin_h, s, suffix=f"Tgt{uuid.uuid4().hex[:6]}",
-                              role="cleaner", password="TgtPass1!")
+                              role="cleaner", password=TEST_FIXTURE_PASSWORD)
         # Populate admin_data as admin
         s.put(f"{API}/users/{target['id']}/admin-data", headers=admin_h, json={
             "tax_code": "AAABBB80A01H501U", "iban": "IT99Z1234"})
         # Login as ops
         rl = s.post(f"{API}/auth/login", json={
-            "username": ops["login_username"], "password": "OpsPass1!",
+            "username": ops["login_username"], "password": TEST_FIXTURE_PASSWORD,
             "device_id": "dev-ops"})
         assert rl.status_code == 200
         ops_h = {"Authorization": f"Bearer {rl.json()['access_token']}"}
@@ -421,9 +421,9 @@ class TestAdminData:
 
     def test_cleaner_admin_data_403(self, admin_h, s):
         cl = _create_user(admin_h, s, suffix=f"Cl{uuid.uuid4().hex[:6]}",
-                          role="cleaner", password="ClPass1!")
+                          role="cleaner", password=TEST_FIXTURE_PASSWORD)
         rl = s.post(f"{API}/auth/login", json={
-            "username": cl["login_username"], "password": "ClPass1!",
+            "username": cl["login_username"], "password": TEST_FIXTURE_PASSWORD,
             "device_id": "dev-cl"})
         cl_h = {"Authorization": f"Bearer {rl.json()['access_token']}"}
         me = rl.json()["user"]
@@ -436,7 +436,7 @@ class TestAdminData:
 class TestAdminDataStatus:
     def test_dipendente_missing_da_completare(self, admin_h, s):
         u = _create_user(admin_h, s, suffix=f"Ind{uuid.uuid4().hex[:6]}",
-                         role="cleaner", password="StPass1!", tipo_rapporto="dipendente")
+                         role="cleaner", password=TEST_FIXTURE_PASSWORD, tipo_rapporto="dipendente")
         one = s.get(f"{API}/users/{u['id']}", headers=admin_h).json()
         assert one["admin_data_status"] == "da_completare"
         s.put(f"{API}/users/{u['id']}/admin-data", headers=admin_h,
@@ -446,7 +446,7 @@ class TestAdminDataStatus:
 
     def test_piva_requires_vat(self, admin_h, s):
         u = _create_user(admin_h, s, suffix=f"PIVA{uuid.uuid4().hex[:6]}",
-                         role="cleaner", password="PVPass1!", tipo_rapporto="collaboratore_piva")
+                         role="cleaner", password=TEST_FIXTURE_PASSWORD, tipo_rapporto="collaboratore_piva")
         s.put(f"{API}/users/{u['id']}/admin-data", headers=admin_h,
               json={"tax_code": "AAA", "iban": "IT01"})
         one = s.get(f"{API}/users/{u['id']}", headers=admin_h).json()
@@ -469,7 +469,7 @@ class TestContract:
 
     def test_apprendistato_stored(self, admin_h, s):
         u = _create_user(admin_h, s, suffix=f"App{uuid.uuid4().hex[:6]}", role="cleaner",
-                         password="AppPass1!", extra={"contract": {
+                         password=TEST_FIXTURE_PASSWORD, extra={"contract": {
                              "type": "apprendistato", "weekly_hours": 30,
                              "transformation_date": "2027-01-01",
                              "apprenticeship_end": "2028-01-01"}})
@@ -484,7 +484,7 @@ class TestContract:
         from datetime import date, timedelta
         end = (date.today() - timedelta(days=1)).isoformat()
         u = _create_user(admin_h, s, suffix=f"Exp{uuid.uuid4().hex[:6]}", role="cleaner",
-                         password="ExpPass1!", extra={"contract": {"type": "determinato", "end_date": end}})
+                         password=TEST_FIXTURE_PASSWORD, extra={"contract": {"type": "determinato", "end_date": end}})
         one = s.get(f"{API}/users/{u['id']}", headers=admin_h).json()
         assert one["contract_status"] == "scaduto"
 
@@ -500,7 +500,7 @@ class TestContract:
 class TestExcludedPlanning:
     def test_cleaner_excluded_not_in_cleaning_lists(self, admin_h, s):
         u = _create_user(admin_h, s, suffix=f"ExCl{uuid.uuid4().hex[:6]}",
-                         role="cleaner", password="ExPass1!",
+                         role="cleaner", password=TEST_FIXTURE_PASSWORD,
                          extra={"excluded_from_planning": True})
         lst = s.get(f"{API}/cleaning-tasks/cleaners", headers=admin_h).json()
         ids = [c.get("id") for c in (lst if isinstance(lst, list) else lst.get("cleaners", []))]
@@ -513,7 +513,7 @@ class TestExcludedPlanning:
 
     def test_rider_excluded_not_in_riders(self, admin_h, s):
         u = _create_user(admin_h, s, suffix=f"ExRd{uuid.uuid4().hex[:6]}",
-                         role="rider", password="ExRPass1!",
+                         role="rider", password=TEST_FIXTURE_PASSWORD,
                          extra={"excluded_from_planning": True})
         lst = s.get(f"{API}/logistics/riders", headers=admin_h).json()
         rows = lst if isinstance(lst, list) else lst.get("riders", [])
@@ -546,14 +546,14 @@ class TestRegression:
         assert actual == just_ordered
 
     def test_login_username_uniqueness_on_put(self, admin_h, s):
-        u1 = _create_user(admin_h, s, suffix=f"LU1{uuid.uuid4().hex[:6]}", role="cleaner", password="LuPass1!")
-        u2 = _create_user(admin_h, s, suffix=f"LU2{uuid.uuid4().hex[:6]}", role="cleaner", password="LuPass1!")
+        u1 = _create_user(admin_h, s, suffix=f"LU1{uuid.uuid4().hex[:6]}", role="cleaner", password=TEST_FIXTURE_PASSWORD)
+        u2 = _create_user(admin_h, s, suffix=f"LU2{uuid.uuid4().hex[:6]}", role="cleaner", password=TEST_FIXTURE_PASSWORD)
         r = s.put(f"{API}/users/{u2['id']}", headers=admin_h,
                   json={"login_username": u1["login_username"]})
         assert r.status_code == 400
 
     def test_login_username_invalid_format(self, admin_h, s):
-        u = _create_user(admin_h, s, suffix=f"LUF{uuid.uuid4().hex[:6]}", role="cleaner", password="LuPass1!")
+        u = _create_user(admin_h, s, suffix=f"LUF{uuid.uuid4().hex[:6]}", role="cleaner", password=TEST_FIXTURE_PASSWORD)
         r = s.put(f"{API}/users/{u['id']}", headers=admin_h,
                   json={"login_username": "not-an-email"})
         assert r.status_code == 400

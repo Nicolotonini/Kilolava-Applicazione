@@ -14,7 +14,7 @@ BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', '').rstrip('/')
 MANAGER_EMAIL = "test_user@kilolava.com"
 MANAGER_PASSWORD = TEST_ADMIN_PASSWORD
 CLIENT_EMAIL = "mario.rossi@cliente.it"
-CLIENT_PASSWORD = "Client123!"
+CLIENT_PASSWORD = TEST_FIXTURE_PASSWORD
 CLIENT_ID = "eab85d0f-45c0-458f-ab88-08c442810aff"
 
 
@@ -73,7 +73,7 @@ class TestClientAccountManagement:
         """POST /api/clients/{id}/create-account requires manager role"""
         # Without auth
         response = requests.post(f"{BASE_URL}/api/clients/{CLIENT_ID}/create-account", json={
-            "email": "test@test.com", "password": "Test123!", "name": "Test"
+            "email": "test@test.com", "password": TEST_FIXTURE_PASSWORD, "name": "Test"
         })
         assert response.status_code in [401, 403]
         print("Create account requires auth - PASS")
@@ -83,7 +83,7 @@ class TestClientAccountManagement:
         headers = {"Authorization": f"Bearer {manager_token}"}
         # Try to create with existing email
         response = requests.post(f"{BASE_URL}/api/clients/{CLIENT_ID}/create-account", json={
-            "email": CLIENT_EMAIL, "password": "Test123!", "name": "Test"
+            "email": CLIENT_EMAIL, "password": TEST_FIXTURE_PASSWORD, "name": "Test"
         }, headers=headers)
         # Should fail - email already exists
         assert response.status_code == 400
@@ -93,7 +93,7 @@ class TestClientAccountManagement:
         """POST /api/clients/{id}/create-account rejects if client already has portal account"""
         headers = {"Authorization": f"Bearer {manager_token}"}
         response = requests.post(f"{BASE_URL}/api/clients/{CLIENT_ID}/create-account", json={
-            "email": "new_portal@test.com", "password": "Test123!", "name": "New Portal"
+            "email": "new_portal@test.com", "password": TEST_FIXTURE_PASSWORD, "name": "New Portal"
         }, headers=headers)
         # Should fail - client already has portal account
         assert response.status_code == 400

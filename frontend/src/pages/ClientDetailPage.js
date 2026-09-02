@@ -4,6 +4,7 @@ import { useLanguage } from '../contexts/LanguageContext';
 import { clientsApi, structuresApi, unitsApi, operationsApi, inventoryApi } from '../lib/api';
 import api from '../lib/api';
 import { AuthImg } from '../components/kilolava/AuthMedia';
+import { ClientAdminDataCard } from '../components/kilolava/ClientAdminDataCard';
 import { GestioneSegnalazioniCard } from './segnalazioni/ConfigDialog';
 import { PrivateLaundryPriceCard } from '../components/PrivateLaundryPriceCard';
 import { Card, CardContent } from '../components/ui/card';
@@ -37,7 +38,7 @@ import {
   ChevronLeft, ChevronDown, ChevronRight, Plus, Pencil, Trash2, X,
   Building2, DoorOpen, MapPin, Key, Bed, Package, Truck, Sparkles,
   Link2, Phone, Mail, Home, Layers, Clock, User, Briefcase,
-  Shield, ShoppingCart, BookOpen
+  Shield, ShoppingCart, BookOpen, Star
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 
@@ -460,7 +461,14 @@ const StructureEditPanel = ({ open, onClose, structure, clientId, onSave, t }) =
   );
 };
 
-const emptyContact = { name: '', role: '', phone: '', email: '', notes: '' };
+const emptyContact = { first_name: '', last_name: '', role: '', phone: '', email: '', notes: '', is_primary: false };
+
+// Compat legacy: contatti con solo `name` → nome/cognome derivati
+const splitLegacyName = (c) => {
+  if (c.first_name || c.last_name) return { first_name: c.first_name || '', last_name: c.last_name || '' };
+  const parts = (c.name || '').trim().split(' ');
+  return { first_name: parts[0] || '', last_name: parts.slice(1).join(' ') };
+};
 
 // Sezione Referenti del Cliente (contacts CRUD, salvati sul cliente via PUT /clients/{id})
 const ReferentiSection = ({ client, clientId, onSaved }) => {
@@ -474,7 +482,7 @@ const ReferentiSection = ({ client, clientId, onSaved }) => {
   const openNew = () => { setEditing(null); setForm(emptyContact); setDialogOpen(true); };
   const openEdit = (c) => {
     setEditing(c);
-    setForm({ name: c.name || '', role: c.role || '', phone: c.phone || '', email: c.email || '', notes: c.notes || '' });
+    setForm({ ...splitLegacyName(c), role: c.role || '', phone: c.phone || '', email: c.email || '', notes: c.notes || '', is_primary: !!c.is_primary });
     setDialogOpen(true);
   };
 
@@ -484,12 +492,15 @@ const ReferentiSection = ({ client, clientId, onSaved }) => {
   };
 
   const handleSave = async () => {
-    if (!form.name.trim()) { toast.error('Il nome del referente è obbligatorio'); return; }
+    if (!form.first_name.trim()) { toast.error('Il nome del referente è obbligatorio'); return; }
     setSaving(true);
     try {
+      const payload = { ...form, name: `${form.first_name} ${form.last_name}`.trim() };
+      // un solo referente principale: il nuovo flag rimuove quello precedente
+      const others = (c) => (payload.is_primary ? { ...c, is_primary: false } : c);
       const next = editing
-        ? contacts.map(c => (c.id === editing.id ? { ...c, ...form } : c))
-        : [...contacts, { ...form }];
+        ? contacts.map(c => (c.id === editing.id ? { ...c, ...payload } : others(c)))
+        : [...contacts.map(others), { ...payload }];
       await saveContacts(next);
       toast.success(editing ? 'Referente aggiornato' : 'Referente aggiunto');
       setDialogOpen(false);
@@ -532,7 +543,12 @@ const ReferentiSection = ({ client, clientId, onSaved }) => {
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
-                    <span className="font-medium text-sm">{c.name}</span>
+                    <span className="font-medium text-sm">{c.display_name || c.name}</span>
+                    {c.is_primary && (
+                      <span className="px-1.5 py-0.5 text-xs bg-primary/10 text-primary rounded font-semibold flex items-center gap-1" data-testid={`referente-primary-${c.id}`}>
+                        <Star className="h-3 w-3" />Referente principale
+                      </span>
+                    )}
                     {c.role && <span className="px-1.5 py-0.5 text-xs bg-muted text-muted-foreground rounded">{c.role}</span>}
                   </div>
                   <div className="flex items-center gap-4 text-xs text-muted-foreground mt-1 flex-wrap">
@@ -564,8 +580,19 @@ const ReferentiSection = ({ client, clientId, onSaved }) => {
       <SidePanel open={dialogOpen} onClose={() => setDialogOpen(false)} title={editing ? 'Modifica referente' : 'Nuovo referente'}>
         <div className="flex flex-col h-full">
           <div className="flex-1 overflow-y-auto p-5 space-y-4">
-            <div className="space-y-2"><Label>Nome e cognome *</Label>
-              <Input value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))} data-testid="referente-name-input" /></div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2"><Label>Nome *</Label>
+                <Input value={form.first_name} onChange={e => setForm(p => ({ ...p, first_name: e.target.value }))} data-testid="referente-name-input" /></div>
+              <div className="space-y-2"><Label>Cognome</Label>
+                <Input value={form.last_name} onChange={e => setForm(p => ({ ...p, last_name: e.target.value }))} data-testid="referente-lastname-input" /></div>
+            </div>
+            <div className="flex items-center justify-between rounded-lg border border-border p-3">
+              <div>
+                <p className="text-sm font-medium">Referente principale</p>
+                <p className="text-xs text-muted-foreground">Al massimo uno per Cliente (opzionale)</p>
+              </div>
+              <Switch checked={form.is_primary} onCheckedChange={(v) => setForm(p => ({ ...p, is_primary: v }))} data-testid="referente-primary-switch" />
+            </div>
             <div className="space-y-2"><Label>Ruolo</Label>
               <Input value={form.role} onChange={e => setForm(p => ({ ...p, role: e.target.value }))} placeholder="es. Proprietario, Amministrazione..." data-testid="referente-role-input" /></div>
             <div className="grid grid-cols-2 gap-4">
@@ -1026,12 +1053,6 @@ const ClientDetailPage = () => {
                         <span className="font-medium">{client.private_info.name} {client.private_info.surname}</span>
                       </div>
                     )}
-                    {client.private_info.fiscal_code && (
-                      <div>
-                        <span className="text-xs text-muted-foreground block">Codice Fiscale</span>
-                        <span className="font-medium font-mono text-xs">{client.private_info.fiscal_code}</span>
-                      </div>
-                    )}
                   </>
                 )}
                 {client?.client_type === 'company' && client?.company_info && (
@@ -1040,12 +1061,6 @@ const ClientDetailPage = () => {
                       <div>
                         <span className="text-xs text-muted-foreground block">Ragione Sociale</span>
                         <span className="font-medium">{client.company_info.company_name}</span>
-                      </div>
-                    )}
-                    {client.company_info.vat_number && (
-                      <div>
-                        <span className="text-xs text-muted-foreground block">P.IVA</span>
-                        <span className="font-medium font-mono text-xs">{client.company_info.vat_number}</span>
                       </div>
                     )}
                     {client.company_info.representative_name && (
@@ -1513,35 +1528,7 @@ const ClientDetailPage = () => {
       {/* TAB: Amministrazione (dati fiscali + fatturazione) */}
       {activeTab === 'amministrazione' && (
         <div className="space-y-4">
-          <Card className="border">
-            <CardContent className="p-4">
-              <h3 className="text-sm font-semibold mb-3">Dati amministrativi e fiscali</h3>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 text-sm" data-testid="client-fiscal-data">
-                {(() => {
-                  const info = client?.client_type === 'company' ? client?.company_info : client?.private_info;
-                  const rows = client?.client_type === 'company' ? [
-                    ['Ragione sociale', info?.company_name],
-                    ['P.IVA', info?.vat_number],
-                    ['Codice Fiscale', info?.fiscal_code],
-                    ['Codice SDI', info?.sdi],
-                    ['PEC', info?.pec],
-                    ['Indirizzo', info?.address],
-                  ] : [
-                    ['Nome', [info?.name, info?.surname].filter(Boolean).join(' ')],
-                    ['Codice Fiscale', info?.fiscal_code],
-                    ['Codice SDI', info?.sdi],
-                    ['Indirizzo', info?.address],
-                  ];
-                  return rows.map(([label, val]) => (
-                    <div key={label}>
-                      <span className="text-xs text-muted-foreground block">{label}</span>
-                      <span className="font-medium">{val || '—'}</span>
-                    </div>
-                  ));
-                })()}
-              </div>
-            </CardContent>
-          </Card>
+          <ClientAdminDataCard clientId={clientId} clientType={client?.client_type} />
           <h3 className="text-sm font-semibold pt-1">Fatturazione</h3>
           <div className="flex items-center justify-between flex-wrap gap-2">
             <Select value={billingMonth} onValueChange={setBillingMonth}>

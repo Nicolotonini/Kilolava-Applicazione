@@ -132,8 +132,7 @@ async def _cleanup(restore_counter=False):
     await db.sheets_previews.delete_many({"created_by": ADMIN_USER["id"]})
     await db.sheets_sync_history.delete_many({"user_name": "TestSheets"})
     await db.activity_logs.delete_many({"user_id": ADMIN_USER["id"]})
-    if restore_counter:
-        await db.counters.update_one({"_id": "klv_structure"}, {"$set": {"seq": _state.get("counter_before", 0)}})
+    # Il contatore KLV NON si riporta indietro: i codici KLV sono permanenti e mai riutilizzabili
 
 
 def base_client_row(**over):

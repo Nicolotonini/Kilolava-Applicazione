@@ -356,7 +356,7 @@ def test_performance_30_cleaners_100_tasks(admin):
             email = f"testperf_{uuid.uuid4().hex[:8]}@kilolava-perf.com"
             r = admin.post(f"{API}/users", json={
                 "first_name": f"TEST_PERF_{i}", "last_name": "Perf",
-                "email": email, "password": "TestPerf123!",
+                "email": email, "password": TEST_FIXTURE_PASSWORD,
                 "role": "cleaner", "language": "it"
             }, timeout=15)
             assert r.status_code == 200, r.text
